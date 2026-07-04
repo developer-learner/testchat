@@ -1,14 +1,12 @@
 {
-  "erd_version": 1,
+  "erd_version": 2,
   "files": [
-    "src/services/echo.py",
-    "src/api/chat.py",
-    "src/main.py",
-    "src/static/index.html"
+    "src/services/llm.py",
+    "src/api/chat.py"
   ],
   "entry_points": [
     "src.main:app",
-    "src.services.echo:echo"
+    "src.services.llm:generate_reply"
   ],
   "routes": [
     { "id": "route:GET /", "method": "GET", "path": "/" },
