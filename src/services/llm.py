@@ -1,16 +1,17 @@
 import json
 import os
+from typing import Iterator, Tuple
 
 import httpx
 
 FALLBACK_REPLY = 'The language model is currently unavailable. Please try again in a moment.'
 
 
-def generate_reply(message: str) -> str:
+def stream_reply(message: str) -> Iterator[Tuple]:
     LLM_ENDPOINT = os.environ.get('LLM_ENDPOINT', 'http://localhost:1234/v1/chat/completions')
     LLM_MODEL = os.environ.get('LLM_MODEL', 'local-model')
     LLM_SYSTEM_PROMPT = os.environ.get('LLM_SYSTEM_PROMPT', '')
-    LLM_TIMEOUT_SECONDS = os.environ.get('LLM_TIMEOUT_SECONDS', '120')
+    LLM_TIMEOUT_SECONDS = float(os.environ.get('LLM_TIMEOUT_SECONDS', '120'))
 
     messages: list[dict[str, str]] = []
     if LLM_SYSTEM_PROMPT:
@@ -20,26 +21,51 @@ def generate_reply(message: str) -> str:
     request_body = {
         "model": LLM_MODEL,
         "messages": messages,
-        "stream": False,
+        "stream": True,
     }
+
+    tokens_yielded = False
 
     try:
         with httpx.Client() as client:
-            response = client.post(
+            with client.stream(
+                "POST",
                 LLM_ENDPOINT,
                 json=request_body,
-                timeout=float(LLM_TIMEOUT_SECONDS),
-            )
+                timeout=LLM_TIMEOUT_SECONDS,
+            ) as response:
+                if response.status_code != 200:
+                    yield ("error",)
+                    return
 
-        if response.status_code != 200:
-            return FALLBACK_REPLY
+                for line in response.iter_lines():
+                    if not line.startswith("data: "):
+                        continue
 
-        data = response.json()
-        content = (data.get("choices", [{}])[0].get("message", {}).get("content"))
-        if content:
-            return content
+                    data = line[6:]
 
-    except (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError, ValueError):
-        return FALLBACK_REPLY
+                    if data.strip() == "[DONE]":
+                        if tokens_yielded:
+                            yield ("done",)
+                        else:
+                            yield ("error",)
+                        return
 
-    return FALLBACK_REPLY
+                    try:
+                        parsed = json.loads(data)
+                        content = (parsed.get("choices", [{}])[0].get("delta", {}).get("content"))
+                        if content:
+                            yield ("token", content)
+                            tokens_yielded = True
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        yield ("error",)
+                        return
+
+        # EOF without [DONE]
+        yield ("error",)
+
+    except (httpx.HTTPError, ValueError):
+        yield ("error",)
+
+
+__all__ = ["stream_reply", "FALLBACK_REPLY"]
