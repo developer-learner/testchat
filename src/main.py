@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -10,9 +12,9 @@ try:
 except ImportError:
     pass
 
+_INDEX = Path(__file__).parent / "static" / "index.html"
+
 
 @app.get("/")
 async def serve_index() -> HTMLResponse:
-    return HTMLResponse(
-        content="<html><body><p>/api/v1/chat</p></body></html>"
-    )
+    return HTMLResponse(content=_INDEX.read_text())
