@@ -1,0 +1,24 @@
+{
+  "erd_version": 1,
+  "files": [
+    "src/services/echo.py",
+    "src/api/chat.py",
+    "src/main.py",
+    "src/static/index.html"
+  ],
+  "entry_points": [
+    "src.main:app",
+    "src.services.echo:echo"
+  ],
+  "routes": [
+    { "id": "route:GET /", "method": "GET", "path": "/" },
+    { "id": "route:POST /api/v1/chat", "method": "POST", "path": "/api/v1/chat" }
+  ],
+  "schemas": [
+    { "id": "schema:ChatRequest", "fields": { "message": "string" } },
+    { "id": "schema:ChatResponse", "fields": { "reply": "string" } }
+  ],
+  "errors": [
+    { "id": "error:422-validation", "status": 422 }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "changed_contract_ids": [
+    "error:422-validation",
+    "route:GET /",
+    "route:POST /api/v1/chat",
+    "schema:ChatRequest",
+    "schema:ChatResponse",
+    "src.main:app",
+    "src.services.echo:echo"
+  ],
+  "changed_tests": [
+    "tests/test_chat_route.py::test_chat_echoes_message",
+    "tests/test_chat_route.py::test_chat_empty_message_echoed",
+    "tests/test_chat_route.py::test_chat_missing_message_is_validation_error",
+    "tests/test_echo_service.py::test_echo_empty_message",
+    "tests/test_echo_service.py::test_echo_is_verbatim",
+    "tests/test_echo_service.py::test_echo_prefixes_message",
+    "tests/test_page.py::test_page_wires_chat_endpoint",
+    "tests/test_page.py::test_root_serves_html_page"
+  ],
+  "changed_files": []
+}
