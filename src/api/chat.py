@@ -1,4 +1,4 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from loguru import logger
@@ -17,11 +17,7 @@ class ChatResponse(BaseModel):
 router = APIRouter()
 
 
-@router.post(
-    "/api/v1/chat",
-    response_model=ChatResponse,
-    status_code=status.HTTP_200_OK,
-)
+@router.post("/api/v1/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
     logger.info("Received chat request: message={}", request.message)
     result = echo(request.message)
