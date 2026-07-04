@@ -1,12 +1,13 @@
 {
-  "erd_version": 2,
+  "erd_version": 3,
   "files": [
     "src/services/llm.py",
-    "src/api/chat.py"
+    "src/api/chat.py",
+    "src/static/index.html"
   ],
   "entry_points": [
     "src.main:app",
-    "src.services.llm:generate_reply"
+    "src.services.llm:stream_reply"
   ],
   "routes": [
     { "id": "route:GET /", "method": "GET", "path": "/" },
@@ -14,7 +15,9 @@
   ],
   "schemas": [
     { "id": "schema:ChatRequest", "fields": { "message": "string" } },
-    { "id": "schema:ChatResponse", "fields": { "reply": "string" } }
+    { "id": "schema:SSEToken", "fields": { "event": "literal 'token'", "content": "string" } },
+    { "id": "schema:SSEDone", "fields": { "event": "literal 'done'" } },
+    { "id": "schema:SSEError", "fields": { "event": "literal 'error'", "message": "string" } }
   ],
   "errors": [
     { "id": "error:422-validation", "status": 422 }

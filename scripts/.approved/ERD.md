@@ -1,104 +1,162 @@
-# ERD — testchat M2: Live LLM Proxy (erd_version 2)
+# ERD — testchat M3: Streaming LLM Proxy (erd_version 3)
 
-## What changes M1 → M2
-- **Removed:** `src/services/echo.py` and entry point `src.services.echo:echo`.
-- **Added:** `src/services/llm.py` — the proxy service, entry point
-  `src.services.llm:generate_reply`.
-- **Modified:** `src/api/chat.py` — route handler now calls `generate_reply`
-  instead of the echo service.
-- **Unchanged (carried forward from frozen v1, excluded from build inventory):**
-  `src/main.py`, `src/static/index.html`, `GET /`, and the `ChatRequest` /
-  `ChatResponse` shapes.
+## What changes M2 → M3
+- **Modified:** `src/services/llm.py` — `generate_reply` (single-shot)
+  replaced by `stream_reply`, a generator over upstream content increments;
+  upstream request now sets `"stream": true` and parses SSE-framed chunks.
+- **Modified:** `src/api/chat.py` — route handler now returns a
+  `StreamingResponse` over `text/event-stream`, framing `stream_reply`'s
+  output as `token`/`done`/`error` SSE events instead of a JSON body.
+- **Modified:** `src/static/index.html` — fetch/render logic switches from
+  awaiting one JSON response to reading `response.body` as a stream, parsing
+  SSE frames, and appending `token` content live; handles `done`/`error`.
+- **Unchanged:** `src/main.py`, `GET /`, `ChatRequest` schema, 422 validation
+  behavior.
+- **Removed:** `generate_reply` entry point (M2) — no longer exported;
+  nothing else imports it (A6).
 
-## File inventory (M2 build)
-- `src/services/llm.py`  — new
-- `src/api/chat.py`      — rewritten to call the LLM service
+## File inventory (M3 build)
+- `src/services/llm.py`       — modified
+- `src/api/chat.py`           — modified
+- `src/static/index.html`     — modified
 
 ## Data models
 - **ChatRequest** — `{ "message": str }` (unchanged).
-- **ChatResponse** — `{ "reply": str }` (unchanged).
-- **generate_reply** — `generate_reply(message: str) -> str`. Reads config from
-  the environment, POSTs an OpenAI-compatible chat-completions request to
-  `LLM_ENDPOINT`, and returns either the model's content or `FALLBACK_REPLY`.
-  Synchronous (see C-4).
+- **stream_reply** — `stream_reply(message: str) -> Iterator[StreamChunk]`.
+  Reads config from the environment on each call (C-3, carried from M2).
+  Yields chunks as they're derived from the upstream; raises nothing across
+  the generator boundary — every failure mode is represented as a chunk
+  value, not an exception, so `chat.py` never needs a try/except around
+  iteration.
+- **StreamChunk** (internal, not on the wire) — a small tagged union
+  `llm.py` yields to `chat.py`:
+  - `("token", content: str)` — one non-empty content increment.
+  - `("done",)` — clean end of stream, only after ≥1 `("token", ...)`.
+  - `("error",)` — any failure, pre-stream, mid-stream, or a clean-but-empty
+    completion (AC-7). `chat.py` supplies `FALLBACK_REPLY` as the message
+    text; `llm.py` does not pass failure detail upward.
+- **SSE wire frames** (what `chat.py` writes to the client) — per PRD → SSE
+  wire contract:
+  - `event: token` / `data: {"content": <str>}`
+  - `event: done` / `data: {}`
+  - `event: error` / `data: {"message": <FALLBACK_REPLY>}`
 - **Upstream request body** —
   `{ "model": <LLM_MODEL>,
      "messages": ([{"role":"system","content":<LLM_SYSTEM_PROMPT>}] if set else [])
                  + [{"role":"user","content":<message>}],
-     "stream": false }`
-- **Upstream success extraction** — `data["choices"][0]["message"]["content"]`;
-  missing/empty ⇒ `FALLBACK_REPLY`.
-- **FALLBACK_REPLY** — the fixed string in PRD → Fixed constants, defined once in
-  `src/services/llm.py` and imported nowhere else.
+     "stream": true }`
+- **Upstream chunk shape (OpenAI-compatible SSE)** — lines of
+  `data: <json>`, each JSON having `choices[0].delta.content` (may be
+  absent/empty on some chunks), terminated by a literal `data: [DONE]` line.
+  `llm.py` extracts non-empty `delta.content` values as `token` chunks. A
+  well-formed `data: [DONE]` line is the *only* trigger for `done` — and
+  only if at least one `token` chunk preceded it (AC-6/AC-7). Anything
+  else that ends the stream — EOF without `[DONE]`, a malformed/unparseable
+  `data:` line, or a connection-level error — is `error`, regardless of how
+  many `token` chunks preceded it (AC-12).
+- **FALLBACK_REPLY** — unchanged fixed string, still defined once in
+  `src/services/llm.py`, used only by `chat.py` when framing an
+  `("error",)` chunk.
 
 ## Configuration (read at request time — see C-3)
-| Env var                | Default                                          |
-|------------------------|--------------------------------------------------|
-| `LLM_ENDPOINT`         | `http://localhost:1234/v1/chat/completions`      |
-| `LLM_MODEL`            | `local-model`                                    |
-| `LLM_SYSTEM_PROMPT`    | `` (empty ⇒ no system message)                   |
-| `LLM_TIMEOUT_SECONDS`  | `120`                                            |
+| Env var                | Default                                          | M3 semantics change                         |
+|------------------------|---------------------------------------------------|---------------------------------------------|
+| `LLM_ENDPOINT`         | `http://localhost:1234/v1/chat/completions`      | none                                          |
+| `LLM_MODEL`            | `local-model`                                    | none                                          |
+| `LLM_SYSTEM_PROMPT`    | `` (empty ⇒ no system message)                   | none                                          |
+| `LLM_TIMEOUT_SECONDS`  | `120`                                             | now bounds time-to-first-byte only (A2)     |
 
 ## Key flows
-1. **Send message.** Page JS → `POST /api/v1/chat` with `{"message": <text>}`
-   → `chat.py` validates against `ChatRequest` → calls
-   `generate_reply(message)` → `llm.py` reads env, builds the OpenAI body,
-   POSTs to `LLM_ENDPOINT` (non-streaming, `LLM_TIMEOUT_SECONDS`) → on success
-   returns content, on any failure returns `FALLBACK_REPLY` → `chat.py` returns
-   `{"reply": <that string>}` → page appends a bubble.
-2. **Page load.** Unchanged from v1 (`GET /` serves `index.html`).
+1. **Send message (happy path).** Page JS → `fetch POST /api/v1/chat` with
+   `{"message": <text>}` → `chat.py` validates against `ChatRequest` → opens
+   a `StreamingResponse`, calls `stream_reply(message)` → `llm.py` reads
+   env, builds the upstream body with `"stream": true`, opens a streaming
+   POST to `LLM_ENDPOINT` with connect/first-byte bound by
+   `LLM_TIMEOUT_SECONDS` → for each upstream chunk with non-empty
+   `delta.content`, yields `("token", content)` → `chat.py` writes
+   `event: token` immediately per yield (no buffering) → on upstream
+   `[DONE]`, `llm.py` yields `("done",)` if ≥1 token was already yielded,
+   else `("error",)` (AC-7) → `chat.py` writes the corresponding terminal
+   event and ends the response → page appends each `token`'s content live,
+   finalizes on `done`.
+2. **Pre-stream failure.** Connect fails, non-2xx, or no first byte within
+   `LLM_TIMEOUT_SECONDS` → `llm.py` yields `("error",)` with no prior
+   `token` yields → `chat.py` writes `event: error` (message =
+   `FALLBACK_REPLY`) and ends → page shows only the fallback text.
+3. **Mid-stream failure.** One or more `token` chunks already yielded, then
+   upstream drops or sends a malformed/unparseable line → `llm.py` yields
+   `("error",)` → `chat.py` writes `event: error` and ends → page appends
+   `FALLBACK_REPLY` after whatever already rendered (A5).
+4. **Empty completion.** Upstream sends `[DONE]` having never carried
+   non-empty content → `llm.py` yields only `("error",)`, never `("done",)`
+   — mirrors M2's empty-content fallback rule (AC-7).
+5. **Page load.** Unchanged from v1/v2 (`GET /` serves `index.html`).
+6. **Missing `message`.** Unchanged — FastAPI/pydantic validation returns
+   422 before `chat.py`'s handler body runs; no stream is opened.
 
 ## Constraints (implementation-affecting, non-optional)
-- **C-1 (default endpoint).** When `LLM_ENDPOINT` is unset, the service targets
-  `http://localhost:1234/v1/chat/completions`. This literal default is a
-  live-demo requirement, recorded here rather than as an AC because it cannot be
-  observed at the test surface without binding the dev's real `:1234` port.
-- **C-2 (failure containment).** Every upstream failure mode — connection error,
-  timeout, non-2xx, and malformed/empty content — maps to `FALLBACK_REPLY` at
-  HTTP 200. No exception escapes `generate_reply`; the route never returns 5xx.
-- **C-3 (late-bound config).** Config is resolved from `os.environ` inside
-  `generate_reply` on each call, not at module import, so the operator and the
-  tests can point `LLM_ENDPOINT` at different upstreams without re-import.
-- **C-4 (sync).** `generate_reply` and the `/api/v1/chat` handler are
-  synchronous for M2 (FastAPI runs the handler in a threadpool); an outbound
-  sync `httpx.Client` call is used. Async is deferred.
-- **C-5 (surface).** The only importable symbols the suite may use from `src` are
-  the locked entry points `src.main:app` and `src.services.llm:generate_reply`.
-  The only HTTP route the suite exercises is `POST /api/v1/chat` (INV-4).
-- **C-6 (layering).** Proxy logic lives only in `llm.py`; `chat.py` imports and
-  calls it and owns no LLM/HTTP logic of its own.
+- **C-1 (default endpoint).** Carried from M2 — `LLM_ENDPOINT` defaults to
+  `http://localhost:1234/v1/chat/completions`.
+- **C-2 (failure containment, streaming form).** Every upstream failure
+  mode — connect error, timeout-to-first-byte, non-2xx, mid-stream drop,
+  malformed chunk, or a clean-but-empty completion — surfaces as exactly one
+  `error` SSE event, never as a change in HTTP status (status is already
+  committed as 200 by the time most failures are knowable) and never as an
+  unhandled exception reaching Starlette. No exception escapes `stream_reply`
+  or the route.
+- **C-3 (late-bound config).** Carried from M2 — config resolved from
+  `os.environ` inside `stream_reply` on each call, not at import.
+- **C-4 (sync generator, threaded).** `stream_reply` is a synchronous
+  generator using a sync `httpx.Client` streaming call; FastAPI/Starlette
+  iterates it via its threadpool-wrapping `StreamingResponse` support,
+  consistent with M2's C-4 sync posture. Async is still deferred.
+- **C-5 (surface).** The only importable symbols the suite may use from
+  `src` are `src.main:app` and `src.services.llm:stream_reply`. The only
+  HTTP route exercised is `POST /api/v1/chat` (INV-4).
+- **C-6 (layering).** `llm.py` owns upstream protocol, chunk parsing, and
+  failure classification (yields the `StreamChunk` union only — never
+  SSE-formatted text). `chat.py` owns SSE framing (turning `StreamChunk`
+  values into `event:`/`data:` bytes) and owns no upstream/HTTP-to-LLM
+  logic. Mirrors M2's C-6 split one layer up the stack.
+- **C-7 (one terminal event, no empty success).** Exactly one of `done` or
+  `error` is emitted per request, always last; `token` events, if any, only
+  ever precede it. `done` requires at least one prior `token` — a clean
+  `[DONE]` with zero tokens is `error`, not `done` (AC-7).
 
 ## Oracle Mapping (AC → test node)
-- AC-1  → `tests/test_llm_service.py::test_success_returns_model_content`,
-          `tests/test_chat_api.py::test_chat_returns_model_reply`
-- AC-2  → `tests/test_llm_service.py::test_request_carries_model_and_user_message`
+- AC-1  → `tests/test_chat_api.py::test_chat_opens_event_stream_200`
+- AC-2  → `tests/test_llm_service.py::test_request_carries_model_user_message_and_stream_true`
 - AC-3  → `tests/test_llm_service.py::test_system_prompt_included_when_set`
 - AC-4  → `tests/test_llm_service.py::test_system_prompt_omitted_when_empty`
-- AC-5  → `tests/test_llm_service.py::test_request_is_non_streaming`
-- AC-6  → `tests/test_llm_service.py::test_config_read_at_call_time`
-- AC-7  → `tests/test_llm_service.py::test_connection_error_returns_fallback`,
-          `tests/test_chat_api.py::test_chat_upstream_failure_returns_fallback_200`
-- AC-8  → `tests/test_llm_service.py::test_non_2xx_returns_fallback`
-- AC-9  → `tests/test_llm_service.py::test_malformed_response_returns_fallback`,
-          `tests/test_llm_service.py::test_empty_content_returns_fallback`
-- AC-10 → `tests/test_llm_service.py::test_timeout_returns_fallback`
-- AC-11 → `tests/test_chat_api.py::test_chat_missing_message_is_422`
-- AC-12 → `tests/test_chat_api.py::test_chat_no_longer_echoes`
+- AC-5  → `tests/test_llm_service.py::test_content_chunks_yielded_as_tokens_in_order`,
+          `tests/test_chat_api.py::test_chat_streams_token_events_in_order`
+- AC-6  → `tests/test_llm_service.py::test_clean_completion_yields_done`,
+          `tests/test_chat_api.py::test_chat_emits_done_after_tokens`
+- AC-7  → `tests/test_llm_service.py::test_empty_stream_yields_error_not_done`
+- AC-8  → `tests/test_llm_service.py::test_config_read_at_call_time`
+- AC-9  → `tests/test_llm_service.py::test_connection_error_yields_error_with_no_tokens`,
+          `tests/test_chat_api.py::test_chat_connection_error_emits_error_only`
+- AC-10 → `tests/test_llm_service.py::test_non_2xx_yields_error_with_no_tokens`
+- AC-11 → `tests/test_llm_service.py::test_timeout_to_first_byte_yields_error`
+- AC-12 → `tests/test_llm_service.py::test_mid_stream_drop_yields_error_after_tokens`,
+          `tests/test_chat_api.py::test_chat_mid_stream_failure_emits_error_after_tokens`
+- AC-13 → `tests/test_chat_api.py::test_chat_missing_message_is_422_no_stream`
+- AC-14, AC-15, AC-16 → CEO Demo Script (frontend, no automated harness —
+  consistent with M1/M2 treatment of `index.html`)
 
 ## Milestone Justification (D-46)
-This is one milestone, not several. The change is a single seam — the source of
-`reply` — behind an unchanged, already-frozen contract. It ends at a concrete
-CEO-checkable point (D-44): send a message, see a real model reply; kill the
-model, see the fallback. Splitting it (e.g. "wire the client" then "add failure
-handling") would burn freeze/accept cycles on states the CEO cannot evaluate
-independently — a proxy with no failure handling isn't demoable, and the page is
-untouched so there is no frontend sub-milestone.
+One milestone. The seam is the same one M2 built (`reply` production), now
+made incremental; splitting backend-streaming from frontend-rendering would
+produce an interim state — SSE events with no UI consuming them — that the
+CEO can't observe or accept (D-44 requires a checkable point, and once a UI
+exists, checking means using it). The failure-containment redesign (C-2) is
+inseparable from the backend half: it can't be called done without the same
+request lifecycle the frontend triggers.
 
 ## Test dependencies
-`pytest` with `fastapi.testclient.TestClient` (needs `fastapi`, `httpx`) and
-`pytest-httpserver` (a real localhost HTTP server used as the fake OpenAI
-upstream, addressed via `LLM_ENDPOINT`). Tests observe the system only through
-the locked entry points and the `LLM_*` configuration surface; the fake upstream
-is controlled purely through `LLM_ENDPOINT`, so no test knows how the request is
-made. Test-infra imports (`fastapi.testclient`, `pytest_httpserver`) are not
-`src` observations and do not affect INV-4.
+`pytest`, `fastapi.testclient.TestClient` (`client.stream(...)` context
+manager for consuming chunked/streaming responses in tests), `pytest-httpserver`
+(extended to serve a fake SSE-chunked upstream — a static multi-line body for
+happy-path/malformed-data cases, and a slow `respond_with_handler` for the
+timeout case). Same INV-4 posture as M2: test-infra imports are not `src`
+observations and do not affect the surface gate.

@@ -1,124 +1,243 @@
-"""Service-level tests for src.services.llm:generate_reply (M2 LLM proxy).
+"""
+Unit tests for src.services.llm:stream_reply (M3 -- Streaming LLM Proxy).
 
-Observes ONLY the locked entry point src.services.llm:generate_reply and the
-LLM_* configuration surface. The upstream model is replaced by a real local
-fake HTTP server (pytest-httpserver) addressed via LLM_ENDPOINT, so these tests
-exercise the proxy's observable behavior without knowing how the request is
-made. Pins AC-1..AC-10 at the service level.
+Tests observe ONLY the locked entry point `src.services.llm:stream_reply`
+and the `LLM_*` environment surface (INV-4). The fake upstream is a real
+localhost HTTP server (pytest-httpserver) addressed via LLM_ENDPOINT; no
+test inspects how the request is made.
+
+Chunk contract under test (see ERD -> Data models -> StreamChunk):
+    ("token", content: str)  -- one non-empty content increment
+    ("done",)                -- clean end of stream, only after >=1 token
+    ("error",)               -- any failure: pre-stream, mid-stream, or a
+                                 clean-but-empty completion (AC-7)
 """
 import json
 import time
 
-from src.services.llm import generate_reply
+from werkzeug.wrappers import Response
 
-FALLBACK = "The language model is currently unavailable. Please try again in a moment."
-PATH = "/v1/chat/completions"
-
-
-def _openai_reply(content):
-    return {"choices": [{"message": {"role": "assistant", "content": content}}]}
+from src.services.llm import stream_reply
 
 
-def _point_at(monkeypatch, httpserver):
-    monkeypatch.setenv("LLM_ENDPOINT", httpserver.url_for(PATH))
+UPSTREAM_PATH = "/v1/chat/completions"
+FALLBACK_REPLY = "The language model is currently unavailable. Please try again in a moment."
+
+
+def _sse_body(*lines):
+    """Build a raw SSE response body from a sequence of `data:` payloads.
+
+    Each item is either a dict (JSON-encoded) or the literal string
+    "[DONE]" for the sentinel line.
+    """
+    out = []
+    for line in lines:
+        payload = "[DONE]" if line == "[DONE]" else json.dumps(line)
+        out.append(f"data: {payload}\n\n")
+    return "".join(out).encode("utf-8")
+
+
+def _delta(content):
+    return {"choices": [{"delta": {"content": content}}]}
+
+
+def _configure_env(monkeypatch, httpserver, timeout="5"):
+    monkeypatch.setenv("LLM_ENDPOINT", httpserver.url_for(UPSTREAM_PATH))
     monkeypatch.setenv("LLM_MODEL", "test-model")
-    monkeypatch.delenv("LLM_SYSTEM_PROMPT", raising=False)
+    monkeypatch.setenv("LLM_SYSTEM_PROMPT", "")
+    monkeypatch.setenv("LLM_TIMEOUT_SECONDS", timeout)
 
 
-def test_success_returns_model_content(monkeypatch, httpserver):
-    # AC-1
-    httpserver.expect_request(PATH, method="POST").respond_with_json(_openai_reply("hi there"))
-    _point_at(monkeypatch, httpserver)
-    assert generate_reply("hello") == "hi there"
+# ---------------------------------------------------------------------------
+# AC-2: request shape
+# ---------------------------------------------------------------------------
+
+def test_request_carries_model_user_message_and_stream_true(monkeypatch, httpserver):
+    _configure_env(monkeypatch, httpserver)
+    httpserver.expect_request(UPSTREAM_PATH, method="POST").respond_with_data(
+        _sse_body(_delta("hi"), "[DONE]"),
+        content_type="text/event-stream",
+    )
+
+    list(stream_reply("hello there"))
+
+    request = httpserver.log[0][0]
+    sent = json.loads(request.get_data(as_text=True))
+    assert sent["model"] == "test-model"
+    assert sent["stream"] is True
+    assert sent["messages"][-1] == {"role": "user", "content": "hello there"}
 
 
-def test_request_carries_model_and_user_message(monkeypatch, httpserver):
-    # AC-2
-    httpserver.expect_request(PATH, method="POST").respond_with_json(_openai_reply("ok"))
-    _point_at(monkeypatch, httpserver)
-    monkeypatch.setenv("LLM_MODEL", "my-model")
-    generate_reply("ping")
-    body = httpserver.log[0][0].get_json()
-    assert body["model"] == "my-model"
-    assert any(m["role"] == "user" and m["content"] == "ping" for m in body["messages"])
-    assert body["messages"][-1] == {"role": "user", "content": "ping"}
-
+# ---------------------------------------------------------------------------
+# AC-3 / AC-4: system prompt inclusion
+# ---------------------------------------------------------------------------
 
 def test_system_prompt_included_when_set(monkeypatch, httpserver):
-    # AC-3
-    httpserver.expect_request(PATH, method="POST").respond_with_json(_openai_reply("ok"))
-    _point_at(monkeypatch, httpserver)
-    monkeypatch.setenv("LLM_SYSTEM_PROMPT", "You are terse.")
-    generate_reply("hey")
-    msgs = httpserver.log[0][0].get_json()["messages"]
-    assert msgs[0] == {"role": "system", "content": "You are terse."}
+    _configure_env(monkeypatch, httpserver)
+    monkeypatch.setenv("LLM_SYSTEM_PROMPT", "be terse")
+    httpserver.expect_request(UPSTREAM_PATH, method="POST").respond_with_data(
+        _sse_body(_delta("ok"), "[DONE]"),
+        content_type="text/event-stream",
+    )
+
+    list(stream_reply("hi"))
+
+    request = httpserver.log[0][0]
+    sent = json.loads(request.get_data(as_text=True))
+    assert sent["messages"][0] == {"role": "system", "content": "be terse"}
 
 
 def test_system_prompt_omitted_when_empty(monkeypatch, httpserver):
-    # AC-4
-    httpserver.expect_request(PATH, method="POST").respond_with_json(_openai_reply("ok"))
-    _point_at(monkeypatch, httpserver)
-    monkeypatch.setenv("LLM_SYSTEM_PROMPT", "")
-    generate_reply("hey")
-    msgs = httpserver.log[0][0].get_json()["messages"]
-    assert all(m["role"] != "system" for m in msgs)
+    _configure_env(monkeypatch, httpserver)  # LLM_SYSTEM_PROMPT == ""
+    httpserver.expect_request(UPSTREAM_PATH, method="POST").respond_with_data(
+        _sse_body(_delta("ok"), "[DONE]"),
+        content_type="text/event-stream",
+    )
+
+    list(stream_reply("hi"))
+
+    request = httpserver.log[0][0]
+    sent = json.loads(request.get_data(as_text=True))
+    assert all(m["role"] != "system" for m in sent["messages"])
 
 
-def test_request_is_non_streaming(monkeypatch, httpserver):
-    # AC-5
-    httpserver.expect_request(PATH, method="POST").respond_with_json(_openai_reply("ok"))
-    _point_at(monkeypatch, httpserver)
-    generate_reply("hey")
-    body = httpserver.log[0][0].get_json()
-    assert body.get("stream", False) is False
+# ---------------------------------------------------------------------------
+# AC-5 / AC-6: token/done sequencing on the happy path
+# ---------------------------------------------------------------------------
 
+def test_content_chunks_yielded_as_tokens_in_order(monkeypatch, httpserver):
+    _configure_env(monkeypatch, httpserver)
+    httpserver.expect_request(UPSTREAM_PATH, method="POST").respond_with_data(
+        _sse_body(_delta("Hel"), _delta("lo"), _delta(" world"), "[DONE]"),
+        content_type="text/event-stream",
+    )
+
+    chunks = list(stream_reply("hi"))
+
+    tokens = [c for c in chunks if c[0] == "token"]
+    assert [c[1] for c in tokens] == ["Hel", "lo", " world"]
+
+
+def test_clean_completion_yields_done(monkeypatch, httpserver):
+    _configure_env(monkeypatch, httpserver)
+    httpserver.expect_request(UPSTREAM_PATH, method="POST").respond_with_data(
+        _sse_body(_delta("hi"), "[DONE]"),
+        content_type="text/event-stream",
+    )
+
+    chunks = list(stream_reply("hi"))
+
+    assert chunks[-1] == ("done",)
+    assert chunks.count(("done",)) == 1
+    assert not any(c[0] == "error" for c in chunks)
+
+
+# ---------------------------------------------------------------------------
+# AC-7: clean but empty completion is a failure, not an empty success
+# ---------------------------------------------------------------------------
+
+def test_empty_stream_yields_error_not_done(monkeypatch, httpserver):
+    _configure_env(monkeypatch, httpserver)
+    httpserver.expect_request(UPSTREAM_PATH, method="POST").respond_with_data(
+        _sse_body("[DONE]"),
+        content_type="text/event-stream",
+    )
+
+    chunks = list(stream_reply("hi"))
+
+    assert chunks == [("error",)]
+
+
+# ---------------------------------------------------------------------------
+# AC-8: late-bound config
+# ---------------------------------------------------------------------------
 
 def test_config_read_at_call_time(monkeypatch, httpserver):
-    # AC-6: endpoint resolved on each call, not at import.
-    httpserver.expect_request(PATH, method="POST").respond_with_json(_openai_reply("late-bound"))
-    monkeypatch.setenv("LLM_MODEL", "m")
-    monkeypatch.delenv("LLM_SYSTEM_PROMPT", raising=False)
-    monkeypatch.setenv("LLM_ENDPOINT", httpserver.url_for(PATH))
-    assert generate_reply("hello") == "late-bound"
+    # First call: point at nothing listening -> pre-stream error.
+    monkeypatch.setenv("LLM_ENDPOINT", "http://127.0.0.1:1/v1/chat/completions")
+    monkeypatch.setenv("LLM_MODEL", "test-model")
+    monkeypatch.setenv("LLM_SYSTEM_PROMPT", "")
+    monkeypatch.setenv("LLM_TIMEOUT_SECONDS", "2")
+
+    first = list(stream_reply("hi"))
+    assert first == [("error",)]
+
+    # Re-point the env var, same process, no re-import -> should now succeed.
+    httpserver.expect_request(UPSTREAM_PATH, method="POST").respond_with_data(
+        _sse_body(_delta("hi"), "[DONE]"),
+        content_type="text/event-stream",
+    )
+    monkeypatch.setenv("LLM_ENDPOINT", httpserver.url_for(UPSTREAM_PATH))
+
+    second = list(stream_reply("hi"))
+    assert second[-1] == ("done",)
+    assert any(c[0] == "token" for c in second)
 
 
-def test_connection_error_returns_fallback(monkeypatch):
-    # AC-7: nothing listening -> fallback.
-    monkeypatch.setenv("LLM_ENDPOINT", "http://127.0.0.1:9/v1/chat/completions")
-    monkeypatch.setenv("LLM_MODEL", "m")
-    monkeypatch.delenv("LLM_SYSTEM_PROMPT", raising=False)
-    assert generate_reply("hi") == FALLBACK
+# ---------------------------------------------------------------------------
+# AC-9: connection failure, pre-stream
+# ---------------------------------------------------------------------------
+
+def test_connection_error_yields_error_with_no_tokens(monkeypatch):
+    monkeypatch.setenv("LLM_ENDPOINT", "http://127.0.0.1:1/v1/chat/completions")
+    monkeypatch.setenv("LLM_MODEL", "test-model")
+    monkeypatch.setenv("LLM_SYSTEM_PROMPT", "")
+    monkeypatch.setenv("LLM_TIMEOUT_SECONDS", "2")
+
+    chunks = list(stream_reply("hi"))
+
+    assert chunks == [("error",)]
 
 
-def test_non_2xx_returns_fallback(monkeypatch, httpserver):
-    # AC-8
-    httpserver.expect_request(PATH, method="POST").respond_with_data("boom", status=500)
-    _point_at(monkeypatch, httpserver)
-    assert generate_reply("hi") == FALLBACK
+# ---------------------------------------------------------------------------
+# AC-10: non-2xx, pre-stream
+# ---------------------------------------------------------------------------
+
+def test_non_2xx_yields_error_with_no_tokens(monkeypatch, httpserver):
+    _configure_env(monkeypatch, httpserver)
+    httpserver.expect_request(UPSTREAM_PATH, method="POST").respond_with_data(
+        "internal error", status=500,
+    )
+
+    chunks = list(stream_reply("hi"))
+
+    assert chunks == [("error",)]
 
 
-def test_malformed_response_returns_fallback(monkeypatch, httpserver):
-    # AC-9: no choices/content.
-    httpserver.expect_request(PATH, method="POST").respond_with_json({"unexpected": True})
-    _point_at(monkeypatch, httpserver)
-    assert generate_reply("hi") == FALLBACK
+# ---------------------------------------------------------------------------
+# AC-11: no first byte within LLM_TIMEOUT_SECONDS
+# ---------------------------------------------------------------------------
+
+def test_timeout_to_first_byte_yields_error(monkeypatch, httpserver):
+    _configure_env(monkeypatch, httpserver, timeout="1")
+
+    def slow_handler(request):
+        time.sleep(2)
+        return Response(
+            _sse_body(_delta("late"), "[DONE]"),
+            content_type="text/event-stream",
+        )
+
+    httpserver.expect_request(UPSTREAM_PATH, method="POST").respond_with_handler(slow_handler)
+
+    chunks = list(stream_reply("hi"))
+
+    assert chunks == [("error",)]
 
 
-def test_empty_content_returns_fallback(monkeypatch, httpserver):
-    # AC-9: empty content.
-    httpserver.expect_request(PATH, method="POST").respond_with_json(_openai_reply(""))
-    _point_at(monkeypatch, httpserver)
-    assert generate_reply("hi") == FALLBACK
+# ---------------------------------------------------------------------------
+# AC-12: mid-stream drop / malformed data after tokens already emitted
+# ---------------------------------------------------------------------------
 
+def test_mid_stream_drop_yields_error_after_tokens(monkeypatch, httpserver):
+    _configure_env(monkeypatch, httpserver)
+    body = b"data: " + json.dumps(_delta("Hello")).encode("utf-8") + b"\n\n" + b"data: not-json\n\n"
+    httpserver.expect_request(UPSTREAM_PATH, method="POST").respond_with_data(
+        body, content_type="text/event-stream",
+    )
 
-def test_timeout_returns_fallback(monkeypatch, httpserver):
-    # AC-10: upstream slower than LLM_TIMEOUT_SECONDS -> fallback.
-    def slow(request):
-        from werkzeug.wrappers import Response
-        time.sleep(1.0)
-        return Response(json.dumps(_openai_reply("late")), content_type="application/json")
+    chunks = list(stream_reply("hi"))
 
-    httpserver.expect_request(PATH, method="POST").respond_with_handler(slow)
-    _point_at(monkeypatch, httpserver)
-    monkeypatch.setenv("LLM_TIMEOUT_SECONDS", "0.2")
-    assert generate_reply("hi") == FALLBACK
+    assert chunks[0] == ("token", "Hello")
+    assert chunks[-1] == ("error",)
+    assert not any(c == ("done",) for c in chunks)

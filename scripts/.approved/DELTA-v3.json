@@ -1,0 +1,23 @@
+{
+  "changed_contract_ids": [
+    "schema:ChatResponse",
+    "schema:SSEDone",
+    "schema:SSEError",
+    "schema:SSEToken",
+    "src.services.llm:generate_reply",
+    "src.services.llm:stream_reply"
+  ],
+  "changed_tests": [
+    "tests/test_chat_api.py::test_chat_connection_error_emits_error_only",
+    "tests/test_chat_api.py::test_chat_emits_done_after_tokens",
+    "tests/test_chat_api.py::test_chat_mid_stream_failure_emits_error_after_tokens",
+    "tests/test_chat_api.py::test_chat_missing_message_is_422",
+    "tests/test_chat_api.py::test_chat_missing_message_is_422_no_stream",
+    "tests/test_chat_api.py::test_chat_no_longer_echoes",
+    "tests/test_chat_api.py::test_chat_opens_event_stream_200",
+    "tests/test_chat_api.py::test_chat_returns_model_reply",
+    "tests/test_chat_api.py::test_chat_streams_token_events_in_order",
+    "tests/test_chat_api.py::test_chat_upstream_failure_returns_fallback_200"
+  ],
+  "changed_files": []
+}
