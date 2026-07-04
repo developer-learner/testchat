@@ -9,33 +9,35 @@
 
 ## Active Feature
 
-**Feature:** M1 — Echo Chat (no LLM)
-**Frozen spec version:** not yet frozen
-**Orchestrator state:** not started
+**Feature:** M2 — Live LLM Proxy
+**Frozen spec version:** v2 (frozen)
+**Orchestrator state:** done (full suite green)
 **Branch:** `main`
+
+---
+
+## Latest Results
+
+**M2 (Live LLM Proxy)** — built and validated. All 17 frozen tests pass.
+- `src/services/llm.py` — new LLM proxy service with env-based config, httpx client, comprehensive error fallback
+- `src/api/chat.py` — updated to call `generate_reply` instead of echo
+- Pipeline ran coder (`qwen3.6-27b`) successfully; plan written manually
+
+CEO acceptance pending (D-44).
 
 ---
 
 ## Escalations In Flight
 
-> Orchestrator exit 2 means a batch is waiting in
-> `.pipeline-state/escalations/BATCH.md`. Track its round-trip here.
-
-- [ ] Batch carried to the TPM chat: n/a
-- [ ] TPM delta staged under `scripts/.approved/incoming/`: n/a
-- [ ] Re-frozen as v[N] and orchestrator re-run: n/a
+None.
 
 ---
 
 ## Notes / Context
 
-> Halt-and-notify notes (Rule 4) go here: what stopped, why, what decision is
-> needed. Also temporary context for this session that isn't worth a
-> DECISIONS.md entry.
-
 Milestone plan:
-- M1: Echo chat — backend returns canned response, frontend renders chat bubbles
-- M2: Live LLM integration — real HTTP call to operator's local endpoint
+- M1: Echo chat — ✅ done
+- M2: Live LLM integration — ✅ done (CEO acceptance pending)
 - M3: Streaming (SSE) — token-by-token response
 - M4: Conversation history — full context sent to LLM
 
@@ -57,7 +59,3 @@ The one judgment check (D-44 — the CEO's gate, never skipped or delegated):
   Record the acceptance here with a date.
 
 Then: branch merged to main; entry moved to `BACKLOG.md` completed table
-
-## Results
-
-Full frozen TPM suite green against spec v2. Feature built and validated.
