@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "erd_version": 1,
+  "tasks": [
+    {
+      "id": "T1",
+      "file": "src/services/echo.py",
+      "depends_on": [],
+      "brief": "Implement src/services/echo.py: Define function echo(message: str) -> str that returns 'Echo: ' + message verbatim. No imports of web layer, no I/O, no FastAPI. Acceptance: echo('test') == 'Echo: test', echo('') == 'Echo: ', echo('hello world') == 'Echo: hello world'.",
+      "contracts": ["src.services.echo:echo"],
+      "tests": [
+        "tests/test_echo_service.py::test_echo_prefixes_message",
+        "tests/test_echo_service.py::test_echo_empty_message",
+        "tests/test_echo_service.py::test_echo_is_verbatim"
+      ]
+    },
+    {
+      "id": "T2",
+      "file": "src/api/chat.py",
+      "depends_on": ["T1"],
+      "brief": "Implement src/api/chat.py: Define FastAPI APIRouter with POST /api/v1/chat endpoint. Import ChatRequest and ChatResponse from contracts (or define locally matching schema:ChatRequest/schema:ChatResponse). Import echo from src.services.echo. Endpoint validates request body against ChatRequest, calls echo(message), returns {'reply': result}. Acceptance: POST /api/v1/chat with {\"message\": \"test\"} returns 200 with {'reply': 'Echo: test'}, POST with missing message returns 422.",
+      "contracts": ["route:POST /api/v1/chat", "schema:ChatRequest", "schema:ChatResponse"],
+      "tests": [
+        "tests/test_chat_route.py::test_chat_echoes_message",
+        "tests/test_chat_route.py::test_chat_empty_message_echoed",
+        "tests/test_chat_route.py::test_chat_missing_message_is_validation_error"
+      ]
+    },
+    {
+      "id": "T3",
+      "file": "src/main.py",
+      "depends_on": ["T2"],
+      "brief": "Implement src/main.py: Create FastAPI app, include chat router from src.api.chat. Resolve src/static/index.html relative to this module's location (not cwd) and serve it at GET / with Content-Type: text/html. Expose app as module-level symbol src.main:app. Acceptance: GET / returns HTML content with Content-Type text/html, app is importable as src.main:app.",
+      "contracts": ["src.main:app", "route:GET /"],
+      "tests": [
+        "tests/test_page.py::test_root_serves_html_page"
+      ]
+    },
+    {
+      "id": "T4",
+      "file": "src/static/index.html",
+      "depends_on": ["T3"],
+      "brief": "Implement src/static/index.html: Self-contained HTML with inline CSS and JS. Render input field, on submit POST {\"message\": <text>} to /api/v1/chat. On response, append reply as chat bubble. Must contain literal endpoint path '/api/v1/chat'. Acceptance: HTML contains form/input, JS POSTs to /api/v1/chat, response reply is appended as bubble.",
+      "contracts": [],
+      "tests": ["tests/test_page.py::test_page_wires_chat_endpoint"],
+      "smoke_check": "Verify HTML file contains '/api/v1/chat' literal string and has form/input elements with JS POST logic."
+    }
+  ]
+}
