@@ -1,5 +1,4 @@
 from fastapi import APIRouter
-from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from src.services.llm import generate_reply
@@ -14,11 +13,6 @@ class ChatResponse(BaseModel):
 
 
 router = APIRouter()
-
-
-@router.get("/", response_class=HTMLResponse)
-async def root() -> HTMLResponse:
-    return HTMLResponse(content="<html><body>Available routes: /api/v1/chat</body></html>")
 
 
 @router.post("/api/v1/chat", response_model=ChatResponse)
