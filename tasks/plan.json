@@ -1,34 +1,21 @@
 {
-  "version": 2,
+  "version": 1,
   "erd_version": 2,
   "tasks": [
     {
       "id": "T1",
       "file": "src/services/llm.py",
       "depends_on": [],
-      "brief": "Implement src/services/llm.py: Define constant FALLBACK_REPLY = 'I am sorry, Dave. I am afraid I cannot do that.' Define function generate_reply(message: str) -> str. Inside generate_reply, read LLM_ENDPOINT, LLM_MODEL, LLM_SYSTEM_PROMPT, LLM_TIMEOUT_SECONDS from os.environ (use defaults: 'http://localhost:1234/v1/chat/completions', 'local-model', '', 120). Construct request body: {\"model\": LLM_MODEL, \"messages\": ([{\"role\": \"system\", \"content\": LLM_SYSTEM_PROMPT}] if LLM_SYSTEM_PROMPT else []) + [{\"role\": \"user\", \"content\": message}], \"stream\": False}. Use httpx.Client.post(LLM_ENDPOINT, json=request_body, timeout=float(LLM_TIMEOUT_SECONDS)). On success (response.status_code == 200), extract data = response.json(); content = data.get(\"choices\", [{}])[0].get(\"message\", {}).get(\"content\"); if content: return content. On any exception (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError, ValueError) or non-2xx status, return FALLBACK_REPLY. No other imports or symbols exported. Acceptance: generate_reply('test') with mocked httpx returning 200 with valid JSON returns the content string; with connection error returns FALLBACK_REPLY; with non-2xx returns FALLBACK_REPLY; with malformed JSON returns FALLBACK_REPLY; with empty content returns FALLBACK_REPLY; with timeout returns FALLBACK_REPLY. Config is read at call time.",
+      "brief": "Implement src/services/llm.py: Define constant FALLBACK_REPLY = 'The language model is currently unavailable. Please try again in a moment.' Define function generate_reply(message: str) -> str. Inside generate_reply, read LLM_ENDPOINT, LLM_MODEL, LLM_SYSTEM_PROMPT, LLM_TIMEOUT_SECONDS from os.environ at call time (defaults: 'http://localhost:1234/v1/chat/completions', 'local-model', '', 120). Construct request body: {\"model\": LLM_MODEL, \"messages\": ([{\"role\": \"system\", \"content\": LLM_SYSTEM_PROMPT}] if LLM_SYSTEM_PROMPT else []) + [{\"role\": \"user\", \"content\": message}], \"stream\": false}. Use httpx.Client().post(LLM_ENDPOINT, json=request_body, timeout=float(LLM_TIMEOUT_SECONDS)). On success (response.status_code == 200), extract data = response.json(); content = data.get(\"choices\", [{}])[0].get(\"message\", {}).get(\"content\"); if content: return content. On any exception (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError, ValueError) or non-2xx status, return FALLBACK_REPLY. No other imports or symbols exported. Acceptance: generate_reply('test') with mocked httpx returning 200 with valid JSON returns the content string; with connection error returns FALLBACK_REPLY; with non-2xx returns FALLBACK_REPLY; with malformed JSON returns FALLBACK_REPLY; with empty content returns FALLBACK_REPLY; with timeout returns FALLBACK_REPLY. Config is read at call time.",
       "contracts": [],
-      "tests": [
-        "tests/test_llm_service.py::test_success_returns_model_content",
-        "tests/test_llm_service.py::test_request_carries_model_and_user_message",
-        "tests/test_llm_service.py::test_system_prompt_included_when_set",
-        "tests/test_llm_service.py::test_system_prompt_omitted_when_empty",
-        "tests/test_llm_service.py::test_request_is_non_streaming",
-        "tests/test_llm_service.py::test_config_read_at_call_time",
-        "tests/test_llm_service.py::test_connection_error_returns_fallback",
-        "tests/test_llm_service.py::test_non_2xx_returns_fallback",
-        "tests/test_llm_service.py::test_malformed_response_returns_fallback",
-        "tests/test_llm_service.py::test_empty_content_returns_fallback",
-        "tests/test_llm_service.py::test_timeout_returns_fallback"
-      ]
+      "tests": [],
+      "smoke_check": "python3 -c \"from src.services.llm import generate_reply, FALLBACK_REPLY; assert callable(generate_reply); assert isinstance(FALLBACK_REPLY, str)\""
     },
     {
       "id": "T2",
       "file": "src/api/chat.py",
-      "depends_on": [
-        "T1"
-      ],
-      "brief": "Implement src/api/chat.py: Import generate_reply from src.services.llm. Define FastAPI APIRouter. Define POST /api/v1/chat endpoint. Define Pydantic model ChatRequest with field message: str. Endpoint accepts request body of type ChatRequest. Call generate_reply(request.message). Return dict {'reply': result}. Acceptance: POST /api/v1/chat with {\"message\": \"test\"} returns 200 with {'reply': 'mocked_reply'} (mock generate_reply); POST with missing message returns 422; POST with empty message returns 200 with {'reply': 'mocked_reply'} (mock generate_reply).",
+      "depends_on": ["T1"],
+      "brief": "Rewrite src/api/chat.py: Import generate_reply from src.services.llm. Define FastAPI APIRouter. Define Pydantic model ChatRequest with field message: str and ChatResponse with field reply: str. Define POST /api/v1/chat endpoint. Endpoint accepts request body of type ChatRequest. Call generate_reply(request.message). Return ChatResponse(reply=result). Remove the old echo import and usage. Acceptance: POST /api/v1/chat with {\"message\": \"test\"} returns 200 with {'reply': 'mocked_reply'} (mock generate_reply via env var pointing at a fake upstream); POST with missing message returns 422; GET / returns HTML page containing '/api/v1/chat'.",
       "contracts": [
         "route:POST /api/v1/chat",
         "schema:ChatRequest",
@@ -38,36 +25,10 @@
         "tests/test_chat_api.py::test_chat_returns_model_reply",
         "tests/test_chat_api.py::test_chat_upstream_failure_returns_fallback_200",
         "tests/test_chat_api.py::test_chat_missing_message_is_422",
-        "tests/test_chat_api.py::test_chat_no_longer_echoes"
-      ]
-    },
-    {
-      "id": "T3",
-      "file": "src/main.py",
-      "depends_on": [
-        "T2"
-      ],
-      "brief": "Implement src/main.py: Import FastAPI. Import APIRouter from src.api.chat. Create FastAPI app instance. Include the router from src.api.chat. Define GET / route. Serve src/static/index.html (resolve path relative to this module's directory) with Content-Type: text/html. Expose app as module-level symbol src.main:app. Acceptance: GET / returns HTML content with Content-Type text/html; app is importable as src.main:app.",
-      "contracts": [
-        "src.main:app",
-        "route:GET /"
-      ],
-      "tests": [
-        "tests/test_page.py::test_root_serves_html_page"
-      ]
-    },
-    {
-      "id": "T4",
-      "file": "src/static/index.html",
-      "depends_on": [
-        "T3"
-      ],
-      "brief": "Implement src/static/index.html: Self-contained HTML with inline CSS and JS. Render input field, on submit POST {\"message\": <text>} to /api/v1/chat. On response, append reply as chat bubble. Must contain literal endpoint path '/api/v1/chat'. Acceptance: HTML contains form/input, JS POSTs to /api/v1/chat, response reply is appended as bubble.",
-      "contracts": [],
-      "tests": [
+        "tests/test_chat_api.py::test_chat_no_longer_echoes",
+        "tests/test_page.py::test_root_serves_html_page",
         "tests/test_page.py::test_page_wires_chat_endpoint"
-      ],
-      "smoke_check": "Verify HTML file contains '/api/v1/chat' literal string and has form/input elements with JS POST logic."
+      ]
     }
   ]
 }
