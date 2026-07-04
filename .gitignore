@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Env / secrets
+.env
+.env.test
+.env.*.local
+
+# Test artifacts
+.cache/
+
+# Pipeline runtime state (crash recovery for the orchestrator)
+.pipeline-state/
+
+# EM consult output — consumed and archived by the orchestrator, never committed
+tasks/diagnosis.json
+
+# TPM delta staging — applied by refreeze.sh, never committed as-is
+scripts/.approved/incoming/
+
+# OpenCode session data (keep prompt files tracked)
+/.opencode/*
+!/.opencode/prompts/
+
+# Review working documents (session inputs at the repo root, not template content)
+/REVIEW.md
+
+# Generated outputs
+repomix-output.md
+repomix-output.*
+
+# OS
+.DS_Store
+blueprint-dryrun*/
+
+# TPM agent write lane — outbox is consumed by refreeze.sh, never committed
+.tpm/

@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Control-plane self-test: gate scripts are tested unconditionally — no
+  # skeleton guard, because these need no project src/ or requirements. The
+  # selftest_ (not test_) filename keeps it out of the frozen suite's bare
+  # `pytest` collection in orchestrate.sh/refreeze.sh.
+  selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pytest
+        run: pip install pytest
+      - name: Gate-script self-tests
+        run: pytest scripts/selftest/selftest_gates.py -q
+
+  test:
+    runs-on: ubuntu-latest
+    # NOTE: the skeleton guard is a STEP, not a job-level `if` — hashFiles()
+    # is not available in job-level expressions (no workspace exists yet);
+    # using it there makes the whole workflow file invalid (0s failure).
+    # --- Postgres for projects that need it (uncomment both blocks below) ---
+    # services:
+    #   postgres:
+    #     image: postgres:15
+    #     env:
+    #       POSTGRES_USER: testuser
+    #       POSTGRES_PASSWORD: testpass
+    #       POSTGRES_DB: testdb
+    #     options: >-
+    #       --health-cmd pg_isready
+    #       --health-interval 10s
+    #       --health-timeout 5s
+    #       --health-retries 5
+    #     ports:
+    #       - 5432:5432
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guard — skip bare template skeletons
+        id: guard
+        run: |
+          if [ -f requirements.txt ] && [ -d src ]; then
+            echo "run=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=no" >> "$GITHUB_OUTPUT"
+            echo "::notice::skeleton repo (no requirements.txt + src/ yet) — CI steps skipped"
+          fi
+      - name: Set up Python
+        if: steps.guard.outputs.run == 'yes'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install dependencies
+        if: steps.guard.outputs.run == 'yes'
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-cov pytest-json-report ruff mypy respx
+      - name: Lint
+        if: steps.guard.outputs.run == 'yes'
+        run: ruff check src/
+      - name: Type check
+        if: steps.guard.outputs.run == 'yes'
+        run: mypy src/
+      # If using Postgres, uncomment DATABASE_URL and the services block above:
+      # - name: Run tests
+      #   env:
+      #     DATABASE_URL: postgresql://testuser:testpass@localhost:5432/testdb
+      #   run: pytest --cov=src --cov-report=term-missing --cov-fail-under=80
+      - name: Run tests
+        if: steps.guard.outputs.run == 'yes'
+        run: pytest --cov=src --cov-report=term-missing --cov-fail-under=80 --json-report --json-report-file=.cache/test-report.json
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        if: always() && steps.guard.outputs.run == 'yes'
