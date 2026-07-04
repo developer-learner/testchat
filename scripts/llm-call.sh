@@ -86,6 +86,7 @@ body = {
     ],
     "temperature": 0.2,
     "stream": False,
+    "enable_thinking": False,
 }
 if schema_path:
     body["response_format"] = {
