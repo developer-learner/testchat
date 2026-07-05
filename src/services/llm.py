@@ -1,8 +1,8 @@
 import json
 import os
+import urllib.error
+import urllib.request
 from typing import Iterator, Tuple
-
-import httpx
 
 FALLBACK_REPLY = 'The language model is currently unavailable. Please try again in a moment.'
 
@@ -27,18 +27,25 @@ def stream_reply(message: str) -> Iterator[Tuple]:
     tokens_yielded = False
 
     try:
-        with httpx.Client() as client:
-            with client.stream(
-                "POST",
-                LLM_ENDPOINT,
-                json=request_body,
-                timeout=LLM_TIMEOUT_SECONDS,
-            ) as response:
-                if response.status_code != 200:
-                    yield ("error",)
-                    return
+        req = urllib.request.Request(
+            LLM_ENDPOINT,
+            json.dumps(request_body).encode(),
+            {"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=LLM_TIMEOUT_SECONDS) as response:
+            if response.status != 200:
+                yield ("error",)
+                return
 
-                for line in response.iter_lines():
+            buf = b""
+            while True:
+                chunk = response.fp.read1(4096)
+                if not chunk:
+                    break
+                buf += chunk
+                while b"\n" in buf:
+                    raw_line, buf = buf.split(b"\n", 1)
+                    line = raw_line.decode("utf-8", errors="replace").strip()
                     if not line.startswith("data: "):
                         continue
 
@@ -61,10 +68,10 @@ def stream_reply(message: str) -> Iterator[Tuple]:
                         yield ("error",)
                         return
 
-        # EOF without [DONE]
-        yield ("error",)
+        if not tokens_yielded:
+            yield ("error",)
 
-    except (httpx.HTTPError, ValueError):
+    except (urllib.error.URLError, ValueError, OSError):
         yield ("error",)
 
 

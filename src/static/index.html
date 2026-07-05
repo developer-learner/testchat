@@ -58,6 +58,16 @@
       border: 1px solid #ffcccc;
     }
 
+    .think-content {
+      display: none;
+      color: #888;
+      font-style: italic;
+    }
+
+    .show-thinking .think-content {
+      display: inline;
+    }
+
     .input-area {
       display: flex;
       padding: 1rem;
@@ -99,12 +109,32 @@
       background: #99c8ff;
       cursor: not-allowed;
     }
+
+    .think-toggle {
+      background: #e8e8e8;
+      color: #666;
+      border: 1px solid #ccc;
+      border-radius: 2rem;
+      padding: 0.75rem 0.9rem;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      min-width: 2.5rem;
+    }
+
+    .think-toggle.on {
+      background: #e0f0ff;
+      color: #0084ff;
+      border-color: #0084ff;
+    }
+
   </style>
 </head>
 <body>
   <div class="chat-container" id="chat-container"></div>
   <form class="input-area" id="chat-form">
     <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off" required />
+    <button type="button" class="think-toggle" id="think-toggle" title="Toggle thinking display">💭</button>
     <button type="submit" id="send-btn">Send</button>
   </form>
 
@@ -116,6 +146,9 @@
       var input = document.getElementById('message-input');
       var container = document.getElementById('chat-container');
       var sendBtn = document.getElementById('send-btn');
+      var thinkToggle = document.getElementById('think-toggle');
+      var showThinking = false;
+      var replyText = '';
 
       function appendBubble(text, type) {
         var bubble = document.createElement('div');
@@ -127,6 +160,20 @@
 
       function scrollToBottom() {
         container.scrollTop = container.scrollHeight;
+      }
+
+      function renderThink(text) {
+        var html = '';
+        var parts = text.split(/(<think>|<\/think>)/);
+        var inThink = false;
+        for (var i = 0; i < parts.length; i++) {
+          var part = parts[i];
+          if (part === '<think>') { inThink = true; continue; }
+          if (part === '</think>') { inThink = false; continue; }
+          var escaped = part.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          html += inThink ? '<span class="think-content">' + escaped + '</span>' : escaped;
+        }
+        return html;
       }
 
       form.addEventListener('submit', function (e) {
@@ -141,6 +188,7 @@
         var replyBubble = document.createElement('div');
         replyBubble.className = 'chat-bubble reply';
         container.appendChild(replyBubble);
+        replyText = '';
 
         fetch('/api/v1/chat', {
           method: 'POST',
@@ -177,16 +225,11 @@
             if (eventType === 'token') {
               try {
                 var parsed = JSON.parse(dataStr);
-                if (replyBubble.textContent) {
-                  replyBubble.textContent += ' ';
-                }
-                replyBubble.textContent += parsed.content;
+                replyText += parsed.content;
               } catch (err) {
-                if (replyBubble.textContent) {
-                  replyBubble.textContent += ' ';
-                }
-                replyBubble.textContent += dataStr;
+                replyText += dataStr;
               }
+              replyBubble.innerHTML = renderThink(replyText);
               scrollToBottom();
             } else if (eventType === 'done') {
               // Stream finalized; nothing more to append.
@@ -233,6 +276,12 @@
           sendBtn.disabled = false;
           input.focus();
         });
+      });
+
+      thinkToggle.addEventListener('click', function () {
+        showThinking = !showThinking;
+        thinkToggle.classList.toggle('on');
+        container.classList.toggle('show-thinking');
       });
 
       input.focus();

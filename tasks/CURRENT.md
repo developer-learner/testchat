@@ -9,19 +9,21 @@
 
 ## Active Feature
 
-**Feature:** M2 — Live LLM Proxy
-**Frozen spec version:** v2 (frozen)
-**Orchestrator state:** done (full suite green)
+**Feature:** M3 — Streaming SSE
+**Frozen spec version:** v3 (frozen)
+**Orchestrator state:** in_progress (19/19 tests green, CEO acceptance pending)
 **Branch:** `main`
 
 ---
 
 ## Latest Results
 
-**M2 (Live LLM Proxy)** — built and validated. All 17 frozen tests pass.
-- `src/services/llm.py` — new LLM proxy service with env-based config, httpx client, comprehensive error fallback
-- `src/api/chat.py` — updated to call `generate_reply` instead of echo
-- Pipeline ran coder (`qwen3.6-27b`) successfully; plan written manually
+**M3 (Streaming SSE)** — built and validated. All 19 frozen tests pass.
+- `src/services/llm.py` — `stream_reply` generator: urllib raw socket reads (`response.fp.read1(4096)`), SSE line parsing, `[DONE]` sentinel, error handling. `<think>` block stripping removed (think content streams to frontend for low-latency first token).
+- `src/api/chat.py` — `StreamingResponse` wrapping `stream_reply` as `text/event-stream` with `token`/`done`/`error` SSE events.
+- `src/static/index.html` — Consumes SSE stream via `ReadableStream.getReader()`, renders tokens with inline `<think>` block dimming.
+- Latency fix: replaced httpx with urllib `response.fp.read1()` — first-token latency dropped from ~24s to ~1.3s.
+- Think-block stripping removed (was causing 18s+ delay before any visible output since qwen3.6-27b emits long thinking traces).
 
 CEO acceptance pending (D-44).
 
@@ -37,8 +39,8 @@ None.
 
 Milestone plan:
 - M1: Echo chat — ✅ done
-- M2: Live LLM integration — ✅ done (CEO acceptance pending)
-- M3: Streaming (SSE) — token-by-token response
+- M2: Live LLM integration — ✅ done
+- M3: Streaming (SSE) — token-by-token response — ✅ built (CEO acceptance pending)
 - M4: Conversation history — full context sent to LLM
 
 ---
