@@ -1,163 +1,158 @@
-# PRD — testchat M3: Streaming LLM Proxy (SSE)
+PRD — testchat M4: Conversation History
+Milestone
+M4 (v4). Add multi-turn conversation context so the LLM sees the full
+exchange, not just the last message. The existing POST /api/v1/chat
+request body is extended with an optional history array — the prior turns
+the client has accumulated — which the backend inserts into the upstream
+messages array between the system prompt and the current user message. The
+frontend (src/static/index.html) tracks successful turns in memory and
+sends them on each subsequent request. No server-side storage, no
+persistence across page reloads. Done means: send a message, get a reply,
+send a follow-up referencing the first exchange, and the model's reply
+demonstrates awareness of the prior context.
+What
+POST /api/v1/chat with {"message": "<text>", "history": [...]}:
 
-## Milestone
-M3 (v3). Replace the non-streaming JSON reply from M2 with a token-by-token
-Server-Sent Events stream on the same `POST /api/v1/chat` route. The upstream
-request switches to `"stream": true`. The page (`src/static/index.html`) is
-updated in this milestone to consume the stream and render tokens live —
-the one deliberate exception to M1/M2's "frontend unchanged" invariant, made
-necessary by the feature itself. No conversation history (M4). No
-reconnection/resume of dropped streams. Sized as one milestone — see
-ERD → Milestone Justification. Done means: send a message, watch the reply
-appear incrementally as the model generates it (not one blob); kill the model
-mid-reply, see the partial text plus a fallback message appended, page
-doesn't error.
+history is an ordered array of prior conversation turns, each
+{"role": "user"|"assistant", "content": "<text>"}. Optional; defaults
+to [] when absent, producing M3-identical behavior.
+Validates the body: 422 on missing message (unchanged), and 422 on
+any history entry with a role other than "user" or "assistant",
+or missing role/content.
+Builds the upstream messages array as:
+[system prompt if LLM_SYSTEM_PROMPT is non-empty]
++ history entries in order
++ [current user message]
+— then streams the response identically to M3 (SSE framing, failure
+containment, terminal events all unchanged).
 
-## What
-`POST /api/v1/chat` with `{"message": "<text>"}`:
-- Validates the body (422 on missing `message`, unchanged).
-- Builds an OpenAI-compatible chat-completions request with `"stream": true`,
-  using the same `messages` construction rule as M2 (system prompt prepended
-  WHERE `LLM_SYSTEM_PROMPT` is non-empty, user message last).
-- Opens the upstream stream and responds to the client HTTP 200,
-  `Content-Type: text/event-stream`, before any content is known.
-- Forwards each upstream content increment as a `token` SSE event, in order.
-- On clean completion with at least one token emitted, sends one terminal
-  `done` event and closes. A clean completion that never emitted any content
-  is treated as a failure, not an empty success (see AC-7) — mirrors M2's
-  "empty content ⇒ fallback" rule.
-- On any other failure — pre-stream (unreachable, non-2xx, no first byte
-  within `LLM_TIMEOUT_SECONDS`) or mid-stream (connection drop, malformed
-  chunk) — emits one `error` event carrying `FALLBACK_REPLY` and closes. No
-  retry.
-- The M2 JSON response shape (`{"reply": str}`) is retired on this route;
-  nothing else in the repo depends on it.
+Frontend changes (in src/static/index.html):
 
-`GET /` is unchanged. `src/static/index.html` changes only its fetch/render
-logic: it opens the POST via `fetch()`, reads the response body as a stream,
-and appends `token` text to the active bubble live; on `done` it finalizes
-the bubble; on `error` it appends the error message to whatever's already
-rendered (empty string if nothing streamed yet) and stops the loading
-indicator.
+Maintains an in-memory array of conversation turns.
+On a successful turn (done event received): stores the user's message
+and the accumulated assistant response as history entries.
+On a failed turn (error event received): does NOT add either the user
+message or the partial/fallback response to the history array. The
+display is unchanged from M3 (error text is visible to the user), but the
+failed turn is excluded from future LLM context.
+Sends the accumulated history array with every POST /api/v1/chat.
+Page refresh clears the array — conversation starts fresh.
 
-## Fixed constants
-- **FALLBACK_REPLY** = `"The language model is currently unavailable. Please try again in a moment."`
-  (unchanged from M2, now delivered via an `error` event instead of a 200
-  JSON body).
+All M3 streaming mechanics are preserved: SSE wire contract
+(token/done/error), failure containment (C-2), env-var resolution at
+request time (C-3), sync generator posture (C-4), layering (C-6), one
+terminal event rule (C-7). The only surface change to the route is the
+expanded request body.
+Fixed constants
 
-## SSE wire contract
-Each frame is standard SSE (`event: <name>\ndata: <json>\n\n`):
-- `event: token`, `data: {"content": "<text>"}` — one per non-empty increment.
-- `event: done`, `data: {}` — terminal, success path only, requires ≥1 prior
-  `token` event (AC-7).
-- `event: error`, `data: {"message": "<text>"}` — terminal, failure path
-  only. Mutually exclusive with `done` on a given request; `token` events
-  may precede either.
+FALLBACK_REPLY = "The language model is currently unavailable. Please try again in a moment."
+(unchanged — still delivered via an error SSE event).
 
-## Acceptance Criteria (EARS notation)
-Backend clauses are pytest-verified; frontend clauses are CEO-demo-verified
-(D-44 — no JS harness exists in this project).
+SSE wire contract
+Unchanged from M3:
 
-- **AC-1:** WHEN a client POSTs to `/api/v1/chat` with a valid
-  `{"message": <text>}` body, THE SYSTEM SHALL respond HTTP 200 with
-  `Content-Type: text/event-stream`, opened before any upstream content is
-  known.
-- **AC-2:** WHEN handling a chat request, THE SYSTEM SHALL POST to
-  `LLM_ENDPOINT` a JSON body whose `model` equals `LLM_MODEL`, whose `stream`
-  is `true`, and whose `messages` contains the user's message as the final
-  `user`-role message.
-- **AC-3:** WHERE `LLM_SYSTEM_PROMPT` is non-empty, THE SYSTEM SHALL include
-  it as the first `messages` element with role `system`.
-- **AC-4:** WHERE `LLM_SYSTEM_PROMPT` is empty or unset, THE SYSTEM SHALL NOT
-  include any `system`-role message.
-- **AC-5:** WHEN the upstream emits a chunk containing non-empty delta
-  content, THE SYSTEM SHALL forward it to the client as a `token` SSE event
-  whose `content` equals that increment, in arrival order.
-- **AC-6:** WHEN the upstream stream ends cleanly after at least one token
-  was emitted, THE SYSTEM SHALL send exactly one terminal `done` event and
-  close the connection.
-- **AC-7:** IF the upstream stream ends cleanly having emitted zero token
-  events, THEN THE SYSTEM SHALL emit a single `error` event (message =
-  `FALLBACK_REPLY`) instead of `done`.
-- **AC-8:** THE SYSTEM SHALL resolve `LLM_ENDPOINT`, `LLM_MODEL`,
-  `LLM_SYSTEM_PROMPT`, and `LLM_TIMEOUT_SECONDS` from the environment at
-  request-handling time, not at import time.
-- **AC-9:** IF the configured endpoint is unreachable, THEN THE SYSTEM SHALL
-  emit a single `error` event with `message` = `FALLBACK_REPLY`, preceded by
-  no `token` events, and close.
-- **AC-10:** IF the upstream returns a non-2xx status before streaming
-  begins, THEN THE SYSTEM SHALL emit a single `error` event with `message` =
-  `FALLBACK_REPLY`, preceded by no `token` events, and close.
-- **AC-11:** IF the upstream sends no first byte within
-  `LLM_TIMEOUT_SECONDS`, THEN THE SYSTEM SHALL abort and emit a single
-  `error` event with `message` = `FALLBACK_REPLY`, preceded by no `token`
-  events, and close.
-- **AC-12:** IF the upstream connection drops or sends malformed/unparseable
-  data after one or more `token` events have already been emitted, THEN THE
-  SYSTEM SHALL emit an `error` event with `message` = `FALLBACK_REPLY` and
-  close, without retry.
-- **AC-13:** WHEN a client POSTs to `/api/v1/chat` with a body missing the
-  `message` field, THE SYSTEM SHALL respond HTTP 422 without opening an SSE
-  stream (unchanged from M1/M2).
-- **AC-14 (frontend, demo):** WHEN the page receives a `token` event, THE
-  SYSTEM SHALL append its `content` to the active reply bubble, in receipt
-  order.
-- **AC-15 (frontend, demo):** WHEN the page receives a `done` event, THE
-  SYSTEM SHALL stop the loading indicator and finalize the bubble.
-- **AC-16 (frontend, demo):** WHEN the page receives an `error` event, THE
-  SYSTEM SHALL append its `message` to whatever is already rendered in the
-  active bubble (empty string if no tokens preceded it) and stop the loading
-  indicator.
+event: token, data: {"content": "<text>"} — one per non-empty increment.
+event: done, data: {} — terminal, success path, requires ≥1 prior token.
+event: error, data: {"message": "<text>"} — terminal, failure path.
 
-## Out of Scope
-- Multi-turn conversation history (M4).
-- Automatic reconnection/resume of an interrupted stream — a dropped
-  connection ends the turn; the user re-sends to retry.
-- Graceful mid-stream cancellation on client disconnect (tab close,
-  navigation) — the server-side request runs to completion regardless;
-  resource cleanup on disconnect is deferred.
-- Per-chunk idle timeout — `LLM_TIMEOUT_SECONDS` bounds time-to-first-byte
-  only (see A2); a stalled-but-connected stream isn't separately bounded
-  this milestone.
-- Retries, backoff, circuit-breaking, rate limiting.
-- Auth to the LLM endpoint beyond M2's existing posture.
-- Any change to `GET /`, the request shape `{"message": str}`, or page
-  markup/layout beyond the fetch/render logic.
+Acceptance Criteria (EARS notation)
+M3 backend acceptance criteria (AC-1 through AC-13) remain in force — all
+streaming, failure-handling, and validation behavior is preserved. The
+criteria below are additive; where they touch the upstream messages array,
+they extend the M3 construction rule.
+Backend (pytest-verified):
 
-## Flagged Assumptions (CEO sign-off before freeze)
-- **A1 (load-bearing, CEO-confirmed):** `POST /api/v1/chat` is replaced in
-  place — the M2 JSON response shape is retired on this route, not preserved
-  on a parallel endpoint.
-- **A2 (load-bearing):** `LLM_TIMEOUT_SECONDS` is redefined from "total
-  request timeout" (M2) to "time-to-first-byte" (M3) — same env var name,
-  new meaning.
-- **A3:** `src/static/index.html` re-enters the build inventory this
-  milestone — the one deliberate exception to M1/M2's "frontend unchanged"
-  invariant, required by the feature itself. Only fetch/render JS changes;
-  markup/layout untouched.
-- **A4:** The backend re-frames the upstream's OpenAI-style delta JSON into
-  the minimal `token`/`done`/`error` contract above, rather than passing
-  upstream's raw chunks through — decouples the frontend from the upstream's
-  wire format.
-- **A5 (CEO-confirmed):** On a mid-stream error, the fallback message is
-  appended after any partial text already rendered, not a replacement of it.
-- **A6:** M2's `generate_reply` entry point is removed and replaced by a
-  streaming equivalent (`stream_reply`, see ERD). Confirm nothing else in
-  the repo imports the old signature.
-- **A7:** No new env vars introduced; the existing four (`LLM_ENDPOINT`,
-  `LLM_MODEL`, `LLM_SYSTEM_PROMPT`, `LLM_TIMEOUT_SECONDS`) suffice.
-- **A8:** A clean upstream completion that emits zero content (straight to
-  `[DONE]`, nothing sent) is treated as a failure (`error` + `FALLBACK_REPLY`),
-  not rendered as an empty successful bubble — mirrors M2's empty-content
-  fallback rule under the new streaming shape.
+AC-1: WHEN a client POSTs with a valid message and a non-empty
+history array, THE SYSTEM SHALL include the history entries in the
+messages array sent to LLM_ENDPOINT, preserving their order.
+AC-2: WHERE LLM_SYSTEM_PROMPT is non-empty AND history is
+non-empty, THE SYSTEM SHALL construct the upstream messages as:
+system-prompt message, then history entries in order, then the current
+user message — in that exact sequence.
+AC-3: WHERE LLM_SYSTEM_PROMPT is empty or unset AND history is
+non-empty, THE SYSTEM SHALL construct the upstream messages as:
+history entries in order, then the current user message — no system
+message present.
+AC-4: WHEN history is absent from the request body OR is an empty
+array, THE SYSTEM SHALL construct the upstream messages identically to
+M3 (system prompt if set, then current user message only).
+AC-5: WHEN history contains an entry whose role is not "user"
+or "assistant", THE SYSTEM SHALL respond HTTP 422 without opening an
+SSE stream.
+AC-6: WHEN history contains an entry missing the role or
+content field, THE SYSTEM SHALL respond HTTP 422 without opening an
+SSE stream.
+AC-7: All M3 acceptance criteria governing SSE streaming (AC-1
+through AC-12 of M3) and validation (M3 AC-13) remain in force,
+unchanged by the addition of history.
 
-## CEO Demo Script
-1. Start LM Studio (or any OpenAI-compatible server) on `:1234` with a
-   streaming-capable model loaded.
-2. Run the app, open the page, send a message with a longer expected reply —
-   confirm text appears incrementally, not as one blob.
-3. Mid-reply, stop the model server — confirm the bubble keeps whatever
-   streamed so far, the fallback message is appended after it, and the page
-   doesn't error.
-4. Stop the model server before sending — send a message — confirm the
-   bubble shows only the fallback message (no partial content).
+Frontend (CEO-demo-verified):
+
+AC-8: WHEN a turn completes successfully (done event received),
+THE SYSTEM SHALL store the user's message (role "user") and the
+accumulated assistant response (role "assistant") in the conversation
+history, and include them in subsequent requests.
+AC-9: WHEN a turn fails (error event received, whether or not
+token events preceded it), THE SYSTEM SHALL NOT add the failed turn to
+the conversation history sent on subsequent requests. Display behavior
+is unchanged from M3 (the error/partial content remains visible).
+AC-10: WHEN the page is refreshed or reloaded, THE SYSTEM SHALL
+start with an empty conversation history.
+AC-11: WHEN the user sends a follow-up message that references
+information from a prior successful turn, THE MODEL'S response SHALL
+demonstrate awareness of that prior context.
+
+Out of Scope
+
+Server-side conversation storage or persistence (database, file, session
+store). History is client-managed and transient.
+Browser-level persistence (localStorage, sessionStorage, IndexedDB). Page
+refresh clears conversation.
+Conversation management UI (new-chat button, multiple conversations,
+clear-history button). Refresh is the clear mechanism.
+Context-window management (truncation, summarization, sliding window).
+If the accumulated history exceeds the LLM's context limit, the existing
+error-handling path (fallback message) applies.
+Editing, deleting, or regenerating individual messages.
+Enforcing strict user/assistant alternation in the history array.
+Validation ensures type correctness (role enum, content present); ordering
+is the client's responsibility.
+Any change to GET /, page markup/layout, SSE wire format, or failure
+handling beyond what is specified above.
+
+Flagged Assumptions (CEO sign-off before freeze)
+
+A1 (load-bearing): History is client-managed. The server is stateless
+— it receives, validates, and forwards history; it does not store it.
+Page refresh or tab close loses the conversation. This is the simplest
+design that delivers multi-turn; persistence is a clean future milestone.
+A2: Only successful turns (done received) enter the history array.
+Error turns are displayed but excluded from future LLM context — the
+fallback message is system chrome, not model output.
+A3: No maximum history length is enforced at the server or client.
+If the conversation grows beyond the LLM's context window, the upstream
+will error, and the existing error-handling path applies.
+A4: The history field is optional with a default of []. A client
+sending an M3-shaped request (no history key) gets M3-identical
+behavior — backward compatible.
+A5: The server does not enforce strict user/assistant alternation in
+history. It validates types only. Non-alternating history is unlikely
+in normal use (the frontend alternates naturally) and not harmful if
+it occurs.
+
+CEO Demo Script
+
+Start LM Studio (or any OpenAI-compatible server) on :1234 with a
+model loaded.
+Run the app, open the page, send: "My name is Alice." — confirm a
+normal streamed reply.
+Send: "What is my name?" — confirm the model replies with awareness of
+"Alice" (proving it received the prior turn as context).
+Continue a few more turns referencing earlier content — confirm
+coherent multi-turn behavior.
+Refresh the page. Send: "What is my name?" — confirm the model does NOT
+know (proving history was cleared on refresh).
+Stop the model server mid-reply — confirm the partial text plus
+fallback appears (M3 behavior preserved). Then send a new message after
+restarting the server — confirm the failed turn is NOT in the
+conversation context (the model doesn't reference the partial reply).

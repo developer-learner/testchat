@@ -1,25 +1,26 @@
 {
-  "erd_version": 3,
-  "files": [
-    "src/services/llm.py",
-    "src/api/chat.py",
-    "src/static/index.html"
-  ],
-  "entry_points": [
-    "src.main:app",
-    "src.services.llm:stream_reply"
-  ],
-  "routes": [
-    { "id": "route:GET /", "method": "GET", "path": "/" },
-    { "id": "route:POST /api/v1/chat", "method": "POST", "path": "/api/v1/chat" }
-  ],
-  "schemas": [
-    { "id": "schema:ChatRequest", "fields": { "message": "string" } },
-    { "id": "schema:SSEToken", "fields": { "event": "literal 'token'", "content": "string" } },
-    { "id": "schema:SSEDone", "fields": { "event": "literal 'done'" } },
-    { "id": "schema:SSEError", "fields": { "event": "literal 'error'", "message": "string" } }
-  ],
-  "errors": [
-    { "id": "error:422-validation", "status": 422 }
-  ]
+"erd_version": 4,
+"files": [
+"src/services/llm.py",
+"src/api/chat.py",
+"src/static/index.html"
+],
+"entry_points": [
+"src.main:app",
+"src.services.llm:stream_reply"
+],
+"routes": [
+{ "id": "route:GET /", "method": "GET", "path": "/" },
+{ "id": "route:POST /api/v1/chat", "method": "POST", "path": "/api/v1/chat" }
+],
+"schemas": [
+{ "id": "schema:ChatRequest", "fields": { "message": "string", "history": "array of HistoryEntry, optional, default []" } },
+{ "id": "schema:HistoryEntry", "fields": { "role": "string, literal 'user' or 'assistant'", "content": "string" } },
+{ "id": "schema:SSEToken", "fields": { "event": "literal 'token'", "content": "string" } },
+{ "id": "schema:SSEDone", "fields": { "event": "literal 'done'" } },
+{ "id": "schema:SSEError", "fields": { "event": "literal 'error'", "message": "string" } }
+],
+"errors": [
+{ "id": "error:422-validation", "status": 422 }
+]
 }

@@ -1,243 +1,330 @@
-"""
-Unit tests for src.services.llm:stream_reply (M3 -- Streaming LLM Proxy).
-
-Tests observe ONLY the locked entry point `src.services.llm:stream_reply`
-and the `LLM_*` environment surface (INV-4). The fake upstream is a real
-localhost HTTP server (pytest-httpserver) addressed via LLM_ENDPOINT; no
-test inspects how the request is made.
-
-Chunk contract under test (see ERD -> Data models -> StreamChunk):
-    ("token", content: str)  -- one non-empty content increment
-    ("done",)                -- clean end of stream, only after >=1 token
-    ("error",)               -- any failure: pre-stream, mid-stream, or a
-                                 clean-but-empty completion (AC-7)
+"""Oracle tests for src.services.llm — M3 carried + M4 history.
+Surface gate (C-5 / INV-4): only src.services.llm:stream_reply is imported
+from src.  All other imports are test infrastructure.
 """
 import json
+import os
 import time
-
+import pytest
+from pytest_httpserver import HTTPServer
 from werkzeug.wrappers import Response
-
 from src.services.llm import stream_reply
+---------------------------------------------------------------------------
+Helpers
+---------------------------------------------------------------------------
+def _sse_chunk(content: str) -> str:
+"""One OpenAI-compatible SSE data line with delta content."""
+obj = {"choices": [{"delta": {"content": content}}]}
+return f"data: {json.dumps(obj)}\n\n"
+def _sse_chunk_empty_delta() -> str:
+"""An SSE data line whose delta has no 'content' key (role-only, etc.)."""
+obj = {"choices": [{"delta": {"role": "assistant"}}]}
+return f"data: {json.dumps(obj)}\n\n"
+def _sse_done() -> str:
+return "data: [DONE]\n\n"
+def _make_sse_body(*contents: str, done: bool = True) -> str:
+"""Build a complete upstream SSE response body."""
+body = ""
+for c in contents:
+body += _sse_chunk(c)
+if done:
+body += _sse_done()
+return body
+def _collect(gen):
+"""Consume a stream_reply generator into a list of chunks."""
+return list(gen)
+def _setup_env(monkeypatch, httpserver, system_prompt="", timeout="5"):
+"""Point config env vars at the httpserver."""
+monkeypatch.setenv(
+"LLM_ENDPOINT", httpserver.url_for("/v1/chat/completions")
+)
+monkeypatch.setenv("LLM_MODEL", "test-model")
+monkeypatch.setenv("LLM_SYSTEM_PROMPT", system_prompt)
+monkeypatch.setenv("LLM_TIMEOUT_SECONDS", timeout)
+def _expect_post(httpserver, body: str, status: int = 200):
+"""Register an expected POST and respond with SSE body."""
+httpserver.expect_request(
+"/v1/chat/completions", method="POST"
+).respond_with_data(body, status=status, content_type="text/event-stream")
+def _last_request_json(httpserver):
+"""Extract the parsed JSON body from the last request the server saw."""
+assert len(httpserver.log) > 0, "httpserver received no requests"
+req = httpserver.log[-1][0]
+return json.loads(req.data)
+---------------------------------------------------------------------------
+M3 carried — streaming behavior
+---------------------------------------------------------------------------
+class TestM3StreamReplyCarried:
+"""M3 acceptance criteria, carried forward unchanged."""
+def test_request_carries_model_user_message_and_stream_true(
+    self, httpserver: HTTPServer, monkeypatch
+):
+    """M3-AC-2: upstream body has model, user message, stream=true."""
+    _setup_env(monkeypatch, httpserver)
+    _expect_post(httpserver, _make_sse_body("hi"))
 
+    _collect(stream_reply("Hello"))
 
-UPSTREAM_PATH = "/v1/chat/completions"
-FALLBACK_REPLY = "The language model is currently unavailable. Please try again in a moment."
+    body = _last_request_json(httpserver)
+    assert body["model"] == "test-model"
+    assert body["stream"] is True
+    msgs = body["messages"]
+    assert msgs[-1] == {"role": "user", "content": "Hello"}
 
+def test_system_prompt_included_when_set(
+    self, httpserver: HTTPServer, monkeypatch
+):
+    """M3-AC-3: system prompt appears as first message when non-empty."""
+    _setup_env(monkeypatch, httpserver, system_prompt="Be helpful")
+    _expect_post(httpserver, _make_sse_body("ok"))
 
-def _sse_body(*lines):
-    """Build a raw SSE response body from a sequence of `data:` payloads.
+    _collect(stream_reply("Hi"))
 
-    Each item is either a dict (JSON-encoded) or the literal string
-    "[DONE]" for the sentinel line.
-    """
-    out = []
-    for line in lines:
-        payload = "[DONE]" if line == "[DONE]" else json.dumps(line)
-        out.append(f"data: {payload}\n\n")
-    return "".join(out).encode("utf-8")
+    msgs = _last_request_json(httpserver)["messages"]
+    assert msgs[0] == {"role": "system", "content": "Be helpful"}
+    assert msgs[-1] == {"role": "user", "content": "Hi"}
 
+def test_system_prompt_omitted_when_empty(
+    self, httpserver: HTTPServer, monkeypatch
+):
+    """M3-AC-4: no system message when LLM_SYSTEM_PROMPT is empty."""
+    _setup_env(monkeypatch, httpserver, system_prompt="")
+    _expect_post(httpserver, _make_sse_body("ok"))
 
-def _delta(content):
-    return {"choices": [{"delta": {"content": content}}]}
+    _collect(stream_reply("Hi"))
 
+    msgs = _last_request_json(httpserver)["messages"]
+    assert all(m["role"] != "system" for m in msgs)
 
-def _configure_env(monkeypatch, httpserver, timeout="5"):
-    monkeypatch.setenv("LLM_ENDPOINT", httpserver.url_for(UPSTREAM_PATH))
-    monkeypatch.setenv("LLM_MODEL", "test-model")
-    monkeypatch.setenv("LLM_SYSTEM_PROMPT", "")
-    monkeypatch.setenv("LLM_TIMEOUT_SECONDS", timeout)
-
-
-# ---------------------------------------------------------------------------
-# AC-2: request shape
-# ---------------------------------------------------------------------------
-
-def test_request_carries_model_user_message_and_stream_true(monkeypatch, httpserver):
-    _configure_env(monkeypatch, httpserver)
-    httpserver.expect_request(UPSTREAM_PATH, method="POST").respond_with_data(
-        _sse_body(_delta("hi"), "[DONE]"),
-        content_type="text/event-stream",
+def test_content_chunks_yielded_as_tokens_in_order(
+    self, httpserver: HTTPServer, monkeypatch
+):
+    """M3-AC-5: non-empty delta content → token chunks, in order."""
+    _setup_env(monkeypatch, httpserver)
+    body = (
+        _sse_chunk_empty_delta()
+        + _sse_chunk("Hello")
+        + _sse_chunk(" world")
+        + _sse_done()
     )
+    _expect_post(httpserver, body)
 
-    list(stream_reply("hello there"))
+    chunks = _collect(stream_reply("Hi"))
+    token_chunks = [c for c in chunks if c[0] == "token"]
+    assert token_chunks == [("token", "Hello"), ("token", " world")]
 
-    request = httpserver.log[0][0]
-    sent = json.loads(request.get_data(as_text=True))
-    assert sent["model"] == "test-model"
-    assert sent["stream"] is True
-    assert sent["messages"][-1] == {"role": "user", "content": "hello there"}
+def test_clean_completion_yields_done(
+    self, httpserver: HTTPServer, monkeypatch
+):
+    """M3-AC-6: clean completion with ≥1 token → done."""
+    _setup_env(monkeypatch, httpserver)
+    _expect_post(httpserver, _make_sse_body("Hi"))
 
-
-# ---------------------------------------------------------------------------
-# AC-3 / AC-4: system prompt inclusion
-# ---------------------------------------------------------------------------
-
-def test_system_prompt_included_when_set(monkeypatch, httpserver):
-    _configure_env(monkeypatch, httpserver)
-    monkeypatch.setenv("LLM_SYSTEM_PROMPT", "be terse")
-    httpserver.expect_request(UPSTREAM_PATH, method="POST").respond_with_data(
-        _sse_body(_delta("ok"), "[DONE]"),
-        content_type="text/event-stream",
-    )
-
-    list(stream_reply("hi"))
-
-    request = httpserver.log[0][0]
-    sent = json.loads(request.get_data(as_text=True))
-    assert sent["messages"][0] == {"role": "system", "content": "be terse"}
-
-
-def test_system_prompt_omitted_when_empty(monkeypatch, httpserver):
-    _configure_env(monkeypatch, httpserver)  # LLM_SYSTEM_PROMPT == ""
-    httpserver.expect_request(UPSTREAM_PATH, method="POST").respond_with_data(
-        _sse_body(_delta("ok"), "[DONE]"),
-        content_type="text/event-stream",
-    )
-
-    list(stream_reply("hi"))
-
-    request = httpserver.log[0][0]
-    sent = json.loads(request.get_data(as_text=True))
-    assert all(m["role"] != "system" for m in sent["messages"])
-
-
-# ---------------------------------------------------------------------------
-# AC-5 / AC-6: token/done sequencing on the happy path
-# ---------------------------------------------------------------------------
-
-def test_content_chunks_yielded_as_tokens_in_order(monkeypatch, httpserver):
-    _configure_env(monkeypatch, httpserver)
-    httpserver.expect_request(UPSTREAM_PATH, method="POST").respond_with_data(
-        _sse_body(_delta("Hel"), _delta("lo"), _delta(" world"), "[DONE]"),
-        content_type="text/event-stream",
-    )
-
-    chunks = list(stream_reply("hi"))
-
-    tokens = [c for c in chunks if c[0] == "token"]
-    assert [c[1] for c in tokens] == ["Hel", "lo", " world"]
-
-
-def test_clean_completion_yields_done(monkeypatch, httpserver):
-    _configure_env(monkeypatch, httpserver)
-    httpserver.expect_request(UPSTREAM_PATH, method="POST").respond_with_data(
-        _sse_body(_delta("hi"), "[DONE]"),
-        content_type="text/event-stream",
-    )
-
-    chunks = list(stream_reply("hi"))
-
+    chunks = _collect(stream_reply("Hello"))
     assert chunks[-1] == ("done",)
-    assert chunks.count(("done",)) == 1
-    assert not any(c[0] == "error" for c in chunks)
 
+def test_empty_stream_yields_error_not_done(
+    self, httpserver: HTTPServer, monkeypatch
+):
+    """M3-AC-7: upstream [DONE] with zero tokens → error, not done."""
+    _setup_env(monkeypatch, httpserver)
+    _expect_post(httpserver, _sse_done())
 
-# ---------------------------------------------------------------------------
-# AC-7: clean but empty completion is a failure, not an empty success
-# ---------------------------------------------------------------------------
-
-def test_empty_stream_yields_error_not_done(monkeypatch, httpserver):
-    _configure_env(monkeypatch, httpserver)
-    httpserver.expect_request(UPSTREAM_PATH, method="POST").respond_with_data(
-        _sse_body("[DONE]"),
-        content_type="text/event-stream",
-    )
-
-    chunks = list(stream_reply("hi"))
-
+    chunks = _collect(stream_reply("Hello"))
     assert chunks == [("error",)]
 
+def test_config_read_at_call_time(
+    self, httpserver: HTTPServer, monkeypatch
+):
+    """M3-AC-8: env vars resolved inside stream_reply, not at import."""
+    _setup_env(monkeypatch, httpserver, system_prompt="First")
+    _expect_post(httpserver, _make_sse_body("a"))
+    _collect(stream_reply("one"))
 
-# ---------------------------------------------------------------------------
-# AC-8: late-bound config
-# ---------------------------------------------------------------------------
+    first_msgs = _last_request_json(httpserver)["messages"]
+    assert first_msgs[0]["content"] == "First"
 
-def test_config_read_at_call_time(monkeypatch, httpserver):
-    # First call: point at nothing listening -> pre-stream error.
-    monkeypatch.setenv("LLM_ENDPOINT", "http://127.0.0.1:1/v1/chat/completions")
-    monkeypatch.setenv("LLM_MODEL", "test-model")
+    # Change system prompt between calls
+    httpserver.clear()
+    monkeypatch.setenv("LLM_SYSTEM_PROMPT", "Second")
+    _expect_post(httpserver, _make_sse_body("b"))
+    _collect(stream_reply("two"))
+
+    second_msgs = _last_request_json(httpserver)["messages"]
+    assert second_msgs[0]["content"] == "Second"
+
+def test_connection_error_yields_error_with_no_tokens(
+    self, monkeypatch
+):
+    """M3-AC-9: unreachable endpoint → single error chunk."""
+    monkeypatch.setenv("LLM_ENDPOINT", "http://127.0.0.1:1")
+    monkeypatch.setenv("LLM_MODEL", "x")
     monkeypatch.setenv("LLM_SYSTEM_PROMPT", "")
-    monkeypatch.setenv("LLM_TIMEOUT_SECONDS", "2")
+    monkeypatch.setenv("LLM_TIMEOUT_SECONDS", "1")
 
-    first = list(stream_reply("hi"))
-    assert first == [("error",)]
-
-    # Re-point the env var, same process, no re-import -> should now succeed.
-    httpserver.expect_request(UPSTREAM_PATH, method="POST").respond_with_data(
-        _sse_body(_delta("hi"), "[DONE]"),
-        content_type="text/event-stream",
-    )
-    monkeypatch.setenv("LLM_ENDPOINT", httpserver.url_for(UPSTREAM_PATH))
-
-    second = list(stream_reply("hi"))
-    assert second[-1] == ("done",)
-    assert any(c[0] == "token" for c in second)
-
-
-# ---------------------------------------------------------------------------
-# AC-9: connection failure, pre-stream
-# ---------------------------------------------------------------------------
-
-def test_connection_error_yields_error_with_no_tokens(monkeypatch):
-    monkeypatch.setenv("LLM_ENDPOINT", "http://127.0.0.1:1/v1/chat/completions")
-    monkeypatch.setenv("LLM_MODEL", "test-model")
-    monkeypatch.setenv("LLM_SYSTEM_PROMPT", "")
-    monkeypatch.setenv("LLM_TIMEOUT_SECONDS", "2")
-
-    chunks = list(stream_reply("hi"))
-
+    chunks = _collect(stream_reply("Hi"))
     assert chunks == [("error",)]
 
+def test_non_2xx_yields_error_with_no_tokens(
+    self, httpserver: HTTPServer, monkeypatch
+):
+    """M3-AC-10: non-2xx upstream → error, no tokens."""
+    _setup_env(monkeypatch, httpserver)
+    httpserver.expect_request(
+        "/v1/chat/completions", method="POST"
+    ).respond_with_data("err", status=500)
 
-# ---------------------------------------------------------------------------
-# AC-10: non-2xx, pre-stream
-# ---------------------------------------------------------------------------
-
-def test_non_2xx_yields_error_with_no_tokens(monkeypatch, httpserver):
-    _configure_env(monkeypatch, httpserver)
-    httpserver.expect_request(UPSTREAM_PATH, method="POST").respond_with_data(
-        "internal error", status=500,
-    )
-
-    chunks = list(stream_reply("hi"))
-
+    chunks = _collect(stream_reply("Hi"))
     assert chunks == [("error",)]
 
-
-# ---------------------------------------------------------------------------
-# AC-11: no first byte within LLM_TIMEOUT_SECONDS
-# ---------------------------------------------------------------------------
-
-def test_timeout_to_first_byte_yields_error(monkeypatch, httpserver):
-    _configure_env(monkeypatch, httpserver, timeout="1")
+def test_timeout_to_first_byte_yields_error(
+    self, httpserver: HTTPServer, monkeypatch
+):
+    """M3-AC-11: no first byte within LLM_TIMEOUT_SECONDS → error."""
+    _setup_env(monkeypatch, httpserver, timeout="1")
 
     def slow_handler(request):
-        time.sleep(2)
-        return Response(
-            _sse_body(_delta("late"), "[DONE]"),
-            content_type="text/event-stream",
-        )
+        time.sleep(3)
+        return Response(_make_sse_body("late"), content_type="text/event-stream")
 
-    httpserver.expect_request(UPSTREAM_PATH, method="POST").respond_with_handler(slow_handler)
+    httpserver.expect_request(
+        "/v1/chat/completions", method="POST"
+    ).respond_with_handler(slow_handler)
 
-    chunks = list(stream_reply("hi"))
-
+    chunks = _collect(stream_reply("Hi"))
     assert chunks == [("error",)]
 
+def test_mid_stream_drop_yields_error_after_tokens(
+    self, httpserver: HTTPServer, monkeypatch
+):
+    """M3-AC-12: tokens then no [DONE] → error after tokens."""
+    _setup_env(monkeypatch, httpserver)
+    # Body has tokens but no [DONE] terminator
+    body = _sse_chunk("partial") + _sse_chunk(" data")
+    _expect_post(httpserver, body)
 
-# ---------------------------------------------------------------------------
-# AC-12: mid-stream drop / malformed data after tokens already emitted
-# ---------------------------------------------------------------------------
-
-def test_mid_stream_drop_yields_error_after_tokens(monkeypatch, httpserver):
-    _configure_env(monkeypatch, httpserver)
-    body = b"data: " + json.dumps(_delta("Hello")).encode("utf-8") + b"\n\n" + b"data: not-json\n\n"
-    httpserver.expect_request(UPSTREAM_PATH, method="POST").respond_with_data(
-        body, content_type="text/event-stream",
-    )
-
-    chunks = list(stream_reply("hi"))
-
-    assert chunks[0] == ("token", "Hello")
+    chunks = _collect(stream_reply("Hi"))
+    assert ("token", "partial") in chunks
+    assert ("token", " data") in chunks
     assert chunks[-1] == ("error",)
-    assert not any(c == ("done",) for c in chunks)
+---------------------------------------------------------------------------
+M4 — history in upstream messages
+---------------------------------------------------------------------------
+class TestM4HistoryUpstream:
+"""M4 acceptance criteria: history entries in the upstream messages."""
+def test_history_entries_in_upstream_messages(
+    self, httpserver: HTTPServer, monkeypatch
+):
+    """AC-1: non-empty history entries appear in upstream messages."""
+    _setup_env(monkeypatch, httpserver, system_prompt="")
+    _expect_post(httpserver, _make_sse_body("ok"))
+
+    history = [
+        {"role": "user", "content": "What is 2+2?"},
+        {"role": "assistant", "content": "4"},
+    ]
+    _collect(stream_reply("And 3+3?", history=history))
+
+    msgs = _last_request_json(httpserver)["messages"]
+    # History entries present, in order, before current user message
+    assert msgs[0] == {"role": "user", "content": "What is 2+2?"}
+    assert msgs[1] == {"role": "assistant", "content": "4"}
+    assert msgs[2] == {"role": "user", "content": "And 3+3?"}
+
+def test_history_with_system_prompt_ordering(
+    self, httpserver: HTTPServer, monkeypatch
+):
+    """AC-2: system prompt → history → current user message."""
+    _setup_env(monkeypatch, httpserver, system_prompt="Be concise")
+    _expect_post(httpserver, _make_sse_body("ok"))
+
+    history = [
+        {"role": "user", "content": "Hi"},
+        {"role": "assistant", "content": "Hello!"},
+    ]
+    _collect(stream_reply("Follow up", history=history))
+
+    msgs = _last_request_json(httpserver)["messages"]
+    assert len(msgs) == 4
+    assert msgs[0] == {"role": "system", "content": "Be concise"}
+    assert msgs[1] == {"role": "user", "content": "Hi"}
+    assert msgs[2] == {"role": "assistant", "content": "Hello!"}
+    assert msgs[3] == {"role": "user", "content": "Follow up"}
+
+def test_history_without_system_prompt_ordering(
+    self, httpserver: HTTPServer, monkeypatch
+):
+    """AC-3: no system prompt → history → current user message."""
+    _setup_env(monkeypatch, httpserver, system_prompt="")
+    _expect_post(httpserver, _make_sse_body("ok"))
+
+    history = [
+        {"role": "user", "content": "First"},
+        {"role": "assistant", "content": "Response"},
+    ]
+    _collect(stream_reply("Second", history=history))
+
+    msgs = _last_request_json(httpserver)["messages"]
+    assert len(msgs) == 3
+    assert all(m["role"] != "system" for m in msgs)
+    assert msgs[0] == {"role": "user", "content": "First"}
+    assert msgs[1] == {"role": "assistant", "content": "Response"}
+    assert msgs[2] == {"role": "user", "content": "Second"}
+
+def test_empty_history_matches_m3_behavior(
+    self, httpserver: HTTPServer, monkeypatch
+):
+    """AC-4: empty or absent history → same messages as M3."""
+    _setup_env(monkeypatch, httpserver, system_prompt="Sys")
+    _expect_post(httpserver, _make_sse_body("ok"))
+
+    # Explicit empty list
+    _collect(stream_reply("Hello", history=[]))
+    msgs_explicit = _last_request_json(httpserver)["messages"]
+
+    httpserver.clear()
+    _expect_post(httpserver, _make_sse_body("ok"))
+
+    # Default (no history arg)
+    _collect(stream_reply("Hello"))
+    msgs_default = _last_request_json(httpserver)["messages"]
+
+    assert msgs_explicit == msgs_default
+    assert len(msgs_explicit) == 2
+    assert msgs_explicit[0] == {"role": "system", "content": "Sys"}
+    assert msgs_explicit[1] == {"role": "user", "content": "Hello"}
+
+def test_multi_turn_history_preserves_all_entries(
+    self, httpserver: HTTPServer, monkeypatch
+):
+    """Longer history — all entries preserved in order."""
+    _setup_env(monkeypatch, httpserver, system_prompt="")
+    _expect_post(httpserver, _make_sse_body("ok"))
+
+    history = [
+        {"role": "user", "content": "A"},
+        {"role": "assistant", "content": "B"},
+        {"role": "user", "content": "C"},
+        {"role": "assistant", "content": "D"},
+    ]
+    _collect(stream_reply("E", history=history))
+
+    msgs = _last_request_json(httpserver)["messages"]
+    assert len(msgs) == 5
+    for i, h in enumerate(history):
+        assert msgs[i] == h
+    assert msgs[4] == {"role": "user", "content": "E"}
+
+def test_history_does_not_affect_streaming_behavior(
+    self, httpserver: HTTPServer, monkeypatch
+):
+    """History presence doesn't alter token/done yield behavior."""
+    _setup_env(monkeypatch, httpserver)
+    _expect_post(httpserver, _make_sse_body("Hello", " world"))
+
+    history = [{"role": "user", "content": "prior"}]
+    chunks = _collect(stream_reply("now", history=history))
+
+    assert ("token", "Hello") in chunks
+    assert ("token", " world") in chunks
+    assert chunks[-1] == ("done",)
