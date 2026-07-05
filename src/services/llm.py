@@ -1,20 +1,13 @@
 import json
 import os
-from typing import Iterator, NamedTuple, Optional, Sequence
+from typing import Iterator, Sequence, Tuple
 
 import urllib.error
 import urllib.request
 
-
-class StreamChunk(NamedTuple):
-    event: str  # "token", "done", or "error"
-    content: Optional[str] = None
-
-
 FALLBACK_REPLY = 'The language model is currently unavailable. Please try again in a moment.'
 
-
-def stream_reply(message: str, history: Sequence[dict[str, str]] = ()) -> Iterator[StreamChunk]:
+def stream_reply(message: str, history: Sequence[dict[str, str]] = ()) -> Iterator[Tuple]:
     LLM_ENDPOINT = os.environ.get('LLM_ENDPOINT', 'http://localhost:1234/v1/chat/completions')
     LLM_MODEL = os.environ.get('LLM_MODEL', 'local-model')
     LLM_SYSTEM_PROMPT = os.environ.get('LLM_SYSTEM_PROMPT', '')
@@ -43,7 +36,7 @@ def stream_reply(message: str, history: Sequence[dict[str, str]] = ()) -> Iterat
         )
         with urllib.request.urlopen(req, timeout=LLM_TIMEOUT_SECONDS) as response:
             if response.status != 200:
-                yield StreamChunk("error")
+                yield ("error",)
                 return
 
             buf = b""
@@ -62,25 +55,25 @@ def stream_reply(message: str, history: Sequence[dict[str, str]] = ()) -> Iterat
 
                     if data.strip() == "[DONE]":
                         if tokens_yielded:
-                            yield StreamChunk("done")
+                            yield ("done",)
                         else:
-                            yield StreamChunk("error")
+                            yield ("error",)
                         return
 
                     try:
                         parsed = json.loads(data)
                         content = (parsed.get("choices", [{}])[0].get("delta", {}).get("content"))
                         if content:
-                            yield StreamChunk("token", content)
+                            yield ("token", content)
                             tokens_yielded = True
                     except (json.JSONDecodeError, KeyError, IndexError):
-                        yield StreamChunk("error")
+                        yield ("error",)
                         return
 
-        yield StreamChunk("error")
+        yield ("error",)
 
     except (urllib.error.URLError, ValueError, OSError):
-        yield StreamChunk("error")
+        yield ("error",)
 
 
 __all__ = ["stream_reply", "FALLBACK_REPLY"]
