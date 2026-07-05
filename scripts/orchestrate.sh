@@ -34,6 +34,18 @@ AGENT_TIMEOUT="${AGENT_TIMEOUT:-1800}"
 
 cd "$(cd "$(dirname "$0")/.." && pwd -P)"
 
+# .pipeline-state/ layout (orchestrator-owned, gitignored; delete only as a
+# whole — partial deletes desync counters). Documented because a conductor
+# once guessed "task-state/" and burned 30 minutes (testchat M4):
+#   phase                current phase (em|task|"") — crash checkpoint (D-24)
+#   task_target          file the in-flight coder task writes
+#   spec_version         frozen VERSION last seen (re-freeze detection)
+#   plan_revisions       EM plan re-emit counter (cap: MAX_PLAN_REVISIONS)
+#   tasks/<id>.status    pending|done|escalated|blocked
+#   tasks/<id>.strikes|.revisions|.fp|.lastfail   per-task counters/fingerprint
+#   briefs/<id>          EM-revised brief overriding the plan's brief
+#   logs/<id>-a<n>.raw|.log   coder attempt transcripts; em-last.raw|.err
+#   escalations/<id>/bundle.md, escalations/BATCH.md   TPM bundles (D-29)
 STATE_DIR=".pipeline-state"
 TASK_STATE="$STATE_DIR/tasks"
 BRIEF_DIR="$STATE_DIR/briefs"
@@ -54,6 +66,11 @@ set_counter() { printf '%s\n' "$3" > "$TASK_STATE/$1.$2"; }
 
 # --- Pre-flight ---
 echo "=== Pre-flight ==="
+
+# Constraint 3: conductors live inside the VM; running on macOS is a structural error.
+[ "$(uname -s)" != "Darwin" ] \
+  || die "orchestrate.sh must run inside the Linux dev VM, not on the macOS host — see tasks/HANDOFF-dev-vm.md constraint 3"
+
 python3 --version >/dev/null 2>&1 || die "python3 required"
 git --version >/dev/null 2>&1    || die "git required"
 [ -x scripts/llm-call.sh ]       || die "scripts/llm-call.sh missing or not executable"
@@ -67,9 +84,22 @@ fi
 # Fail fast on an unreachable local LLM (Hard Rule 4) rather than deep inside
 # the first EM call. Model calls happen directly against this endpoint now —
 # no attach protocol, no harness in between (D-53).
+: "${SANDBOX_LLM_HOST:=localhost}"
 : "${SANDBOX_LLM_PORT:=1234}"
-curl -s --max-time 5 -o /dev/null "http://localhost:$SANDBOX_LLM_PORT/v1/models" \
-  || die "no local LLM reachable at http://localhost:$SANDBOX_LLM_PORT/v1/models — start it and retry"
+curl -s --max-time 5 -o /dev/null "http://$SANDBOX_LLM_HOST:$SANDBOX_LLM_PORT/v1/models" \
+  || die "no LLM reachable at http://$SANDBOX_LLM_HOST:$SANDBOX_LLM_PORT/v1/models — start it and retry (in the VM, set SANDBOX_LLM_HOST=host.lima.internal)"
+# The interactive/human commit path is only gated if bootstrap.sh ran. The
+# testchat M4 run proved this can be silently absent for an entire project
+# lifetime — a conductor hand-committed src/ changes with no gate firing.
+# Fail closed here, same as the manifest check below.
+[ "$(git config core.hooksPath || true)" = ".githooks" ] \
+  || die "core.hooksPath is not '.githooks' — run scripts/bootstrap.sh first (the pre-commit lane gate is mandatory, not optional)"
+# A dirty tree poisons the lane gate: phase-gate diffs the working tree
+# against a phase-start ref, so pre-existing uncommitted changes get blamed
+# on whichever tier runs first (testchat M2: the EM was accused of touching
+# requirements.txt and src/ it never saw).
+[ -z "$(git status --porcelain)" ] \
+  || die "working tree not clean — commit or stash first (uncommitted changes would be misattributed to the first tier the lane gate checks): $(git status --porcelain | head -5 | tr '\n' ' ')"
 # Control-plane + frozen-artifact integrity (phase-gate verifies both, fail-closed)
 bash scripts/phase-gate.sh manifest HEAD
 # The frozen spec IS the human approval: it only exists via scripts/refreeze.sh,
@@ -77,6 +107,17 @@ bash scripts/phase-gate.sh manifest HEAD
 [ -f "$APPROVED/frozen-manifest" ] || die "no frozen TPM spec — install PRD/ERD/contracts/tests via scripts/refreeze.sh"
 [ -f "$APPROVED/VERSION" ]         || die "$APPROVED/VERSION missing — run scripts/refreeze.sh"
 FROZEN_V=$(cat "$APPROVED/VERSION")
+# D-55 round-trip smoke test: a bug in the model-call path is invisible to
+# static review — only a real round-trip catches it (correction log 2026-07-03).
+# Runs last in pre-flight: all free checks (hooksPath, clean tree, manifest)
+# pass before we spend a model call.
+echo "  LLM round-trip smoke test..."
+_smoke_sys=$(mktemp)
+printf 'You are a test probe. Reply with exactly the text the user sends.' > "$_smoke_sys"
+SMOKE_REPLY=$(printf 'SMOKE_OK' | scripts/llm-call.sh em "$_smoke_sys" --max-time 30 2>/dev/null || true)
+rm -f "$_smoke_sys"
+[ -n "$SMOKE_REPLY" ] \
+  || die "LLM smoke test failed — llm-call.sh returned empty output for a trivial prompt (check SANDBOX_LLM_HOST=$SANDBOX_LLM_HOST, model mapping, model server)"
 echo "OK (frozen spec v$FROZEN_V)"
 
 # --- Parse .gate-paths for the build lane ---
@@ -242,7 +283,7 @@ ensure_plan() {
     write_state plan_revisions $((revs + 1))
     echo "=== EM: emit/revise plan (revision $((revs + 1))/$MAX_PLAN_REVISIONS) ==="
     em_call tasks/plan.json scripts/schemas/plan.schema.json \
-      "Decompose the frozen ERD into atomic ONE-FILE tasks and reply with ONLY the plan as JSON matching the schema you were given — no prose, no markdown fence. Requirements: exactly one task per file in contracts.json's files array; every test node-id in test-nodeids mapped to exactly one task (the task after which it should pass, given its depends_on); every task's contracts list uses ids that exist in contracts.json; every brief self-contained per BLUEPRINT.md Rule 8 (exact path, signatures, inputs/outputs, acceptance) — the coder sees only the brief; tasks with no covering test need a smoke_check. Set erd_version to $FROZEN_V. NO status fields.${verrs:+ The previous plan failed validation with these errors — fix all of them: $verrs}" \
+      "Decompose the frozen ERD into atomic ONE-FILE tasks and reply with ONLY the plan as JSON matching the schema you were given — no prose, no markdown fence. Requirements: exactly one task per file in contracts.json's files array; every test node-id in test-nodeids mapped to exactly one task (the task after which it should pass, given its depends_on) — EXCEPT node-ids testing carried-forward files that are NOT in contracts.json's files array: list each of those once in the top-level 'regression' array instead, never on a task; every task's contracts list uses ids that exist in contracts.json; every brief self-contained per BLUEPRINT.md Rule 8 (exact path, signatures, inputs/outputs, acceptance) — the coder sees only the brief. Do NOT include a smoke_check field — smoke checks are TPM-authored and live in contracts.json. Set erd_version to $FROZEN_V. NO status fields.${verrs:+ The previous plan failed validation with these errors — fix all of them: $verrs}" \
       "ERD:$APPROVED/ERD.md" "contracts:$APPROVED/contracts.json" "test-nodeids:$APPROVED/test-nodeids" "plan-being-revised:tasks/plan.json"
   done
 }
@@ -428,7 +469,7 @@ while :; do
   id="$NEXT"
   file=$(python3 scripts/validate-plan.py --task "$id" --field file)
   mapped=$(python3 scripts/validate-plan.py --task "$id" --field tests)
-  smoke=$(python3 scripts/validate-plan.py --task "$id" --field smoke_check)
+  smoke=$(python3 -c "import json; cs=json.load(open('scripts/.approved/contracts.json')).get('smoke_checks',{}); print(cs.get('$file',''))")
   brief=$(cat "$BRIEF_DIR/$id" 2>/dev/null || python3 scripts/validate-plan.py --task "$id" --field brief)
   strikes=$(counter "$id" strikes)
   echo "--- Task $id -> $file (strike $((strikes + 1))/$MAX_TASK_STRIKES) ---"

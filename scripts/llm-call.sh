@@ -50,16 +50,19 @@ MODEL="${!VAR:-}"
   exit 1
 }
 
+: "${SANDBOX_LLM_HOST:=localhost}"
 : "${SANDBOX_LLM_PORT:=1234}"
-URL="http://localhost:$SANDBOX_LLM_PORT/v1/chat/completions"
+URL="http://$SANDBOX_LLM_HOST:$SANDBOX_LLM_PORT/v1/chat/completions"
 
 # Read user prompt from stdin BEFORE the heredoc — stdin and heredoc both
 # compete for fd 0, so the piped content must be captured first.
 SWBP_LLM_USER="$(cat)"
 
+PROFILES="$HOME/.config/sw-dev-blueprint/model-profiles.toml"
+
 SWBP_LLM_URL="$URL" SWBP_LLM_MODEL="$MODEL" SWBP_LLM_SYS="$SYS_FILE" \
 SWBP_LLM_SCHEMA="$SCHEMA" SWBP_LLM_MAXTIME="$MAX_TIME" SWBP_LLM_ROLE="$ROLE" \
-SWBP_LLM_USER="$SWBP_LLM_USER" \
+SWBP_LLM_USER="$SWBP_LLM_USER" SWBP_LLM_PROFILES="$PROFILES" \
 python3 - <<'PYEOF'
 import json
 import os
@@ -75,6 +78,21 @@ max_time = int(os.environ["SWBP_LLM_MAXTIME"])
 system = open(os.environ["SWBP_LLM_SYS"]).read()
 schema_path = os.environ.get("SWBP_LLM_SCHEMA") or ""
 user = os.environ["SWBP_LLM_USER"]
+profiles_path = os.environ.get("SWBP_LLM_PROFILES") or ""
+
+# Load model profile (settings from model-profiles.toml override defaults)
+profile: dict = {}
+if profiles_path and os.path.isfile(profiles_path):
+    try:
+        import tomllib
+        with open(profiles_path, "rb") as f:
+            all_profiles = tomllib.load(f)
+        profile = all_profiles.get(model, {})
+        if profile:
+            print(f"llm-call: loaded profile for '{model}'", file=sys.stderr)
+    except Exception as e:
+        print(f"llm-call: warning: could not read {profiles_path}: {e}",
+              file=sys.stderr)
 
 def call(body: dict) -> dict:
     req = urllib.request.Request(
@@ -89,10 +107,12 @@ body = {
         {"role": "system", "content": system},
         {"role": "user", "content": user},
     ],
-    "temperature": 0.2,
+    "temperature": profile.get("temperature", 0.2),
     "stream": False,
-    "enable_thinking": False,
+    "enable_thinking": profile.get("enable_thinking", False),
 }
+if profile.get("extra_body"):
+    body.update(profile["extra_body"])
 if schema_path:
     body["response_format"] = {
         "type": "json_schema",
@@ -130,11 +150,10 @@ if not content and reasoning:
 if not content:
     sys.exit(f"llm-call FAIL: empty content from model '{model}'.")
 
-# Strip inline <think>...</think> blocks (qwen3.5 etc. emit these even with
-# enable_thinking:false — the thinking ends up in content, not reasoning_content).
-content = re.sub(r"<think>.*?</think>\s*", "", content, flags=re.DOTALL).strip()
-if not content:
-    sys.exit(f"llm-call FAIL: content was only a <think> block from model '{model}'.")
+if profile.get("strip_think_tags", True):
+    content = re.sub(r"<think>.*?</think>\s*", "", content, flags=re.DOTALL).strip()
+    if not content:
+        sys.exit(f"llm-call FAIL: content was only a <think> block from model '{model}'.")
 
 # Strip a single wrapping markdown fence if present (local models add them).
 m = re.match(r"^```[a-zA-Z0-9_-]*\n(.*)\n```$", content, re.DOTALL)

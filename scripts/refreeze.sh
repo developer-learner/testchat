@@ -33,6 +33,9 @@
 # Staging layout — ONLY the changed files, full new content, paths preserved:
 #   PRD.md  ERD.md  contracts.json          -> installed to scripts/.approved/
 #   tests/<file>.py ...                     -> installed to tests/
+#   REMOVED                                 -> repo paths to retire (one per
+#                                              line, tests/*.py only), deleted
+#                                              on apply as part of the delta
 set -euo pipefail
 
 cd "$(cd "$(dirname "$0")/.." && pwd -P)"
@@ -59,9 +62,9 @@ mkdir -p "$APPROVED" tests
 # --- Validate staging contents: only known artifact paths ---
 BAD=$(cd "$IN" && find . -type f \
   ! -path "./PRD.md" ! -path "./ERD.md" ! -path "./contracts.json" \
-  ! -path "./tests/*" | sed 's|^\./||')
+  ! -path "./REMOVED" ! -path "./tests/*" | sed 's|^\./||')
 if [ -n "$BAD" ]; then
-  die "staging contains unexpected files (only PRD.md, ERD.md, contracts.json, tests/* are frozen artifacts):
+  die "staging contains unexpected files (only PRD.md, ERD.md, contracts.json, REMOVED, tests/* are frozen artifacts):
 $BAD"
 fi
 
@@ -70,7 +73,45 @@ for f in PRD.md ERD.md contracts.json; do
   [ -f "$IN/$f" ] && CHANGED_DOCS="$CHANGED_DOCS $f"
 done
 CHANGED_TEST_FILES=$(cd "$IN" && find tests -type f 2>/dev/null | sed 's|^\./||' || true)
-[ -n "$CHANGED_DOCS$CHANGED_TEST_FILES" ] || die "staging dir is empty — nothing to freeze"
+
+# --- Test-file removals: staging may carry a REMOVED file listing repo
+# paths (one per line, tests/*.py only) to retire as part of this delta.
+# Retiring a test is a spec change like any other — it goes through the
+# same human-approved diff, never a hand-delete in the frozen lane
+# (testchat M2: stale echo tests had to be hand-deleted, a conductor
+# lane-cross forced by the tool).
+REMOVED_FILES=""
+if [ -f "$IN/REMOVED" ]; then
+  REMOVED_FILES=$(grep -vE '^\s*(#|$)' "$IN/REMOVED" || true)
+  for f in $REMOVED_FILES; do
+    case "$f" in
+      tests/*.py) ;;
+      *) die "REMOVED entries must be tests/*.py paths, got: $f" ;;
+    esac
+    [ -f "$f" ] || die "REMOVED lists a file that does not exist in the repo: $f"
+    [ ! -f "$IN/$f" ] || die "REMOVED lists a file also present in staging (conflict — pick one): $f"
+  done
+fi
+[ -n "$CHANGED_DOCS$CHANGED_TEST_FILES$REMOVED_FILES" ] || die "staging dir is empty — nothing to freeze"
+
+# --- Staged tests must at least parse (testchat M4: TPM shipped tests with
+# broken indentation and bare `---` lines; discovering it post-freeze cost a
+# full refreeze cycle v4->v5). ast.parse is the cheapest possible gate and
+# needs none of the suite's imports to exist.
+for f in $CHANGED_TEST_FILES; do
+  case "$f" in
+    *.py)
+      SWBP_STAGED="$IN/$f" python3 - <<'PYEOF' || exit 1
+import ast, os, sys
+p = os.environ["SWBP_STAGED"]
+try:
+    ast.parse(open(p).read(), filename=p)
+except SyntaxError as e:
+    sys.exit(f"REFREEZE FAIL: staged test does not parse: {p}:{e.lineno}: {e.msg} — fix the TPM output and restage")
+PYEOF
+      ;;
+  esac
+done
 
 # --- First freeze must be a complete spec ---
 if [ "$V" -eq 0 ]; then
@@ -115,6 +156,7 @@ trap 'rm -rf "$PREVIEW"' EXIT
 mkdir -p "$PREVIEW/tests"
 [ -d tests ] && cp -R tests/. "$PREVIEW/tests/" 2>/dev/null || true
 [ -d "$IN/tests" ] && cp -R "$IN/tests/." "$PREVIEW/tests/"
+for f in $REMOVED_FILES; do rm -f "$PREVIEW/$f"; done   # preview reflects the post-delta suite
 INV4_CONTRACTS="$APPROVED/contracts.json"
 [ -f "$IN/contracts.json" ] && INV4_CONTRACTS="$IN/contracts.json"
 python3 scripts/check-test-surface.py --tests-dir "$PREVIEW/tests" --contracts "$INV4_CONTRACTS" \
@@ -141,6 +183,11 @@ show_diff() {  # $1 current-path  $2 incoming-path
     echo ""
     echo "--- $f ---"
     show_diff "$f" "$IN/$f"
+  done
+  for f in $REMOVED_FILES; do
+    echo ""
+    echo "--- $f (REMOVED) ---"
+    diff -u "$f" /dev/null || true   # full current content shown as deletions
   done
 } > "$DIFF_FILE"
 DIFF_SHA=$(sha256sum "$DIFF_FILE" | awk '{print $1}')
@@ -215,22 +262,21 @@ for f in $CHANGED_TEST_FILES; do
   mkdir -p "$(dirname "$f")"
   cp "$IN/$f" "$f"
 done
+for f in $REMOVED_FILES; do
+  rm -f "$f"    # `git add tests/` below stages the deletion
+done
 
-# --- Re-collect the frozen test node-ids (inside the sandbox, read-only) ---
+# --- Re-collect the frozen test node-ids ---
+# D-51 revised: AST extraction is the PRIMARY method, not a fallback.
+# INV-1 means tests are written before the code they import — pytest
+# --collect-only can fail partially (symbols not yet created) or fully
+# (modules not yet created), producing incomplete node-id sets that corrupt
+# the manifest. AST extraction finds every def test_* without importing
+# anything. pytest is tried second as a SUPPLEMENT: if it succeeds and
+# finds MORE node-ids (parametrized tests expand at collect time), its set
+# replaces the AST set. If it fails or finds fewer, AST wins.
 echo "collecting test node-ids..."
-COLLECT_OUT=".pipeline-state/refreeze-collect.out"
-COLLECT_ERR=".pipeline-state/refreeze-collect.err"
-scripts/sandbox-run.sh -- pytest --collect-only -q -p no:cacheprovider \
-  >"$COLLECT_OUT" 2>"$COLLECT_ERR" || true
-NODEIDS=$(grep '::' "$COLLECT_OUT" || true)
-if [ -z "$NODEIDS" ] && grep -q "No module named 'src" "$COLLECT_OUT" "$COLLECT_ERR" 2>/dev/null; then
-  # D-51: at the initial freeze the suite imports src/* that by design does
-  # not exist yet (INV-1: tests before code) — dynamic collection is
-  # structurally impossible. Derive node-ids statically from the AST.
-  # Parametrized ids are not expanded here; the first refreeze after src/
-  # exists re-collects dynamically and replaces them.
-  echo "  src/ not built yet — deriving node-ids statically from the AST (D-51)"
-  NODEIDS=$(python3 - <<'PYEOF'
+AST_NODEIDS=$(python3 - <<'PYEOF'
 import ast
 from pathlib import Path
 out = []
@@ -248,19 +294,29 @@ for f in sorted(Path("tests").rglob("*.py")):
                     out.append(f"{f}::{node.name}::{m.name}")
 print("\n".join(out))
 PYEOF
-  )
+)
+AST_COUNT=$(printf '%s\n' "$AST_NODEIDS" | grep -c '::' || true)
+if [ "$AST_COUNT" -eq 0 ]; then
+  die "AST found no test functions in tests/ — a frozen spec without a suite cannot gate anything"
 fi
-if [ -z "$NODEIDS" ]; then
-  # pytest reports collection errors on STDOUT; stderr carries podman/build
-  # noise — show and grep both (D-51 closes D-50's wrong-stream diagnostic).
-  echo "--- collection stdout (last 15 lines) ---" >&2
-  tail -15 "$COLLECT_OUT" >&2 || true
-  echo "--- collection stderr (last 15 lines) ---" >&2
-  tail -15 "$COLLECT_ERR" >&2 || true
-  if grep -q "ModuleNotFoundError\|ImportError" "$COLLECT_OUT" "$COLLECT_ERR" 2>/dev/null; then
-    die "pytest could not IMPORT the suite (see output above) — the TPM's stack is missing from the sandbox. Fix: add the packages to requirements.txt; the image rebuilds automatically on the next run (D-50)."
-  fi
-  die "pytest collected no tests — a frozen spec without a suite cannot gate anything (see output above)"
+echo "  AST: $AST_COUNT node-ids"
+
+COLLECT_OUT=".pipeline-state/refreeze-collect.out"
+COLLECT_ERR=".pipeline-state/refreeze-collect.err"
+scripts/sandbox-run.sh -- pytest --collect-only -q -p no:cacheprovider \
+  >"$COLLECT_OUT" 2>"$COLLECT_ERR" || true
+PYTEST_NODEIDS=$(grep '::' "$COLLECT_OUT" || true)
+PYTEST_COUNT=$(printf '%s\n' "$PYTEST_NODEIDS" | grep -c '::' || true)
+
+if [ "$PYTEST_COUNT" -gt "$AST_COUNT" ]; then
+  echo "  pytest: $PYTEST_COUNT node-ids (>AST, using pytest — parametrized expansion)"
+  NODEIDS="$PYTEST_NODEIDS"
+elif [ "$PYTEST_COUNT" -eq "$AST_COUNT" ]; then
+  echo "  pytest: $PYTEST_COUNT node-ids (matches AST, using pytest)"
+  NODEIDS="$PYTEST_NODEIDS"
+else
+  echo "  pytest: $PYTEST_COUNT node-ids (<AST — import errors likely, using AST)"
+  NODEIDS="$AST_NODEIDS"
 fi
 rm -f "$COLLECT_OUT" "$COLLECT_ERR"
 printf '%s\n' "$NODEIDS" > "$APPROVED/test-nodeids"
