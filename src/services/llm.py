@@ -1,13 +1,14 @@
 import json
 import os
+from typing import Iterator, Sequence, Tuple
+
 import urllib.error
 import urllib.request
-from typing import Iterator, Tuple
 
 FALLBACK_REPLY = 'The language model is currently unavailable. Please try again in a moment.'
 
 
-def stream_reply(message: str) -> Iterator[Tuple]:
+def stream_reply(message: str, history: Sequence[dict[str, str]] = ()) -> Iterator[Tuple]:
     LLM_ENDPOINT = os.environ.get('LLM_ENDPOINT', 'http://localhost:1234/v1/chat/completions')
     LLM_MODEL = os.environ.get('LLM_MODEL', 'local-model')
     LLM_SYSTEM_PROMPT = os.environ.get('LLM_SYSTEM_PROMPT', '')
@@ -16,6 +17,8 @@ def stream_reply(message: str) -> Iterator[Tuple]:
     messages: list[dict[str, str]] = []
     if LLM_SYSTEM_PROMPT:
         messages.append({"role": "system", "content": LLM_SYSTEM_PROMPT})
+    for entry in history:
+        messages.append({"role": entry["role"], "content": entry["content"]})
     messages.append({"role": "user", "content": message})
 
     request_body = {
