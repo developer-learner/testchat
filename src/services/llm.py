@@ -71,8 +71,7 @@ def stream_reply(message: str, history: Sequence[dict[str, str]] = ()) -> Iterat
                         yield ("error",)
                         return
 
-        if not tokens_yielded:
-            yield ("error",)
+        yield ("error",)
 
     except (urllib.error.URLError, ValueError, OSError):
         yield ("error",)
