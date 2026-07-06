@@ -411,7 +411,7 @@ Apply Rule 3. Record adaptations in `scripts/.manifest-project`
 
 ### Step 6 — Fill every placeholder
 
-Replace all template placeholders: `[PROJECT_NAME]`, `[NAME]`, `[DATE]`,
+Replace all template placeholders: `my-project`, `[NAME]`, `[DATE]`,
 `[One paragraph...]`, bracketed stack examples in CLAUDE.md, template
 rows in tasks/ and docs/, etc.
 
@@ -430,7 +430,7 @@ fill, re-run, repeat until it returns nothing.
 
 `DECISIONS.md` and `BLUEPRINT.md` are excluded: the first uses intentional
 placeholder brackets in its `## Template` format block; the second lists
-`[PROJECT_NAME]` and `[NAME]` as fill examples in Step 6.
+`my-project` and `[NAME]` as fill examples in Step 6.
 Everything else must be clean.
 
 ### Step 8 — First commit and push

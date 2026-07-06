@@ -497,7 +497,7 @@ Doc guards catch the LLM's *intent*; mechanical gates catch the *result*. Both h
 
 **Documentation-only:** This decision documents a doc decoupling action; it does not change the API or build plan.
 
-**Reason:** CLAUDE.md is a template — `[PROJECT_NAME]` is still a placeholder. Baking a project-specific date ("2026-06-04 prune") into a template file makes the rule meaningless for any future project created from this template. The visibility argument was real but the template-vs-project boundary was muddied. The principle (don't re-add dropped sections) stays binding via DECISIONS.md's "Do not suggest" line and the correction log capture.
+**Reason:** CLAUDE.md is a template — `my-project` is still a placeholder. Baking a project-specific date ("2026-06-04 prune") into a template file makes the rule meaningless for any future project created from this template. The visibility argument was real but the template-vs-project boundary was muddied. The principle (don't re-add dropped sections) stays binding via DECISIONS.md's "Do not suggest" line and the correction log capture.
 
 **Do not suggest:** Re-adding the mirror guard. Cross-reference, don't copy.
 
