@@ -15,6 +15,7 @@ def stream_reply(
     message: str,
     history: Sequence[dict[str, str]] = (),
     endpoint_override: str | None = None,
+    model: str | None = None,
 ) -> Iterator[StreamChunk]:
     endpoint = (
         endpoint_override
@@ -24,7 +25,7 @@ def stream_reply(
     LLM_SYSTEM_PROMPT = os.environ.get("LLM_SYSTEM_PROMPT", "")
     LLM_TIMEOUT_SECONDS = float(os.environ.get("LLM_TIMEOUT_SECONDS", "120"))
 
-    request_model = os.environ.get("LLM_MODEL", "local-model")
+    request_model = model or os.environ.get("LLM_MODEL", "local-model")
 
     messages: list[dict[str, str]] = []
     if LLM_SYSTEM_PROMPT:

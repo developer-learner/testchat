@@ -33,7 +33,7 @@ async def chat(request: ChatRequest) -> StreamingResponse:
     async def event_generator():
         history_dicts = [{"role": e.role, "content": e.content} for e in request.history]
         try:
-            for item in llm_mod.stream_reply(request.message, history_dicts, endpoint_override):
+            for item in llm_mod.stream_reply(request.message, history_dicts, endpoint_override, model=request.model):
                 if item[0] == "token":
                     content = json.dumps(item[1])
                     yield f'event: token\ndata: {{"content": {content}}}\n\n'.encode()
