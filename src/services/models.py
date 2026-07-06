@@ -1,11 +1,13 @@
 """Model management service for LM Studio and Nemotron backends."""
 
+import logging
 import os
 import subprocess
 import time
 
 import httpx
-from loguru import logger
+
+logger = logging.getLogger(__name__)
 
 NEMOTRON_BASE_URL = "http://localhost:8000"
 NEMOTRON_CHAT_ENDPOINT = NEMOTRON_BASE_URL + "/v1/chat/completions"
