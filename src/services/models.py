@@ -38,9 +38,12 @@ def list_models() -> list[dict]:
 
 
 def is_nemotron_loaded() -> bool:
-    if _nemotron_process is None:
+    if _nemotron_process is None or not isinstance(_nemotron_process, subprocess.Popen):
         return False
-    return _nemotron_process.poll() is None
+    try:
+        return _nemotron_process.poll() is None
+    except Exception:
+        return False
 
 
 def load_nemotron() -> dict:
