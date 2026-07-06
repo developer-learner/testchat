@@ -3,7 +3,7 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictStr
 
 import src.services.llm as llm_mod
 from src.services.models import is_nemotron_loaded, NEMOTRON_CHAT_ENDPOINT
@@ -16,7 +16,7 @@ class HistoryEntry(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
-    model: str | None = None
+    model: StrictStr | None = None
     history: list[HistoryEntry] = []
 
 
