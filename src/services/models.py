@@ -26,10 +26,11 @@ def list_models() -> list[dict]:
     if llm_endpoint:
         base = llm_endpoint.removesuffix('/v1/chat/completions')
         try:
-            response = httpx.get(base + '/v1/models', timeout=5)
+            response = httpx.get(base + '/api/v1/models', timeout=5)
             if response.status_code == 200:
-                for model in response.json().get('data', []):
-                    models.append({'id': model['id'], 'source': 'lmstudio'})
+                for model in response.json().get('models', []):
+                    if model.get('loaded_instances'):
+                        models.append({'id': model['key'], 'source': 'lmstudio'})
         except Exception:
             logger.exception('Failed to fetch LM Studio models')
 
@@ -40,10 +41,9 @@ def list_models() -> list[dict]:
 
 
 def is_nemotron_loaded() -> bool:
-    if _nemotron_process is None:
-        return False
     try:
-        return _nemotron_process.poll() is None
+        response = httpx.get(NEMOTRON_READY_URL, timeout=2)
+        return response.status_code == 200
     except Exception:
         return False
 
@@ -60,6 +60,8 @@ def load_nemotron() -> dict:
 
     deadline = time.monotonic() + NEMOTRON_READY_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
+        if process.poll() is not None:
+            break
         try:
             response = httpx.get(NEMOTRON_READY_URL, timeout=5)
             if response.status_code == 200:
@@ -84,11 +86,12 @@ def unload_nemotron() -> dict:
     if not is_nemotron_loaded():
         return {'status': 'unloaded'}
 
-    _nemotron_process.terminate()
-    try:
-        _nemotron_process.wait(timeout=NEMOTRON_TERMINATE_GRACE_SECONDS)
-    except subprocess.TimeoutExpired:
-        _nemotron_process.kill()
+    if _nemotron_process is not None:
+        _nemotron_process.terminate()
+        try:
+            _nemotron_process.wait(timeout=NEMOTRON_TERMINATE_GRACE_SECONDS)
+        except subprocess.TimeoutExpired:
+            _nemotron_process.kill()
 
     _nemotron_process = None
     return {'status': 'unloaded'}

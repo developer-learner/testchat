@@ -75,11 +75,12 @@ def stream_reply(
 
                     try:
                         parsed = json.loads(data)
-                        content = (
-                            parsed.get("choices", [{}])[0]
-                            .get("delta", {})
-                            .get("content")
-                        )
+                        delta = parsed.get("choices", [{}])[0].get("delta", {})
+                        reasoning = delta.get("reasoning_content")
+                        content = delta.get("content")
+                        if reasoning:
+                            yield ("think", reasoning)
+                            tokens_yielded = True
                         if content:
                             yield ("token", content)
                             tokens_yielded = True

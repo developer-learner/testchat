@@ -37,6 +37,9 @@ async def chat(request: ChatRequest) -> StreamingResponse:
                 if item[0] == "token":
                     content = json.dumps(item[1])
                     yield f'event: token\ndata: {{"content": {content}}}\n\n'.encode()
+                elif item[0] == "think":
+                    content = json.dumps(item[1])
+                    yield f'event: think\ndata: {{"content": {content}}}\n\n'.encode()
                 elif item[0] == "done":
                     yield b'event: done\ndata: {}\n\n'
                 elif item[0] == "error":

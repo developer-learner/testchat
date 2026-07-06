@@ -247,7 +247,12 @@
 
       function renderThink(text) {
         var html = '';
-        var parts = text.split(/(') { inThink = false; continue; }
+        var parts = text.split(/(<think>|<\/think>)/);
+        var inThink = false;
+        for (var i = 0; i < parts.length; i++) {
+          var part = parts[i];
+          if (part === '<think>') { inThink = true; continue; }
+          if (part === '</think>') { inThink = false; continue; }
           var escaped = part.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
           html += inThink ? '<span class="think-content">' + escaped + '</span>' : escaped;
         }
@@ -350,6 +355,15 @@
               }
               replyBubble.innerHTML = renderThink(replyText);
               scrollToBottom();
+            } else if (eventType === 'think') {
+              try {
+                var parsed = JSON.parse(dataStr);
+                replyText += '<think>' + parsed.content + '</think>';
+              } catch (err) {
+                replyText += '<think>' + dataStr + '</think>';
+              }
+              replyBubble.innerHTML = renderThink(replyText);
+              scrollToBottom();
             } else if (eventType === 'done') {
               conversation.push({ role: 'user', content: message });
               conversation.push({ role: 'assistant', content: replyText });
@@ -405,11 +419,16 @@
         container.classList.toggle('show-thinking');
       });
 
+      function refreshModels() {
+        fetchModels();
+      }
+
       loadNemotronBtn.addEventListener('click', function () {
         loadNemotronBtn.disabled = true;
         fetch('/api/v1/nemotron/load', { method: 'POST' })
           .then(function (response) {
             if (!response.ok) throw new Error('Failed to load Nemotron');
+            refreshModels();
           })
           .catch(function () {
             appendBubble('Failed to load Nemotron', 'error');
@@ -424,6 +443,7 @@
         fetch('/api/v1/nemotron/unload', { method: 'POST' })
           .then(function (response) {
             if (!response.ok) throw new Error('Failed to unload Nemotron');
+            refreshModels();
           })
           .catch(function () {
             appendBubble('Failed to unload Nemotron', 'error');
