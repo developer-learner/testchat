@@ -19,6 +19,77 @@
       height: 100vh;
     }
 
+    .top-bar {
+      display: flex;
+      align-items: center;
+      padding: 0.75rem 1rem;
+      background: #fff;
+      border-bottom: 1px solid #e0e0e0;
+      gap: 0.75rem;
+    }
+
+    .top-bar label {
+      font-size: 0.875rem;
+      color: #333;
+      font-weight: 600;
+    }
+
+    .top-bar select {
+      padding: 0.5rem 2rem 0.5rem 0.75rem;
+      border: 1px solid #ccc;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      outline: none;
+      background: #fff;
+      cursor: pointer;
+    }
+
+    .top-bar select:focus {
+      border-color: #0084ff;
+    }
+
+    .top-bar select:disabled {
+      background: #f0f0f0;
+      cursor: not-allowed;
+    }
+
+    .nemotron-btn {
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+    }
+
+    .nemotron-btn.load {
+      background: #0084ff;
+      color: #fff;
+    }
+
+    .nemotron-btn.load:hover {
+      background: #0073e6;
+    }
+
+    .nemotron-btn.load:disabled {
+      background: #99c8ff;
+      cursor: not-allowed;
+    }
+
+    .nemotron-btn.unload {
+      background: #ff4d4f;
+      color: #fff;
+    }
+
+    .nemotron-btn.unload:hover {
+      background: #e04345;
+    }
+
+    .nemotron-btn.unload:disabled {
+      background: #ffa3a4;
+      cursor: not-allowed;
+    }
+
     .chat-container {
       flex: 1;
       overflow-y: auto;
@@ -131,6 +202,12 @@
   </style>
 </head>
 <body>
+  <div class="top-bar">
+    <label for="model-select">Model:</label>
+    <select id="model-select"><option value="">Loading models...</option></select>
+    <button type="button" class="nemotron-btn load" id="load-nemotron">Load Nemotron</button>
+    <button type="button" class="nemotron-btn unload" id="unload-nemotron">Unload Nemotron</button>
+  </div>
   <div class="chat-container" id="chat-container"></div>
   <form class="input-area" id="chat-form">
     <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off" required />
@@ -147,10 +224,14 @@
       var container = document.getElementById('chat-container');
       var sendBtn = document.getElementById('send-btn');
       var thinkToggle = document.getElementById('think-toggle');
+      var modelSelect = document.getElementById('model-select');
+      var loadNemotronBtn = document.getElementById('load-nemotron');
+      var unloadNemotronBtn = document.getElementById('unload-nemotron');
+
       var showThinking = false;
       var replyText = '';
-
       var conversation = [];
+      var messageSent = false;
 
       function appendBubble(text, type) {
         var bubble = document.createElement('div');
@@ -178,6 +259,42 @@
         return html;
       }
 
+      function fetchModels() {
+        fetch('/api/v1/models')
+          .then(function (response) {
+            if (!response.ok) throw new Error('Failed to fetch models');
+            return response.json();
+          })
+          .then(function (data) {
+            modelSelect.innerHTML = '';
+            var models = data.models || [];
+            if (models.length === 0) {
+              var opt = document.createElement('option');
+              opt.value = '';
+              opt.textContent = 'No models available';
+              modelSelect.appendChild(opt);
+              return;
+            }
+            for (var i = 0; i < models.length; i++) {
+              var opt = document.createElement('option');
+              var id = models[i].id || '';
+              opt.value = id;
+              opt.textContent = id;
+              modelSelect.appendChild(opt);
+            }
+          })
+          .catch(function () {
+            modelSelect.innerHTML = '<option value="">Failed to load models</option>';
+          });
+      }
+
+      function lockSelector() {
+        if (!messageSent) {
+          messageSent = true;
+          modelSelect.disabled = true;
+        }
+      }
+
       form.addEventListener('submit', function (e) {
         e.preventDefault();
         var message = input.value.trim();
@@ -192,12 +309,17 @@
         container.appendChild(replyBubble);
         replyText = '';
 
+        var bodyObj = { message: message, history: conversation };
+        if (modelSelect.value) {
+          bodyObj.model = modelSelect.value;
+        }
+
         fetch('/api/v1/chat', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ message: message, history: conversation })
+          body: JSON.stringify(bodyObj)
         })
         .then(function (response) {
           if (!response.ok) {
@@ -269,6 +391,7 @@
             });
           }
 
+          lockSelector();
           return read();
         })
         .catch(function () {
@@ -287,6 +410,35 @@
         container.classList.toggle('show-thinking');
       });
 
+      loadNemotronBtn.addEventListener('click', function () {
+        loadNemotronBtn.disabled = true;
+        fetch('/api/v1/nemotron/load', { method: 'POST' })
+          .then(function (response) {
+            if (!response.ok) throw new Error('Failed to load Nemotron');
+          })
+          .catch(function () {
+            appendBubble('Failed to load Nemotron', 'error');
+          })
+          .finally(function () {
+            loadNemotronBtn.disabled = false;
+          });
+      });
+
+      unloadNemotronBtn.addEventListener('click', function () {
+        unloadNemotronBtn.disabled = true;
+        fetch('/api/v1/nemotron/unload', { method: 'POST' })
+          .then(function (response) {
+            if (!response.ok) throw new Error('Failed to unload Nemotron');
+          })
+          .catch(function () {
+            appendBubble('Failed to unload Nemotron', 'error');
+          })
+          .finally(function () {
+            unloadNemotronBtn.disabled = false;
+          });
+      });
+
+      fetchModels();
       input.focus();
     })();
   </script>
