@@ -12,6 +12,13 @@ try:
 except ImportError:
     pass
 
+try:
+    from src.api.models import router as models_router
+
+    app.include_router(models_router)
+except ImportError:
+    pass
+
 _INDEX = Path(__file__).parent / "static" / "index.html"
 
 
