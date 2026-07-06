@@ -24,7 +24,7 @@ def list_models() -> list[dict]:
 
     llm_endpoint = os.environ.get('LLM_ENDPOINT', 'http://localhost:1234/v1/chat/completions')
     if llm_endpoint:
-        base = llm_endpoint.removesuffix('/chat/completions')
+        base = llm_endpoint.removesuffix('/v1/chat/completions')
         try:
             response = httpx.get(base + '/v1/models', timeout=5)
             if response.status_code == 200:
