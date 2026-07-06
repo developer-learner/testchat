@@ -2,6 +2,7 @@
 
 import logging
 import os
+import signal
 import subprocess
 import time
 
@@ -70,7 +71,7 @@ def load_nemotron() -> dict:
             pass
         time.sleep(1)
 
-    _nemotron_process.terminate()
+    _nemotron_process.send_signal(signal.SIGINT)
     try:
         _nemotron_process.wait(timeout=NEMOTRON_TERMINATE_GRACE_SECONDS)
     except subprocess.TimeoutExpired:
@@ -87,7 +88,7 @@ def unload_nemotron() -> dict:
         return {'status': 'unloaded'}
 
     if _nemotron_process is not None:
-        _nemotron_process.terminate()
+        _nemotron_process.send_signal(signal.SIGINT)
         try:
             _nemotron_process.wait(timeout=NEMOTRON_TERMINATE_GRACE_SECONDS)
         except subprocess.TimeoutExpired:
