@@ -1,17 +1,33 @@
 import json
 import os
-from typing import Iterator, Sequence, Tuple
+from typing import Iterator, Sequence
 
 import urllib.error
 import urllib.request
 
-FALLBACK_REPLY = 'The language model is currently unavailable. Please try again in a moment.'
 
-def stream_reply(message: str, history: Sequence[dict[str, str]] = ()) -> Iterator[Tuple]:
-    LLM_ENDPOINT = os.environ.get('LLM_ENDPOINT', 'http://localhost:1234/v1/chat/completions')
-    LLM_MODEL = os.environ.get('LLM_MODEL', 'local-model')
-    LLM_SYSTEM_PROMPT = os.environ.get('LLM_SYSTEM_PROMPT', '')
-    LLM_TIMEOUT_SECONDS = float(os.environ.get('LLM_TIMEOUT_SECONDS', '120'))
+StreamChunk = tuple[str, ...]
+
+FALLBACK_REPLY = "The language model is currently unavailable. Please try again in a moment."
+
+
+def stream_reply(
+    message: str,
+    history: Sequence[dict[str, str]] = (),
+    endpoint_override: str | None = None,
+    model: str | None = None,
+) -> Iterator[StreamChunk]:
+    endpoint = (
+        endpoint_override
+        if endpoint_override is not None
+        else os.environ.get("LLM_ENDPOINT", "http://localhost:1234/v1/chat/completions")
+    )
+    LLM_SYSTEM_PROMPT = os.environ.get("LLM_SYSTEM_PROMPT", "")
+    LLM_TIMEOUT_SECONDS = float(os.environ.get("LLM_TIMEOUT_SECONDS", "120"))
+
+    request_model = (
+        model if model is not None else os.environ.get("LLM_MODEL", "local-model")
+    )
 
     messages: list[dict[str, str]] = []
     if LLM_SYSTEM_PROMPT:
@@ -21,7 +37,7 @@ def stream_reply(message: str, history: Sequence[dict[str, str]] = ()) -> Iterat
     messages.append({"role": "user", "content": message})
 
     request_body = {
-        "model": LLM_MODEL,
+        "model": request_model,
         "messages": messages,
         "stream": True,
     }
@@ -30,7 +46,7 @@ def stream_reply(message: str, history: Sequence[dict[str, str]] = ()) -> Iterat
 
     try:
         req = urllib.request.Request(
-            LLM_ENDPOINT,
+            endpoint,
             json.dumps(request_body).encode(),
             {"Content-Type": "application/json"},
         )
@@ -62,7 +78,11 @@ def stream_reply(message: str, history: Sequence[dict[str, str]] = ()) -> Iterat
 
                     try:
                         parsed = json.loads(data)
-                        content = (parsed.get("choices", [{}])[0].get("delta", {}).get("content"))
+                        content = (
+                            parsed.get("choices", [{}])[0]
+                            .get("delta", {})
+                            .get("content")
+                        )
                         if content:
                             yield ("token", content)
                             tokens_yielded = True
