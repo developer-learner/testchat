@@ -5,8 +5,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from src.services.llm import stream_reply, FALLBACK_REPLY, NEMOTRON_CHAT_ENDPOINT
-from src.services.models import is_nemotron_loaded
+import src.services.llm as llm_mod
+from src.services.models import is_nemotron_loaded, NEMOTRON_CHAT_ENDPOINT
 
 
 class HistoryEntry(BaseModel):
@@ -33,17 +33,17 @@ async def chat(request: ChatRequest) -> StreamingResponse:
     async def event_generator():
         history_dicts = [{"role": e.role, "content": e.content} for e in request.history]
         try:
-            for item in stream_reply(request.message, history_dicts, endpoint_override):
+            for item in llm_mod.stream_reply(request.message, history_dicts, endpoint_override):
                 if item[0] == "token":
                     content = json.dumps(item[1])
                     yield f'event: token\ndata: {{"content": {content}}}\n\n'.encode()
                 elif item[0] == "done":
                     yield b'event: done\ndata: {}\n\n'
                 elif item[0] == "error":
-                    msg = json.dumps(item[1]) if len(item) > 1 else json.dumps(FALLBACK_REPLY)
+                    msg = json.dumps(item[1]) if len(item) > 1 else json.dumps(llm_mod.FALLBACK_REPLY)
                     yield f'event: error\ndata: {{"message": {msg}}}\n\n'.encode()
         except Exception as e:
-            msg = json.dumps(str(e)) if str(e) else json.dumps(FALLBACK_REPLY)
+            msg = json.dumps(str(e)) if str(e) else json.dumps(llm_mod.FALLBACK_REPLY)
             yield f'event: error\ndata: {{"message": {msg}}}\n\n'.encode()
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
