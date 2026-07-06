@@ -1,13 +1,56 @@
 {
   "version": 1,
-  "erd_version": 5,
+  "erd_version": 6,
   "tasks": [
     {
       "id": "T1",
+      "file": "src/services/models.py",
+      "depends_on": [],
+      "brief": "Create src/services/models.py: Implement module-level constants NEMOTRON_BASE_URL, NEMOTRON_CHAT_ENDPOINT, NEMOTRON_READY_URL, NEMOTRON_SCRIPT_PATH, NEMOTRON_READY_TIMEOUT_SECONDS, NEMOTRON_TERMINATE_GRACE_SECONDS. Track _nemotron_process (None when not loaded). Implement list_models() -> list[dict]: read LLM_ENDPOINT from os.environ, derive LM Studio base by stripping /chat/completions suffix, call httpx.get(base + '/v1/models'), on exception/non-2xx treat LM Studio portion as empty, append {'id': 'nemotron', 'source': 'nemotron'} iff is_nemotron_loaded() returns true. Implement is_nemotron_loaded() -> bool: return _nemotron_process is not None and poll() reports still-running. Implement load_nemotron() -> dict: idempotent if loaded; else spawn via subprocess.Popen(['python3', expanded_script_path]), store in _nemotron_process, poll NEMOTRON_READY_URL up to timeout; on success return {'status': 'loaded'}, on timeout terminate and return {'status': 'error', 'message': ...}. Implement unload_nemotron() -> dict: idempotent if not loaded; else terminate, wait up to grace seconds, escalate to kill(), clear _nemotron_process, return {'status': 'unloaded'}. Acceptance: test_list_models_includes_lmstudio_entries, test_list_models_degrades_when_lmstudio_unreachable, test_list_models_omits_nemotron_when_not_loaded.",
+      "contracts": [
+        "schema:ModelInfo",
+        "schema:ModelsListResponse",
+        "schema:NemotronLoadResponse",
+        "schema:NemotronUnloadResponse"
+      ],
+      "tests": [
+        "tests/test_models_api.py::test_list_models_includes_lmstudio_entries",
+        "tests/test_models_api.py::test_list_models_degrades_when_lmstudio_unreachable",
+        "tests/test_models_api.py::test_list_models_omits_nemotron_when_not_loaded"
+      ]
+    },
+    {
+      "id": "T2",
+      "file": "src/api/models.py",
+      "depends_on": ["T1"],
+      "brief": "Create src/api/models.py: Implement FastAPI router with GET /api/v1/models, POST /api/v1/nemotron/load, POST /api/v1/nemotron/unload. GET /api/v1/models: call models.list_models() and return ModelsListResponse. POST /api/v1/nemotron/load: call models.load_nemotron() and return NemotronLoadResponse. POST /api/v1/nemotron/unload: call models.unload_nemotron() and return NemotronUnloadResponse. Acceptance: test_load_nemotron_spawns_and_confirms_ready, test_load_nemotron_idempotent_when_already_loaded, test_load_nemotron_timeout_returns_503_and_terminates, test_unload_nemotron_terminates_process, test_unload_nemotron_idempotent_when_not_loaded.",
+      "contracts": [
+        "route:GET /api/v1/models",
+        "route:POST /api/v1/nemotron/load",
+        "route:POST /api/v1/nemotron/unload",
+        "schema:ModelsListResponse",
+        "schema:NemotronLoadResponse",
+        "schema:NemotronUnloadResponse"
+      ],
+      "tests": [
+        "tests/test_models_api.py::test_load_nemotron_spawns_and_confirms_ready",
+        "tests/test_models_api.py::test_load_nemotron_idempotent_when_already_loaded",
+        "tests/test_models_api.py::test_load_nemotron_timeout_returns_503_and_terminates",
+        "tests/test_models_api.py::test_unload_nemotron_terminates_process",
+        "tests/test_models_api.py::test_unload_nemotron_idempotent_when_not_loaded"
+      ]
+    },
+    {
+      "id": "T3",
       "file": "src/services/llm.py",
       "depends_on": [],
-      "brief": "Modify src/services/llm.py: Update stream_reply function signature to accept history parameter (Sequence[dict[str, str]] = ()). In the messages-array construction, insert history entries between system prompt and current user message. Read config from os.environ on each call (C-3). Yield only StreamChunk values. Acceptance: All M3 tests pass plus test_history_entries_in_upstream_messages, test_history_with_system_prompt_ordering, test_history_without_system_prompt_ordering, test_empty_history_matches_m3_behavior, test_multi_turn_history_preserves_all_entries, test_history_does_not_affect_streaming_behavior.",
-      "contracts": ["schema:ChatRequest", "schema:SSEToken", "schema:SSEDone", "schema:SSEError"],
+      "brief": "Modify src/services/llm.py: Update stream_reply(message: str, history: Sequence[dict[str, str]] = (), endpoint_override: str | None = None) -> Iterator[StreamChunk]. When endpoint_override is not None, use it as upstream POST target; otherwise read LLM_ENDPOINT from os.environ. Message/history construction unchanged from M3/M4 (insert history between system prompt and user message). Streaming, failure classification, StreamChunk protocol unchanged. Acceptance: test_request_carries_model_user_message_and_stream_true, test_system_prompt_included_when_set, test_system_prompt_omitted_when_empty, test_content_chunks_yielded_as_tokens_in_order, test_clean_completion_yields_done, test_empty_stream_yields_error_not_done, test_config_read_at_call_time, test_connection_error_yields_error_with_no_tokens, test_non_2xx_yields_error_with_no_tokens, test_timeout_to_first_byte_yields_error, test_mid_stream_drop_yields_error_after_tokens, test_history_entries_in_upstream_messages, test_history_with_system_prompt_ordering, test_history_without_system_prompt_ordering, test_empty_history_matches_m3_behavior, test_multi_turn_history_preserves_all_entries, test_history_does_not_affect_streaming_behavior.",
+      "contracts": [
+        "schema:ChatRequest",
+        "schema:SSEToken",
+        "schema:SSEDone",
+        "schema:SSEError"
+      ],
       "tests": [
         "tests/test_llm_service.py::TestM3StreamReplyCarried::test_request_carries_model_user_message_and_stream_true",
         "tests/test_llm_service.py::TestM3StreamReplyCarried::test_system_prompt_included_when_set",
@@ -29,11 +72,16 @@
       ]
     },
     {
-      "id": "T2",
+      "id": "T4",
       "file": "src/api/chat.py",
-      "depends_on": ["T1"],
-      "brief": "Modify src/api/chat.py: Add HistoryEntry pydantic model with role (Literal['user','assistant']) and content (str). Update ChatRequest to include optional history field (list[HistoryEntry], default []). In the POST /api/v1/chat handler, extract validated history from ChatRequest and pass it to stream_reply as plain dicts. Acceptance: All M3 tests pass plus test_chat_with_history_streams_correctly, test_chat_history_passed_to_upstream, test_chat_history_defaults_to_empty, test_chat_invalid_history_role_is_422, test_chat_history_missing_fields_is_422, test_chat_history_missing_role_is_422, test_chat_empty_history_array_is_valid, test_chat_history_with_system_prompt_ordering.",
-      "contracts": ["schema:ChatRequest", "schema:HistoryEntry", "error:422-validation"],
+      "depends_on": ["T3"],
+      "brief": "Modify src/api/chat.py: Add HistoryEntry pydantic model (role: Literal['user','assistant'], content: str). Update ChatRequest to include optional model field (str | None = None) and history field (list[HistoryEntry] = []). In POST /api/v1/chat handler: validate model type (if present must be string); if model == 'nemotron' and not models.is_nemotron_loaded(), return 422; resolve endpoint_override (NEMOTRON_CHAT_ENDPOINT if model == 'nemotron' else None); call stream_reply(message, history, endpoint_override). Acceptance: test_chat_opens_event_stream_200, test_chat_streams_token_events_in_order, test_chat_emits_done_after_tokens, test_chat_connection_error_emits_error_only, test_chat_mid_stream_failure_emits_error_after_tokens, test_chat_missing_message_is_422_no_stream, test_chat_with_history_streams_correctly, test_chat_history_passed_to_upstream, test_chat_history_defaults_to_empty, test_chat_invalid_history_role_is_422, test_chat_history_missing_fields_is_422, test_chat_history_missing_role_is_422, test_chat_empty_history_array_is_valid, test_chat_history_with_system_prompt_ordering, test_chat_routes_to_nemotron_when_selected, test_chat_routes_to_lmstudio_when_model_absent_or_other, test_chat_invalid_model_type_is_422, test_chat_nemotron_selected_but_not_loaded_is_422.",
+      "contracts": [
+        "route:POST /api/v1/chat",
+        "schema:ChatRequest",
+        "schema:HistoryEntry",
+        "error:422-validation"
+      ],
       "tests": [
         "tests/test_chat_api.py::TestM3ChatRouteCarried::test_chat_opens_event_stream_200",
         "tests/test_chat_api.py::TestM3ChatRouteCarried::test_chat_streams_token_events_in_order",
@@ -48,20 +96,27 @@
         "tests/test_chat_api.py::TestM4ChatHistory::test_chat_history_missing_fields_is_422",
         "tests/test_chat_api.py::TestM4ChatHistory::test_chat_history_missing_role_is_422",
         "tests/test_chat_api.py::TestM4ChatHistory::test_chat_empty_history_array_is_valid",
-        "tests/test_chat_api.py::TestM4ChatHistory::test_chat_history_with_system_prompt_ordering"
+        "tests/test_chat_api.py::TestM4ChatHistory::test_chat_history_with_system_prompt_ordering",
+        "tests/test_chat_model_routing.py::test_chat_routes_to_nemotron_when_selected",
+        "tests/test_chat_model_routing.py::test_chat_routes_to_lmstudio_when_model_absent_or_other",
+        "tests/test_chat_model_routing.py::test_chat_invalid_model_type_is_422",
+        "tests/test_chat_model_routing.py::test_chat_nemotron_selected_but_not_loaded_is_422"
       ]
     },
     {
-      "id": "T3",
+      "id": "T5",
       "file": "src/static/index.html",
-      "depends_on": ["T2"],
-      "brief": "Modify src/static/index.html: Add JS code to maintain an in-memory conversation array. On successful turn (done event), append both user message and accumulated assistant response to the array. On failed turn (error event), do not add anything. Send conversation array as history in every POST request body. On page reload, reset array to []. Acceptance: test_root_serves_html_page passes, test_page_wires_chat_endpoint passes. Smoke check: Manual verification that multi-turn conversation persists across requests and resets on reload.",
-      "contracts": ["route:POST /api/v1/chat"],
+      "depends_on": ["T4"],
+      "brief": "Modify src/static/index.html: Add model selector dropdown populated from GET /api/v1/models. Add Load/Unload Nemotron buttons that POST to /api/v1/nemotron/load and /api/v1/nemotron/unload respectively. On page load, fetch models and populate selector. When user selects model, include it in POST /api/v1/chat request body as 'model' field. Lock selector after first successful message send in conversation; unlock on page refresh. Acceptance: test_root_serves_html_page, test_page_wires_chat_endpoint.",
+      "contracts": [
+        "route:GET /",
+        "route:POST /api/v1/chat",
+        "route:GET /api/v1/models"
+      ],
       "tests": [
         "tests/test_page.py::test_root_serves_html_page",
         "tests/test_page.py::test_page_wires_chat_endpoint"
-      ],
-      "smoke_check": "Manual: Submit multiple messages in sequence, verify conversation array grows correctly; reload page, verify history resets to empty."
+      ]
     }
   ]
 }
