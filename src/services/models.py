@@ -22,7 +22,7 @@ _nemotron_process: subprocess.Popen | None = None
 def list_models() -> list[dict]:
     models: list[dict] = []
 
-    llm_endpoint = os.environ.get("LLM_ENDPOINT")
+    llm_endpoint = os.environ.get("LLM_ENDPOINT", "http://localhost:1234/v1/chat/completions")
     if llm_endpoint:
         base = llm_endpoint.removesuffix("/chat/completions")
         try:
