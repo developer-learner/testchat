@@ -9,21 +9,21 @@
 
 ## Active Feature
 
-**Feature:** M3 — Streaming SSE
-**Frozen spec version:** v3 (frozen)
-**Orchestrator state:** in_progress (19/19 tests green, CEO acceptance pending)
+**Feature:** M5 — Nemotron model management + routing
+**Frozen spec version:** v7 (frozen)
+**Orchestrator state:** done (58/58 tests green)
 **Branch:** `main`
 
 ---
 
 ## Latest Results
 
-**M3 (Streaming SSE)** — built and validated. All 19 frozen tests pass.
-- `src/services/llm.py` — `stream_reply` generator: urllib raw socket reads (`response.fp.read1(4096)`), SSE line parsing, `[DONE]` sentinel, error handling. `<think>` block stripping removed (think content streams to frontend for low-latency first token).
-- `src/api/chat.py` — `StreamingResponse` wrapping `stream_reply` as `text/event-stream` with `token`/`done`/`error` SSE events.
-- `src/static/index.html` — Consumes SSE stream via `ReadableStream.getReader()`, renders tokens with inline `<think>` block dimming.
-- Latency fix: replaced httpx with urllib `response.fp.read1()` — first-token latency dropped from ~24s to ~1.3s.
-- Think-block stripping removed (was causing 18s+ delay before any visible output since qwen3.6-27b emits long thinking traces).
+**M5 (Nemotron model management + routing)** — built and validated. All 58 frozen tests pass.
+- `src/services/models.py` — `list_models`, `is_nemotron_loaded`, `load_nemotron`, `unload_nemotron` with subprocess management and timeout/grace cleanup.
+- `src/api/models.py` — FastAPI router: `GET /api/v1/models`, `POST /api/v1/nemotron/load` (503 on error), `POST /api/v1/nemotron/unload`.
+- `src/api/chat.py` — model routing: `model` field in `ChatRequest`, `endpoint_override` to Nemotron endpoint when model="nemotron"; 422 if nemotron selected but not loaded. Fixed `NEMOTRON_CHAT_ENDPOINT` import (was from wrong module).
+- `src/main.py` — registered models router.
+- `src/static/index.html` — model selector dropdown populated from `GET /api/v1/models`, Load/Unload Nemotron buttons, `model` field in chat POST, selector locked after first message.
 
 CEO acceptance pending (D-44).
 
@@ -41,7 +41,8 @@ Milestone plan:
 - M1: Echo chat — ✅ done
 - M2: Live LLM integration — ✅ done
 - M3: Streaming (SSE) — token-by-token response — ✅ built (CEO acceptance pending)
-- M4: Conversation history — full context sent to LLM
+- M4: Conversation history — full context sent to LLM — ✅ built
+- M5: Nemotron model management + routing — ✅ built (CEO acceptance pending)
 
 ---
 
