@@ -22,13 +22,13 @@ _nemotron_process: subprocess.Popen | None = None
 def list_models() -> list[dict]:
     models: list[dict] = []
 
-    llm_endpoint = os.environ.get("LLM_ENDPOINT")
+    llm_endpoint = os.environ.get("LLM_ENDPOINT", "http://localhost:1234/v1/chat/completions")
     if llm_endpoint:
         base = llm_endpoint.removesuffix("/chat/completions")
         try:
             response = httpx.get(base + "/v1/models", timeout=5)
             if response.status_code == 200:
-                for model in response.json().get("models", []):
+                for model in response.json().get("data", []):
                     models.append({"id": model["id"], "source": "lmstudio"})
         except Exception:
             logger.exception("Failed to fetch LM Studio models")
@@ -40,7 +40,7 @@ def list_models() -> list[dict]:
 
 
 def is_nemotron_loaded() -> bool:
-    if _nemotron_process is None or not isinstance(_nemotron_process, subprocess.Popen):
+    if _nemotron_process is None:
         return False
     try:
         return _nemotron_process.poll() is None
