@@ -1,4 +1,4 @@
-ERD — testchat M5: Model Selection & Nemotron Runtime (erd_version 7 — v8 spec, re-trued to shipped behavior)
+ERD — testchat M5: Model Selection & Nemotron Runtime (erd_version 8 — re-trued to shipped behavior)
 
 What changes M5 v7 spec → M5 v8 shipped reality
 
