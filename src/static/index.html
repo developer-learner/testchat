@@ -305,34 +305,51 @@
 
       var showThinking = false;
       var replyText = '';
-      var messageSent = false;
 
       var threads = [];
       var activeThreadId = null;
       var threadCounter = 0;
+
+      function saveThreadModelState() {
+        var thread = threads.find(function (t) { return t.id === activeThreadId; });
+        if (thread) {
+          thread.model = modelSelect.value;
+          thread.locked = modelSelect.disabled;
+        }
+      }
+
+      function restoreThreadModelState(thread) {
+        modelSelect.value = thread.model || '';
+        modelSelect.disabled = !!thread.locked;
+      }
 
       function createThread() {
         threadCounter++;
         var thread = {
           id: threadCounter,
           title: 'New Chat',
-          messages: []
+          messages: [],
+          model: modelSelect.value,
+          locked: false
         };
         threads.push(thread);
         activeThreadId = thread.id;
         container.innerHTML = '';
         container.classList.toggle('show-thinking', showThinking);
+        modelSelect.disabled = false;
         renderSidebar();
         input.focus();
       }
 
       function switchThread(id) {
+        saveThreadModelState();
         activeThreadId = id;
         container.innerHTML = '';
         container.classList.toggle('show-thinking', showThinking);
         var thread = threads.find(function (t) { return t.id === id; });
         if (thread) {
           renderThreadMessages(thread);
+          restoreThreadModelState(thread);
         }
         renderSidebar();
       }
@@ -390,13 +407,11 @@
       function renderThink(text) {
         var html = '';
         var inThink = false;
-        var parts = text.split(/(<\/?think>)/g);
+        var parts = text.split(/(<think>|<\/think>)/);
         for (var i = 0; i < parts.length; i++) {
           var part = parts[i];
-          if (part === '') {
-            inThink = false;
-            continue;
-          }
+          if (part === '<think>') { inThink = true; continue; }
+          if (part === '</think>') { inThink = false; continue; }
           var escaped = part.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
           html += inThink ? '<span class="think-content">' + escaped + '</span>' : escaped;
         }
@@ -433,8 +448,9 @@
       }
 
       function lockSelector() {
-        if (!messageSent) {
-          messageSent = true;
+        var thread = threads.find(function (t) { return t.id === activeThreadId; });
+        if (thread && !thread.locked) {
+          thread.locked = true;
           modelSelect.disabled = true;
         }
       }
@@ -458,6 +474,8 @@
         replyBubble.className = 'chat-bubble reply';
         container.appendChild(replyBubble);
         replyText = '';
+
+        currentThread.model = modelSelect.value;
 
         var bodyObj = { message: message, history: currentThread.messages };
         if (modelSelect.value) {
@@ -508,9 +526,9 @@
             } else if (eventType === 'think') {
               try {
                 var parsed = JSON.parse(dataStr);
-                replyText += '';
+                replyText += '<think>' + parsed.content + '</think>';
               } catch (err) {
-                replyText += '';
+                replyText += '<think>' + dataStr + '</think>';
               }
               replyBubble.innerHTML = renderThink(replyText);
               scrollToBottom();
@@ -608,6 +626,11 @@
       });
 
       createThread();
+      modelSelect.addEventListener('change', function () {
+        var thread = threads.find(function (t) { return t.id === activeThreadId; });
+        if (thread) thread.model = modelSelect.value;
+      });
+
       fetchModels();
       input.focus();
     })();

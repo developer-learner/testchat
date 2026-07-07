@@ -9,23 +9,19 @@
 
 ## Active Feature
 
-**Feature:** M5 — Nemotron model management + routing
-**Frozen spec version:** v7 (frozen)
-**Orchestrator state:** done (58/58 tests green)
+**Feature:** M6 — Multichat (in-memory threads)
+**Frozen spec version:** v9 (frozen)
+**Orchestrator state:** done (60/60 tests green)
 **Branch:** `main`
 
 ---
 
 ## Latest Results
 
-**M5 (Nemotron model management + routing)** — built and validated. All 58 frozen tests pass.
-- `src/services/models.py` — `list_models`, `is_nemotron_loaded`, `load_nemotron`, `unload_nemotron` with subprocess management and timeout/grace cleanup.
-- `src/api/models.py` — FastAPI router: `GET /api/v1/models`, `POST /api/v1/nemotron/load` (503 on error), `POST /api/v1/nemotron/unload`.
-- `src/api/chat.py` — model routing: `model` field in `ChatRequest`, `endpoint_override` to Nemotron endpoint when model="nemotron"; 422 if nemotron selected but not loaded. Fixed `NEMOTRON_CHAT_ENDPOINT` import (was from wrong module).
-- `src/main.py` — registered models router.
-- `src/static/index.html` — model selector dropdown populated from `GET /api/v1/models`, Load/Unload Nemotron buttons, `model` field in chat POST, selector locked after first message.
+**M6 (Multichat in-memory threads)** — built and validated. All 60 frozen tests pass. Frontend-only milestone.
+- `src/static/index.html` — sidebar with thread list, New Chat button, per-thread message history/model/lock state, background streaming on thread switch, auto-title from first message.
 
-CEO acceptance pending (D-44).
+CEO acceptance pending (D-44). See PRD CEO demo script for manual verification steps.
 
 ---
 
@@ -40,9 +36,10 @@ None.
 Milestone plan:
 - M1: Echo chat — ✅ done
 - M2: Live LLM integration — ✅ done
-- M3: Streaming (SSE) — token-by-token response — ✅ built (CEO acceptance pending)
-- M4: Conversation history — full context sent to LLM — ✅ built
-- M5: Nemotron model management + routing — ✅ built (CEO acceptance pending)
+- M3: Streaming (SSE) — token-by-token response — ✅ done
+- M4: Conversation history — full context sent to LLM — ✅ done
+- M5: Nemotron model management + routing — ✅ done
+- M6: Multichat in-memory threads — ✅ built (CEO acceptance pending)
 
 ---
 
