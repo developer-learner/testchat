@@ -1,6 +1,6 @@
 """
-Unit-level oracle for src/services/models.py in isolation, independent of
-the HTTP route layer. Exists so src/services/models.py — a standalone
+Unit-level oracle for src/services.models.py in isolation, independent of
+the HTTP route layer. Exists so src/services.models.py — a standalone
 frozen file in contracts.json — has its own validated test coverage rather
 than depending entirely on tests that also exercise src/api/models.py.
 Observes ONLY contracts.entry_points: src.services.models (bare) and the
@@ -25,19 +25,22 @@ def _reset_nemotron_state():
 # list_models()
 # ---------------------------------------------------------------------------
 
-def test_list_models_includes_lmstudio_entries(monkeypatch):
+def test_list_models_includes_lmstudio_loaded_instances(monkeypatch):
     fake_response = MagicMock()
     fake_response.status_code = 200
     fake_response.json.return_value = {
-        "data": [{"id": "qwen3.6-35b-a3b"}, {"id": "another-model"}]
+        "models": [
+            {"key": "qwen/qwen3.6-27b", "loaded_instances": [{"id": "i1"}]},
+            {"key": "qwen3.5-122b-a10b", "loaded_instances": []},
+        ]
     }
     monkeypatch.setattr(models_mod.httpx, "get", MagicMock(return_value=fake_response))
 
     result = models_mod.list_models()
 
     ids = {(m["id"], m["source"]) for m in result}
-    assert ("qwen3.6-35b-a3b", "lmstudio") in ids
-    assert ("another-model", "lmstudio") in ids
+    assert ("qwen/qwen3.6-27b", "lmstudio") in ids
+    assert ("qwen3.5-122b-a10b", "lmstudio") not in ids
 
 
 def test_list_models_returns_empty_on_exception(monkeypatch):
@@ -65,9 +68,9 @@ def test_list_models_returns_empty_on_non_2xx(monkeypatch):
 def test_list_models_omits_nemotron_when_not_loaded(monkeypatch):
     fake_response = MagicMock()
     fake_response.status_code = 200
-    fake_response.json.return_value = {"data": []}
+    fake_response.json.return_value = {"models": []}
     monkeypatch.setattr(models_mod.httpx, "get", MagicMock(return_value=fake_response))
-    models_mod._nemotron_process = None
+    monkeypatch.setattr(models_mod, "is_nemotron_loaded", lambda: False)
 
     result = models_mod.list_models()
 
@@ -77,12 +80,9 @@ def test_list_models_omits_nemotron_when_not_loaded(monkeypatch):
 def test_list_models_includes_nemotron_when_loaded(monkeypatch):
     fake_response = MagicMock()
     fake_response.status_code = 200
-    fake_response.json.return_value = {"data": []}
+    fake_response.json.return_value = {"models": []}
     monkeypatch.setattr(models_mod.httpx, "get", MagicMock(return_value=fake_response))
-
-    fake_proc = MagicMock()
-    fake_proc.poll.return_value = None
-    models_mod._nemotron_process = fake_proc
+    monkeypatch.setattr(models_mod, "is_nemotron_loaded", lambda: True)
 
     result = models_mod.list_models()
 
@@ -94,6 +94,8 @@ def test_list_models_includes_nemotron_when_loaded(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_load_nemotron_spawns_and_confirms_ready(monkeypatch):
+    monkeypatch.setattr(models_mod, "is_nemotron_loaded", lambda: False)
+
     fake_proc = MagicMock()
     fake_proc.poll.return_value = None
     monkeypatch.setattr(models_mod.subprocess, "Popen", MagicMock(return_value=fake_proc))
@@ -109,9 +111,7 @@ def test_load_nemotron_spawns_and_confirms_ready(monkeypatch):
 
 
 def test_load_nemotron_idempotent_when_already_loaded(monkeypatch):
-    fake_proc = MagicMock()
-    fake_proc.poll.return_value = None
-    models_mod._nemotron_process = fake_proc
+    monkeypatch.setattr(models_mod, "is_nemotron_loaded", lambda: True)
 
     spawn = MagicMock()
     monkeypatch.setattr(models_mod.subprocess, "Popen", spawn)
@@ -123,6 +123,8 @@ def test_load_nemotron_idempotent_when_already_loaded(monkeypatch):
 
 
 def test_load_nemotron_timeout_clears_process_and_errors(monkeypatch):
+    monkeypatch.setattr(models_mod, "is_nemotron_loaded", lambda: False)
+
     fake_proc = MagicMock()
     fake_proc.poll.return_value = None
     monkeypatch.setattr(models_mod.subprocess, "Popen", MagicMock(return_value=fake_proc))
@@ -136,11 +138,13 @@ def test_load_nemotron_timeout_clears_process_and_errors(monkeypatch):
     result = models_mod.load_nemotron()
 
     assert result["status"] == "error"
-    fake_proc.terminate.assert_called_once()
+    fake_proc.send_signal.assert_called_once_with(models_mod.signal.SIGINT)
     assert models_mod._nemotron_process is None
 
 
 def test_load_nemotron_expands_script_path(monkeypatch):
+    monkeypatch.setattr(models_mod, "is_nemotron_loaded", lambda: False)
+
     fake_proc = MagicMock()
     fake_proc.poll.return_value = None
     popen_spy = MagicMock(return_value=fake_proc)
@@ -162,7 +166,9 @@ def test_load_nemotron_expands_script_path(monkeypatch):
 # unload_nemotron()
 # ---------------------------------------------------------------------------
 
-def test_unload_nemotron_terminates_process():
+def test_unload_nemotron_sends_sigint(monkeypatch):
+    monkeypatch.setattr(models_mod, "is_nemotron_loaded", lambda: True)
+
     fake_proc = MagicMock()
     fake_proc.poll.return_value = None
     fake_proc.wait.return_value = 0
@@ -171,12 +177,12 @@ def test_unload_nemotron_terminates_process():
     result = models_mod.unload_nemotron()
 
     assert result["status"] == "unloaded"
-    fake_proc.terminate.assert_called_once()
+    fake_proc.send_signal.assert_called_once_with(models_mod.signal.SIGINT)
     assert models_mod._nemotron_process is None
 
 
-def test_unload_nemotron_idempotent_when_not_loaded():
-    models_mod._nemotron_process = None
+def test_unload_nemotron_idempotent_when_not_loaded(monkeypatch):
+    monkeypatch.setattr(models_mod, "is_nemotron_loaded", lambda: False)
 
     result = models_mod.unload_nemotron()
 
@@ -187,15 +193,18 @@ def test_unload_nemotron_idempotent_when_not_loaded():
 # is_nemotron_loaded()
 # ---------------------------------------------------------------------------
 
-def test_is_nemotron_loaded_true_when_process_running():
-    fake_proc = MagicMock()
-    fake_proc.poll.return_value = None
-    models_mod._nemotron_process = fake_proc
+def test_is_nemotron_loaded_true_when_http_responds(monkeypatch):
+    fake_resp = MagicMock()
+    fake_resp.status_code = 200
+    monkeypatch.setattr(models_mod.httpx, "get", MagicMock(return_value=fake_resp))
 
     assert models_mod.is_nemotron_loaded() is True
 
 
-def test_is_nemotron_loaded_false_when_no_process():
-    models_mod._nemotron_process = None
+def test_is_nemotron_loaded_false_when_http_errors(monkeypatch):
+    def _raise(*args, **kwargs):
+        raise models_mod.httpx.ConnectError("")
+
+    monkeypatch.setattr(models_mod.httpx, "get", _raise)
 
     assert models_mod.is_nemotron_loaded() is False

@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from src.main import app
 import src.services.models as models_mod
 import src.services.llm as llm_mod
+import src.api.chat as chat_mod
 
 
 @pytest.fixture(autouse=True)
@@ -25,15 +26,20 @@ def client():
     return TestClient(app)
 
 
-def test_chat_routes_to_nemotron_when_selected(client, monkeypatch):
-    fake_proc = MagicMock()
-    fake_proc.poll.return_value = None
-    models_mod._nemotron_process = fake_proc
+def _patch_nemotron_loaded(monkeypatch, value: bool):
+    """is_nemotron_loaded is imported by name in chat.py; patch both refs."""
+    monkeypatch.setattr(models_mod, "is_nemotron_loaded", lambda: value)
+    monkeypatch.setattr(chat_mod, "is_nemotron_loaded", lambda: value)
+
+
+def test_chat_routes_to_nemotron_and_passes_model(client, monkeypatch):
+    _patch_nemotron_loaded(monkeypatch, True)
 
     captured = {}
 
-    def fake_stream_reply(message, history=(), endpoint_override=None):
+    def fake_stream_reply(message, history=(), endpoint_override=None, model=None):
         captured["endpoint_override"] = endpoint_override
+        captured["model"] = model
         yield ("token", "hi")
         yield ("done",)
 
@@ -43,13 +49,15 @@ def test_chat_routes_to_nemotron_when_selected(client, monkeypatch):
 
     assert resp.status_code == 200
     assert captured["endpoint_override"] == models_mod.NEMOTRON_CHAT_ENDPOINT
+    assert captured["model"] == "nemotron"
 
 
-def test_chat_routes_to_lmstudio_when_model_absent_or_other(client, monkeypatch):
+def test_chat_routes_to_lmstudio_and_passes_model(client, monkeypatch):
     captured = {}
 
-    def fake_stream_reply(message, history=(), endpoint_override=None):
+    def fake_stream_reply(message, history=(), endpoint_override=None, model=None):
         captured["endpoint_override"] = endpoint_override
+        captured["model"] = model
         yield ("token", "hi")
         yield ("done",)
 
@@ -58,12 +66,15 @@ def test_chat_routes_to_lmstudio_when_model_absent_or_other(client, monkeypatch)
     resp = client.post("/api/v1/chat", json={"message": "hello"})
     assert resp.status_code == 200
     assert captured["endpoint_override"] is None
+    assert captured["model"] is None
 
+    captured.clear()
     resp2 = client.post(
-        "/api/v1/chat", json={"message": "hello", "model": "some-lmstudio-model"}
+        "/api/v1/chat", json={"message": "hello", "model": "qwen/qwen3.6-27b"}
     )
     assert resp2.status_code == 200
     assert captured["endpoint_override"] is None
+    assert captured["model"] == "qwen/qwen3.6-27b"
 
 
 def test_chat_invalid_model_type_is_422(client):
@@ -71,8 +82,8 @@ def test_chat_invalid_model_type_is_422(client):
     assert resp.status_code == 422
 
 
-def test_chat_nemotron_selected_but_not_loaded_is_422(client):
-    models_mod._nemotron_process = None
+def test_chat_nemotron_selected_but_not_loaded_is_422(client, monkeypatch):
+    _patch_nemotron_loaded(monkeypatch, False)
 
     resp = client.post("/api/v1/chat", json={"message": "hello", "model": "nemotron"})
 

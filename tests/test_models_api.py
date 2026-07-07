@@ -31,11 +31,14 @@ def client():
 # AC-1 / AC-2 / AC-3: GET /api/v1/models
 # ---------------------------------------------------------------------------
 
-def test_list_models_includes_lmstudio_entries(client, monkeypatch):
+def test_list_models_includes_lmstudio_loaded_instances(client, monkeypatch):
     fake_response = MagicMock()
     fake_response.status_code = 200
     fake_response.json.return_value = {
-        "data": [{"id": "qwen3.6-35b-a3b"}, {"id": "another-model"}]
+        "models": [
+            {"key": "qwen/qwen3.6-27b", "loaded_instances": [{"id": "i1"}]},
+            {"key": "qwen3.5-122b-a10b", "loaded_instances": []},
+        ]
     }
     monkeypatch.setattr(models_mod.httpx, "get", MagicMock(return_value=fake_response))
 
@@ -43,8 +46,8 @@ def test_list_models_includes_lmstudio_entries(client, monkeypatch):
 
     assert resp.status_code == 200
     ids = {(m["id"], m["source"]) for m in resp.json()["models"]}
-    assert ("qwen3.6-35b-a3b", "lmstudio") in ids
-    assert ("another-model", "lmstudio") in ids
+    assert ("qwen/qwen3.6-27b", "lmstudio") in ids
+    assert ("qwen3.5-122b-a10b", "lmstudio") not in ids
 
 
 def test_list_models_degrades_when_lmstudio_unreachable(client, monkeypatch):
@@ -62,9 +65,9 @@ def test_list_models_degrades_when_lmstudio_unreachable(client, monkeypatch):
 def test_list_models_omits_nemotron_when_not_loaded(client, monkeypatch):
     fake_response = MagicMock()
     fake_response.status_code = 200
-    fake_response.json.return_value = {"data": []}
+    fake_response.json.return_value = {"models": []}
     monkeypatch.setattr(models_mod.httpx, "get", MagicMock(return_value=fake_response))
-    models_mod._nemotron_process = None
+    monkeypatch.setattr(models_mod, "is_nemotron_loaded", lambda: False)
 
     resp = client.get("/api/v1/models")
 
@@ -77,8 +80,10 @@ def test_list_models_omits_nemotron_when_not_loaded(client, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_load_nemotron_spawns_and_confirms_ready(client, monkeypatch):
+    monkeypatch.setattr(models_mod, "is_nemotron_loaded", lambda: False)
+
     fake_proc = MagicMock()
-    fake_proc.poll.return_value = None  # still running
+    fake_proc.poll.return_value = None
     monkeypatch.setattr(models_mod.subprocess, "Popen", MagicMock(return_value=fake_proc))
 
     ready_response = MagicMock()
@@ -93,9 +98,7 @@ def test_load_nemotron_spawns_and_confirms_ready(client, monkeypatch):
 
 
 def test_load_nemotron_idempotent_when_already_loaded(client, monkeypatch):
-    fake_proc = MagicMock()
-    fake_proc.poll.return_value = None
-    models_mod._nemotron_process = fake_proc
+    monkeypatch.setattr(models_mod, "is_nemotron_loaded", lambda: True)
 
     spawn = MagicMock()
     monkeypatch.setattr(models_mod.subprocess, "Popen", spawn)
@@ -108,6 +111,8 @@ def test_load_nemotron_idempotent_when_already_loaded(client, monkeypatch):
 
 
 def test_load_nemotron_timeout_returns_503_and_terminates(client, monkeypatch):
+    monkeypatch.setattr(models_mod, "is_nemotron_loaded", lambda: False)
+
     fake_proc = MagicMock()
     fake_proc.poll.return_value = None
     monkeypatch.setattr(models_mod.subprocess, "Popen", MagicMock(return_value=fake_proc))
@@ -122,14 +127,16 @@ def test_load_nemotron_timeout_returns_503_and_terminates(client, monkeypatch):
 
     assert resp.status_code == 503
     assert resp.json()["status"] == "error"
-    fake_proc.terminate.assert_called_once()
+    fake_proc.send_signal.assert_called_once_with(models_mod.signal.SIGINT)
 
 
 # ---------------------------------------------------------------------------
 # AC-7 / AC-8: POST /api/v1/nemotron/unload
 # ---------------------------------------------------------------------------
 
-def test_unload_nemotron_terminates_process(client, monkeypatch):
+def test_unload_nemotron_sends_sigint(client, monkeypatch):
+    monkeypatch.setattr(models_mod, "is_nemotron_loaded", lambda: True)
+
     fake_proc = MagicMock()
     fake_proc.poll.return_value = None
     fake_proc.wait.return_value = 0
@@ -139,12 +146,12 @@ def test_unload_nemotron_terminates_process(client, monkeypatch):
 
     assert resp.status_code == 200
     assert resp.json()["status"] == "unloaded"
-    fake_proc.terminate.assert_called_once()
+    fake_proc.send_signal.assert_called_once_with(models_mod.signal.SIGINT)
     assert models_mod._nemotron_process is None
 
 
-def test_unload_nemotron_idempotent_when_not_loaded(client):
-    models_mod._nemotron_process = None
+def test_unload_nemotron_idempotent_when_not_loaded(client, monkeypatch):
+    monkeypatch.setattr(models_mod, "is_nemotron_loaded", lambda: False)
 
     resp = client.post("/api/v1/nemotron/unload")
 

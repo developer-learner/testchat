@@ -1,5 +1,5 @@
 {
-"erd_version": 6,
+"erd_version": 8,
 "files": [
 "src/services/models.py",
 "src/api/models.py",
@@ -11,6 +11,7 @@
 "src.main:app",
 "src.services.llm",
 "src.services.llm:stream_reply",
+"src.api.chat",
 "src.services.models",
 "src.services.models:list_models",
 "src.services.models:load_nemotron",
@@ -28,6 +29,7 @@
 { "id": "schema:ChatRequest", "fields": { "message": "string", "history": "array of HistoryEntry, optional, default []", "model": "string, optional, default null" } },
 { "id": "schema:HistoryEntry", "fields": { "role": "string, literal 'user' or 'assistant'", "content": "string" } },
 { "id": "schema:SSEToken", "fields": { "event": "literal 'token'", "content": "string" } },
+{ "id": "schema:SSEThink", "fields": { "event": "literal 'think'", "content": "string" } },
 { "id": "schema:SSEDone", "fields": { "event": "literal 'done'" } },
 { "id": "schema:SSEError", "fields": { "event": "literal 'error'", "message": "string" } },
 { "id": "schema:ModelInfo", "fields": { "id": "string", "source": "string, literal 'lmstudio' or 'nemotron'" } },

@@ -1,4 +1,4 @@
-"""Oracle tests for src.services.llm — M3 carried + M4 history.
+"""Oracle tests for src.services.llm — M3 carried + M4 history + M5 model param + think event.
 Surface gate (C-5 / INV-4): only src.services.llm:stream_reply is imported
 from src.  All other imports are test infrastructure.
 """
@@ -16,6 +16,10 @@ from src.services.llm import stream_reply
 
 def _sse_chunk(content: str) -> str:
     obj = {"choices": [{"delta": {"content": content}}]}
+    return f"data: {json.dumps(obj)}\n\n"
+
+def _sse_reasoning_chunk(content: str) -> str:
+    obj = {"choices": [{"delta": {"reasoning_content": content}}]}
     return f"data: {json.dumps(obj)}\n\n"
 
 def _sse_chunk_empty_delta() -> str:
@@ -71,6 +75,15 @@ class TestM3StreamReplyCarried:
         assert body["stream"] is True
         msgs = body["messages"]
         assert msgs[-1] == {"role": "user", "content": "Hello"}
+
+    def test_model_parameter_overrides_env_var(
+        self, httpserver: HTTPServer, monkeypatch
+    ):
+        _setup_env(monkeypatch, httpserver)
+        _expect_post(httpserver, _make_sse_body("hi"))
+        _collect(stream_reply("Hello", model="custom-model"))
+        body = _last_request_json(httpserver)
+        assert body["model"] == "custom-model"
 
     def test_system_prompt_included_when_set(
         self, httpserver: HTTPServer, monkeypatch
@@ -182,6 +195,24 @@ class TestM3StreamReplyCarried:
         assert ("token", "partial") in chunks
         assert ("token", " data") in chunks
         assert chunks[-1] == ("error",)
+
+    def test_reasoning_content_yields_think_event(
+        self, httpserver: HTTPServer, monkeypatch
+    ):
+        _setup_env(monkeypatch, httpserver)
+        body = (
+            _sse_reasoning_chunk("Let me")
+            + _sse_reasoning_chunk(" think")
+            + _sse_chunk("Hello")
+            + _sse_chunk(" world")
+            + _sse_done()
+        )
+        _expect_post(httpserver, body)
+        chunks = _collect(stream_reply("Hi"))
+        think_chunks = [c for c in chunks if c[0] == "think"]
+        token_chunks = [c for c in chunks if c[0] == "token"]
+        assert think_chunks == [("think", "Let me"), ("think", " think")]
+        assert token_chunks == [("token", "Hello"), ("token", " world")]
 
 # ---------------------------------------------------------------------------
 # M4 — history in upstream messages
