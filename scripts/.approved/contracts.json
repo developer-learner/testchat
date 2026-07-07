@@ -1,22 +1,18 @@
 {
-"erd_version": 8,
+"erd_version": 9,
 "files": [
-"src/services/models.py",
-"src/api/models.py",
-"src/services/llm.py",
-"src/api/chat.py",
 "src/static/index.html"
 ],
 "entry_points": [
 "src.main:app",
 "src.services.llm",
 "src.services.llm:stream_reply",
-"src.api.chat",
 "src.services.models",
 "src.services.models:list_models",
 "src.services.models:load_nemotron",
 "src.services.models:unload_nemotron",
-"src.services.models:is_nemotron_loaded"
+"src.services.models:is_nemotron_loaded",
+"src.api.chat"
 ],
 "routes": [
 { "id": "route:GET /", "method": "GET", "path": "/" },
