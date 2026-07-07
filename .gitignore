@@ -45,3 +45,4 @@ blueprint-dryrun*/
 # TPM agent write lane — outbox is consumed by refreeze.sh, never committed
 .tpm/
 .venv-linux/
+.venv-vm/
