@@ -389,7 +389,14 @@
 
       function renderThink(text) {
         var html = '';
-        var parts = text.split(/(') { inThink = false; continue; }
+        var inThink = false;
+        var parts = text.split(/(<\/?think>)/g);
+        for (var i = 0; i < parts.length; i++) {
+          var part = parts[i];
+          if (part === '') {
+            inThink = false;
+            continue;
+          }
           var escaped = part.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
           html += inThink ? '<span class="think-content">' + escaped + '</span>' : escaped;
         }
@@ -437,7 +444,7 @@
         var message = input.value.trim();
         if (!message) return;
 
-        var currentThread = threads[activeThreadId];
+        var currentThread = threads.find(function (t) { return t.id === activeThreadId; });
 
         if (currentThread.messages.length === 0) {
           updateTitle(currentThread, message);
