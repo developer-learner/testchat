@@ -34,15 +34,78 @@ Testing:      pytest
 
 ---
 
+## Commands
+
+> Feature work normally goes through the pipeline (`scripts/orchestrate.sh`),
+> not manual edits — the commands below are for running and inspecting the app
+> locally. Only passing frozen tests confirm success (see guardrails).
+
+```bash
+pip install -r requirements.txt            # install deps
+uvicorn src.main:app --reload              # run app → http://localhost:8000
+
+PYTHONPATH=. pytest                        # full suite (tests import `src.*`; repo root must be on the path)
+PYTHONPATH=. pytest tests/test_llm_service.py::test_name   # a single test
+ruff check src tests                       # lint
+ruff format src tests                      # format
+mypy src                                   # type-check
+```
+
+The pipeline runs the suite in an isolated sandbox as
+`scripts/sandbox-run.sh --rw .cache -- pytest -p no:cacheprovider --json-report`
+(with `PYTHONPATH=/work`), parsed by `scripts/orchestrate.sh`. Reproduce a
+pipeline test run with `scripts/orchestrate.sh`; never mark a task done on your
+own judgment.
+
+Runtime config is via environment variables read in `src/services/llm.py`:
+`LLM_ENDPOINT` (default `http://localhost:1234/v1/chat/completions`, i.e. LM
+Studio), `LLM_MODEL`, `LLM_SYSTEM_PROMPT`, `LLM_TIMEOUT_SECONDS`.
+
+---
+
+## Application Architecture
+
+The app is a thin FastAPI proxy in front of an OpenAI-compatible local LLM,
+with a single-page browser UI. Request flow:
+
+- **`src/main.py`** — the FastAPI app. Mounts the chat and models routers
+  *defensively* (`try/except ImportError`) so a partial build still boots, and
+  serves `src/static/index.html` at `/`.
+- **`src/api/chat.py`** — `POST /api/v1/chat`. Validates `ChatRequest`
+  (`message`, optional `model`, `history`) and returns an SSE
+  `StreamingResponse` with four event types: `token`, `think` (model
+  reasoning), `done`, `error`. Routes `model == "nemotron"` to a dedicated
+  endpoint and returns 422 if that model isn't loaded.
+- **`src/services/llm.py`** — `stream_reply()`. Streams from the LLM endpoint
+  over `urllib` (no httpx dependency in the hot path), building the message
+  list from history + system prompt. Splits the OpenAI delta into
+  `reasoning_content` → `("think", …)` vs `content` → `("token", …)` chunks;
+  every failure path collapses to a single `("error",)` tuple.
+- **`src/services/models.py`** — LM Studio model discovery and nemotron
+  loaded-state / endpoint routing.
+- **`src/api/models.py`** — route exposing available models to the UI.
+- **`src/static/index.html`** — the chat page; consumes the SSE stream.
+
+Milestones: M1 echo → M2 live LLM → M3 streaming → M4 conversation history
+→ M5 nemotron management/routing → M6 multichat in-memory threads
+(see `README.md`).
+
+---
+
 ## Project Structure
 
 ```
 testchat/
 ├── src/                  # application source
-│   ├── api/              # route handlers
-│   ├── models/           # data models
-│   ├── services/         # business logic
-│   └── utils/            # shared utilities
+│   ├── main.py           # FastAPI app; mounts routers, serves the chat page
+│   ├── api/
+│   │   ├── chat.py       # POST /api/v1/chat — SSE streaming chat
+│   │   └── models.py     # available-models route
+│   ├── services/
+│   │   ├── llm.py        # stream_reply() — OpenAI-compatible streaming client
+│   │   └── models.py     # LM Studio model discovery + nemotron routing
+│   └── static/
+│       └── index.html    # single-page chat UI
 ├── tests/                # TPM-authored frozen suite (INV-1); changes only via refreeze.sh
 ├── docs/                 # architecture, decisions, product, TPM role, escalation
 ├── tasks/                # EM write lane (plan.json) + session notes + backlog
