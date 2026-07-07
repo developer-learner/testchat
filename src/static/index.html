@@ -14,9 +14,74 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
       background: #f0f2f5;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .app-wrapper {
+      display: flex;
+      flex-direction: row;
+      height: 100vh;
+    }
+
+    .sidebar {
+      width: 250px;
+      min-width: 250px;
+      background: #202123;
+      color: #ececf1;
       display: flex;
       flex-direction: column;
-      height: 100vh;
+      overflow: hidden;
+    }
+
+    .new-thread-btn {
+      margin: 0.75rem;
+      padding: 0.6rem 1rem;
+      background: transparent;
+      color: #ececf1;
+      border: 1px solid #565869;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      cursor: pointer;
+      text-align: left;
+      transition: background 0.2s;
+    }
+
+    .new-thread-btn:hover {
+      background: #2a2b32;
+    }
+
+    .thread-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 0.5rem;
+    }
+
+    .thread-item {
+      padding: 0.6rem 0.75rem;
+      margin: 0.2rem 0;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: background 0.2s;
+    }
+
+    .thread-item:hover {
+      background: #2a2b32;
+    }
+
+    .thread-item.active {
+      background: #343541;
+    }
+
+    .chat-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
     }
 
     .top-bar {
@@ -202,18 +267,26 @@
   </style>
 </head>
 <body>
-  <div class="top-bar">
-    <label for="model-select">Model:</label>
-    <select id="model-select"><option value="">Loading models...</option></select>
-    <button type="button" class="nemotron-btn load" id="load-nemotron">Load Nemotron</button>
-    <button type="button" class="nemotron-btn unload" id="unload-nemotron">Unload Nemotron</button>
+  <div class="app-wrapper">
+    <aside class="sidebar">
+      <button type="button" class="new-thread-btn" id="new-thread-btn">+ New Chat</button>
+      <div class="thread-list" id="thread-list"></div>
+    </aside>
+    <main class="chat-panel">
+      <div class="top-bar">
+        <label for="model-select">Model:</label>
+        <select id="model-select"><option value="">Loading models...</option></select>
+        <button type="button" class="nemotron-btn load" id="load-nemotron">Load Nemotron</button>
+        <button type="button" class="nemotron-btn unload" id="unload-nemotron">Unload Nemotron</button>
+      </div>
+      <div class="chat-container" id="chat-container"></div>
+      <form class="input-area" id="chat-form">
+        <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off" required />
+        <button type="button" class="think-toggle" id="think-toggle" title="Toggle thinking display">💭</button>
+        <button type="submit" id="send-btn">Send</button>
+      </form>
+    </main>
   </div>
-  <div class="chat-container" id="chat-container"></div>
-  <form class="input-area" id="chat-form">
-    <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off" required />
-    <button type="button" class="think-toggle" id="think-toggle" title="Toggle thinking display">💭</button>
-    <button type="submit" id="send-btn">Send</button>
-  </form>
 
   <script>
     (function () {
@@ -227,11 +300,80 @@
       var modelSelect = document.getElementById('model-select');
       var loadNemotronBtn = document.getElementById('load-nemotron');
       var unloadNemotronBtn = document.getElementById('unload-nemotron');
+      var newThreadBtn = document.getElementById('new-thread-btn');
+      var threadListEl = document.getElementById('thread-list');
 
       var showThinking = false;
       var replyText = '';
-      var conversation = [];
       var messageSent = false;
+
+      var threads = [];
+      var activeThreadId = null;
+      var threadCounter = 0;
+
+      function createThread() {
+        threadCounter++;
+        var thread = {
+          id: threadCounter,
+          title: 'New Chat',
+          messages: []
+        };
+        threads.push(thread);
+        activeThreadId = thread.id;
+        container.innerHTML = '';
+        container.classList.toggle('show-thinking', showThinking);
+        renderSidebar();
+        input.focus();
+      }
+
+      function switchThread(id) {
+        activeThreadId = id;
+        container.innerHTML = '';
+        container.classList.toggle('show-thinking', showThinking);
+        var thread = threads.find(function (t) { return t.id === id; });
+        if (thread) {
+          renderThreadMessages(thread);
+        }
+        renderSidebar();
+      }
+
+      function updateTitle(thread, firstMessage) {
+        var title = firstMessage.trim();
+        if (title.length > 30) {
+          title = title.substring(0, 30) + '...';
+        }
+        thread.title = title;
+        renderSidebar();
+      }
+
+      function renderThreadMessages(thread) {
+        for (var i = 0; i < thread.messages.length; i++) {
+          var msg = thread.messages[i];
+          var bubble = document.createElement('div');
+          bubble.className = 'chat-bubble ' + (msg.role === 'user' ? 'user' : 'reply');
+          if (msg.role === 'assistant') {
+            bubble.innerHTML = renderThink(msg.content);
+          } else {
+            bubble.textContent = msg.content;
+          }
+          container.appendChild(bubble);
+        }
+        scrollToBottom();
+      }
+
+      function renderSidebar() {
+        threadListEl.innerHTML = '';
+        for (var i = 0; i < threads.length; i++) {
+          var thread = threads[i];
+          var item = document.createElement('div');
+          item.className = 'thread-item' + (thread.id === activeThreadId ? ' active' : '');
+          item.textContent = thread.title;
+          (function (tid) {
+            item.addEventListener('click', function () { switchThread(tid); });
+          })(thread.id);
+          threadListEl.appendChild(item);
+        }
+      }
 
       function appendBubble(text, type) {
         var bubble = document.createElement('div');
@@ -247,12 +389,7 @@
 
       function renderThink(text) {
         var html = '';
-        var parts = text.split(/(<think>|<\/think>)/);
-        var inThink = false;
-        for (var i = 0; i < parts.length; i++) {
-          var part = parts[i];
-          if (part === '<think>') { inThink = true; continue; }
-          if (part === '</think>') { inThink = false; continue; }
+        var parts = text.split(/(') { inThink = false; continue; }
           var escaped = part.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
           html += inThink ? '<span class="think-content">' + escaped + '</span>' : escaped;
         }
@@ -300,6 +437,12 @@
         var message = input.value.trim();
         if (!message) return;
 
+        var currentThread = threads[activeThreadId];
+
+        if (currentThread.messages.length === 0) {
+          updateTitle(currentThread, message);
+        }
+
         appendBubble(message, 'user');
         input.value = '';
         sendBtn.disabled = true;
@@ -309,7 +452,7 @@
         container.appendChild(replyBubble);
         replyText = '';
 
-        var bodyObj = { message: message, history: conversation };
+        var bodyObj = { message: message, history: currentThread.messages };
         if (modelSelect.value) {
           bodyObj.model = modelSelect.value;
         }
@@ -358,15 +501,15 @@
             } else if (eventType === 'think') {
               try {
                 var parsed = JSON.parse(dataStr);
-                replyText += '<think>' + parsed.content + '</think>';
+                replyText += '';
               } catch (err) {
-                replyText += '<think>' + dataStr + '</think>';
+                replyText += '';
               }
               replyBubble.innerHTML = renderThink(replyText);
               scrollToBottom();
             } else if (eventType === 'done') {
-              conversation.push({ role: 'user', content: message });
-              conversation.push({ role: 'assistant', content: replyText });
+              currentThread.messages.push({ role: 'user', content: message });
+              currentThread.messages.push({ role: 'assistant', content: replyText });
             } else if (eventType === 'error') {
               replyBubble.className = 'chat-bubble error';
               try {
@@ -419,6 +562,10 @@
         container.classList.toggle('show-thinking');
       });
 
+      newThreadBtn.addEventListener('click', function () {
+        createThread();
+      });
+
       function refreshModels() {
         fetchModels();
       }
@@ -453,6 +600,7 @@
           });
       });
 
+      createThread();
       fetchModels();
       input.focus();
     })();
