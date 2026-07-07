@@ -60,6 +60,26 @@
         }
       },
       "description": "Locked error responses."
+    },
+    "externals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "probe", "capture"],
+        "properties": {
+          "id": { "type": "string", "description": "Stable id, e.g. 'external:lmstudio-models'." },
+          "probe": { "type": "string", "description": "The exact shell command the operator ran against the REAL dependency to produce the capture (e.g. a curl). Re-runnable to detect upstream drift." },
+          "capture": { "type": "string", "description": "Path under captures/ (staged next to the spec, installed to scripts/.approved/captures/) holding the probe's raw output. This is the ground truth mocks are built from." },
+          "notes": { "type": "string", "description": "Optional: what the spec relies on from this capture (fields, event names, formats)." }
+        }
+      },
+      "description": "D-56: every external interface the spec makes assumptions about (third-party APIs, model output formats, wire protocols) must be declared here with a captured real response. refreeze.sh fails the freeze if a declared capture is missing. Mocks and tests derive from captures, never from the TPM's memory of how the dependency probably behaves."
+    },
+    "smoke_checks": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "TPM-authored shell commands keyed by file path (from the files array). Used for files with no covering frozen test — the orchestrator runs them in the sandbox after the coder writes the file. An oracle: authored by the TPM (frontier), installed via refreeze.sh, never by the EM. Each value must be a valid shell command, not prose."
     }
   }
 }

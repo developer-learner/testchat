@@ -29,7 +29,7 @@ set -euo pipefail
 
 MAX_TASK_STRIKES="${MAX_TASK_STRIKES:-1}"      # coder attempts per brief (default: 1 = fail-fast)
 MAX_BRIEF_REVISIONS="${MAX_BRIEF_REVISIONS:-1}" # EM brief_wrong rewrites per task
-MAX_PLAN_REVISIONS="${MAX_PLAN_REVISIONS:-1}"   # EM plan re-emits per run (validation retries + decomposition_wrong)
+MAX_PLAN_REVISIONS="${MAX_PLAN_REVISIONS:-2}"   # EM plan re-emits per run (validation retries + decomposition_wrong); default 2: the validator's error feedback demonstrably fixes plans on the second emit (testchat M6)
 AGENT_TIMEOUT="${AGENT_TIMEOUT:-1800}"
 
 cd "$(cd "$(dirname "$0")/.." && pwd -P)"
@@ -110,14 +110,18 @@ FROZEN_V=$(cat "$APPROVED/VERSION")
 # D-55 round-trip smoke test: a bug in the model-call path is invisible to
 # static review — only a real round-trip catches it (correction log 2026-07-03).
 # Runs last in pre-flight: all free checks (hooksPath, clean tree, manifest)
-# pass before we spend a model call.
-echo "  LLM round-trip smoke test..."
+# pass before we spend a model call. The budget must absorb a COLD model
+# start — LM Studio loads the mapped model on first request, and a large
+# model takes minutes, not seconds (testchat M6: 30s budget, 122B EM, false
+# pre-flight failure).
+SMOKE_MAX_TIME="${SMOKE_MAX_TIME:-240}"
+echo "  LLM round-trip smoke test (budget ${SMOKE_MAX_TIME}s — cold model start counts)..."
 _smoke_sys=$(mktemp)
 printf 'You are a test probe. Reply with exactly the text the user sends.' > "$_smoke_sys"
-SMOKE_REPLY=$(printf 'SMOKE_OK' | scripts/llm-call.sh em "$_smoke_sys" --max-time 30 2>/dev/null || true)
+SMOKE_REPLY=$(printf 'SMOKE_OK' | scripts/llm-call.sh em "$_smoke_sys" --max-time "$SMOKE_MAX_TIME" 2>/dev/null || true)
 rm -f "$_smoke_sys"
 [ -n "$SMOKE_REPLY" ] \
-  || die "LLM smoke test failed — llm-call.sh returned empty output for a trivial prompt (check SANDBOX_LLM_HOST=$SANDBOX_LLM_HOST, model mapping, model server)"
+  || die "LLM smoke test failed — llm-call.sh returned empty output for a trivial prompt within ${SMOKE_MAX_TIME}s (check SANDBOX_LLM_HOST=$SANDBOX_LLM_HOST, model mapping, model server; a cold large model may need SMOKE_MAX_TIME raised)"
 echo "OK (frozen spec v$FROZEN_V)"
 
 # --- Parse .gate-paths for the build lane ---
@@ -283,7 +287,7 @@ ensure_plan() {
     write_state plan_revisions $((revs + 1))
     echo "=== EM: emit/revise plan (revision $((revs + 1))/$MAX_PLAN_REVISIONS) ==="
     em_call tasks/plan.json scripts/schemas/plan.schema.json \
-      "Decompose the frozen ERD into atomic ONE-FILE tasks and reply with ONLY the plan as JSON matching the schema you were given — no prose, no markdown fence. Requirements: exactly one task per file in contracts.json's files array; every test node-id in test-nodeids mapped to exactly one task (the task after which it should pass, given its depends_on) — EXCEPT node-ids testing carried-forward files that are NOT in contracts.json's files array: list each of those once in the top-level 'regression' array instead, never on a task; every task's contracts list uses ids that exist in contracts.json; every brief self-contained per BLUEPRINT.md Rule 8 (exact path, signatures, inputs/outputs, acceptance) — the coder sees only the brief. Do NOT include a smoke_check field — smoke checks are TPM-authored and live in contracts.json. Set erd_version to $FROZEN_V. NO status fields.${verrs:+ The previous plan failed validation with these errors — fix all of them: $verrs}" \
+      "Decompose the frozen ERD into atomic ONE-FILE tasks and reply with ONLY the plan as JSON matching the schema you were given — no prose, no markdown fence. Requirements: exactly one task per file in contracts.json's files array; every test node-id in test-nodeids that exercises a file in contracts.json's files array mapped to exactly one task (the task after which it should pass, given its depends_on) — node-ids testing only carried-forward files are handled by the shell: do NOT map them and do NOT emit a 'regression' key (the validator rejects it); when unsure, omit the node-id — the validator names any you must map; every task's contracts list uses ids that exist in contracts.json; every brief self-contained per BLUEPRINT.md Rule 8 (exact path, signatures, inputs/outputs, acceptance) — the coder sees only the brief. Do NOT include a smoke_check field — smoke checks are TPM-authored and live in contracts.json. Set erd_version to $FROZEN_V. NO status fields.${verrs:+ The previous plan failed validation with these errors — fix all of them: $verrs}" \
       "ERD:$APPROVED/ERD.md" "contracts:$APPROVED/contracts.json" "test-nodeids:$APPROVED/test-nodeids" "plan-being-revised:tasks/plan.json"
   done
 }
@@ -570,7 +574,7 @@ sys.stdout.write(d['revised_brief'])" > "$BRIEF_DIR/$id"
         write_state plan_revisions $((revs + 1))
         echo "=== EM: revise decomposition (revision $((revs + 1))/$MAX_PLAN_REVISIONS) ==="
         em_call tasks/plan.json scripts/schemas/plan.schema.json \
-          "The decomposition is wrong around task $id: $(python3 -c "import json;print(json.load(open('$DIAG_FILE'))['reason'])"). Rewrite the plan fixing it and reply with ONLY the JSON (same requirements as before: one file per task, every test node-id mapped exactly once, erd_version $FROZEN_V, bump plan version, NO status fields). Keep entries for unrelated tasks byte-identical — completed work is preserved only where entries are unchanged." \
+          "The decomposition is wrong around task $id: $(python3 -c "import json;print(json.load(open('$DIAG_FILE'))['reason'])"). Rewrite the plan fixing it and reply with ONLY the JSON (same requirements as before: one file per task, every inventory-exercising test node-id mapped exactly once, no 'regression' key, erd_version $FROZEN_V, bump plan version, NO status fields). Keep entries for unrelated tasks byte-identical — completed work is preserved only where entries are unchanged." \
           "ERD:$APPROVED/ERD.md" "contracts:$APPROVED/contracts.json" "test-nodeids:$APPROVED/test-nodeids" "plan-being-revised:tasks/plan.json"
         ensure_plan
         set_counter "$id" strikes 0
