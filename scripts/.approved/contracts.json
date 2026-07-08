@@ -1,5 +1,5 @@
 {
-"erd_version": 9,
+"erd_version": 10,
 "files": [
 "src/static/index.html"
 ],
@@ -36,5 +36,27 @@
 "errors": [
 { "id": "error:422-validation", "status": 422 },
 { "id": "error:503-nemotron-unavailable", "status": 503 }
+],
+"externals": [
+{ "id": "external:lmstudio-models",
+  "probe": "curl -sS http://localhost:1234/api/v1/models",
+  "capture": "captures/lmstudio-models.json",
+  "notes": "Backend reads models[].key and models[].loaded_instances (non-empty = loaded). The UI-test mock serves this shape." },
+{ "id": "external:lmstudio-chat-stream",
+  "probe": "curl -sS -N -X POST http://localhost:1234/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"qwen/qwen3.6-27b\",\"messages\":[{\"role\":\"user\",\"content\":\"/no_think Say hi in three words\"}],\"stream\":true}'",
+  "capture": "captures/lmstudio-chat-stream.txt",
+  "notes": "OpenAI chunk shape. Captured reality (2026-07-08): thinking arrives INLINE as <think>...</think> inside delta.content — this LM Studio config emits no reasoning_content. Think text therefore reaches the frontend through SSE 'token' events; the frontend must render it via the think toggle AND strip it from stored/POSTed history. The 'think' SSE event path (reasoning_content) remains contractually valid for configs that parse reasoning." }
+],
+"ui": [
+{ "id": "ui:new-thread-btn", "testid": "new-thread-btn", "description": "sidebar 'New Chat' button" },
+{ "id": "ui:thread-item", "testid": "thread-item", "description": "each thread entry in the sidebar list (one per thread, sidebar order = creation order)" },
+{ "id": "ui:message-input", "testid": "message-input", "description": "chat text input" },
+{ "id": "ui:send-btn", "testid": "send-btn", "description": "send button" },
+{ "id": "ui:think-toggle", "testid": "think-toggle", "description": "global thinking-visibility toggle button" },
+{ "id": "ui:think-content", "testid": "think-content", "description": "each span wrapping thinking text inside an assistant reply bubble (hidden unless toggle is on)" },
+{ "id": "ui:model-select", "testid": "model-select", "description": "model selector dropdown" },
+{ "id": "ui:msg-user", "testid": "msg-user", "description": "each user message bubble in the chat container" },
+{ "id": "ui:msg-assistant", "testid": "msg-assistant", "description": "each assistant reply bubble in the chat container" },
+{ "id": "ui:unload-nemotron", "testid": "unload-nemotron", "description": "Unload Nemotron button" }
 ]
 }

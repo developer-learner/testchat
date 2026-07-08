@@ -58,3 +58,10 @@ tests/test_models_service.py::test_is_nemotron_loaded_true_when_http_responds
 tests/test_models_service.py::test_is_nemotron_loaded_false_when_http_errors
 tests/test_page.py::test_root_serves_html_page
 tests/test_page.py::test_page_wires_chat_endpoint
+tests/test_ui.py::test_think_toggle_reveals_and_hides_thinking
+tests/test_ui.py::test_model_lock_is_per_thread
+tests/test_ui.py::test_thread_switch_restores_history
+tests/test_ui.py::test_history_sent_to_backend_has_no_think_markup
+tests/test_ui.py::test_model_selection_survives_models_refresh
+tests/test_ui.py::test_new_chat_creates_unlocked_empty_thread
+tests/test_ui.py::test_thread_title_set_from_first_message

@@ -1,0 +1,603 @@
+{
+  "models": [
+    {
+      "type": "llm",
+      "publisher": "lmstudio-community",
+      "key": "qwen3-1.7b-mlx@bf16",
+      "display_name": "Qwen3 1.7B",
+      "architecture": "qwen3",
+      "quantization": {
+        "name": "bf16",
+        "bits_per_weight": 16
+      },
+      "size_bytes": 3457091252,
+      "params_string": "1.7B",
+      "loaded_instances": [],
+      "max_context_length": 40960,
+      "format": "mlx",
+      "capabilities": {
+        "vision": false,
+        "trained_for_tool_use": true
+      },
+      "description": null
+    },
+    {
+      "type": "llm",
+      "publisher": "lmstudio-community",
+      "key": "qwen3-1.7b-mlx@8bit",
+      "display_name": "Qwen3 1.7B",
+      "architecture": "qwen3",
+      "quantization": {
+        "name": "8bit",
+        "bits_per_weight": 8
+      },
+      "size_bytes": 1844239959,
+      "params_string": "1.7B",
+      "loaded_instances": [],
+      "max_context_length": 40960,
+      "format": "mlx",
+      "capabilities": {
+        "vision": false,
+        "trained_for_tool_use": true
+      },
+      "description": null
+    },
+    {
+      "type": "llm",
+      "publisher": "lmstudio-community",
+      "key": "phi-4-reasoning-plus-mlx",
+      "display_name": "Phi 4 Reasoning Plus",
+      "architecture": "phi3",
+      "quantization": {
+        "name": "4bit",
+        "bits_per_weight": 4
+      },
+      "size_bytes": 8256388764,
+      "params_string": null,
+      "loaded_instances": [],
+      "max_context_length": 32768,
+      "format": "mlx",
+      "capabilities": {
+        "vision": false,
+        "trained_for_tool_use": false
+      },
+      "description": null
+    },
+    {
+      "type": "llm",
+      "publisher": "qwen",
+      "key": "qwen/qwen3-4b-thinking-2507",
+      "display_name": "Qwen3 4B Thinking 2507",
+      "architecture": "qwen3",
+      "quantization": {
+        "name": "4bit",
+        "bits_per_weight": 4
+      },
+      "size_bytes": 2279153047,
+      "params_string": "4B",
+      "loaded_instances": [],
+      "max_context_length": 262144,
+      "format": "mlx",
+      "capabilities": {
+        "vision": false,
+        "trained_for_tool_use": true,
+        "reasoning": {
+          "allowed_options": [
+            "on"
+          ],
+          "default": "on"
+        }
+      },
+      "description": null,
+      "variants": [
+        "qwen/qwen3-4b-thinking-2507@4bit"
+      ],
+      "selected_variant": "qwen/qwen3-4b-thinking-2507@4bit"
+    },
+    {
+      "type": "llm",
+      "publisher": "mlx-community",
+      "key": "mistral-medium-3.5-128b",
+      "display_name": "Mistral Medium 3.5 128B",
+      "architecture": "mistral3",
+      "quantization": {
+        "name": "4bit",
+        "bits_per_weight": 4
+      },
+      "size_bytes": 78038041682,
+      "params_string": "128B",
+      "loaded_instances": [],
+      "max_context_length": 262144,
+      "format": "mlx",
+      "capabilities": {
+        "vision": true,
+        "trained_for_tool_use": true
+      },
+      "description": null
+    },
+    {
+      "type": "llm",
+      "publisher": "lmstudio-community",
+      "key": "qwen3-0.6b-mlx",
+      "display_name": "Qwen3 0.6B",
+      "architecture": "qwen3",
+      "quantization": {
+        "name": "4bit",
+        "bits_per_weight": 4
+      },
+      "size_bytes": 351383582,
+      "params_string": "0.6B",
+      "loaded_instances": [],
+      "max_context_length": 40960,
+      "format": "mlx",
+      "capabilities": {
+        "vision": false,
+        "trained_for_tool_use": true
+      },
+      "description": null
+    },
+    {
+      "type": "llm",
+      "publisher": "mlx-community",
+      "key": "mistralai_devstral-small-2-24b-instruct-2512-mlx",
+      "display_name": "Mistralai Devstral Small 2 24B Instruct 2512",
+      "architecture": "mistral3",
+      "quantization": {
+        "name": "8bit",
+        "bits_per_weight": 8
+      },
+      "size_bytes": 25063386176,
+      "params_string": "24B",
+      "loaded_instances": [],
+      "max_context_length": 393216,
+      "format": "mlx",
+      "capabilities": {
+        "vision": false,
+        "trained_for_tool_use": true
+      },
+      "description": null
+    },
+    {
+      "type": "llm",
+      "publisher": "mlx-community",
+      "key": "gemma-4-31b-it-qat-mxfp8",
+      "display_name": "Gemma 4 31B Instruct QAT Mxfp8",
+      "architecture": "gemma4",
+      "quantization": {
+        "name": "8bit",
+        "bits_per_weight": 8
+      },
+      "size_bytes": 33486347988,
+      "params_string": "31B",
+      "loaded_instances": [],
+      "max_context_length": 262144,
+      "format": "mlx",
+      "capabilities": {
+        "vision": true,
+        "trained_for_tool_use": true
+      },
+      "description": null
+    },
+    {
+      "type": "llm",
+      "publisher": "mlx-community",
+      "key": "qwen3.6-27b",
+      "display_name": "Qwen3.6 27B",
+      "architecture": "qwen3_5",
+      "quantization": {
+        "name": "bf16",
+        "bits_per_weight": 16
+      },
+      "size_bytes": 54740449973,
+      "params_string": "27B",
+      "loaded_instances": [],
+      "max_context_length": 262144,
+      "format": "mlx",
+      "capabilities": {
+        "vision": true,
+        "trained_for_tool_use": true
+      },
+      "description": null
+    },
+    {
+      "type": "llm",
+      "publisher": "mlx-community",
+      "key": "qwen3.6-35b-a3b-mtp",
+      "display_name": "Qwen3.6 35B A3B MTP",
+      "architecture": "qwen3_5_mtp",
+      "quantization": {
+        "name": "bf16",
+        "bits_per_weight": 16
+      },
+      "size_bytes": 1708833716,
+      "params_string": "35B",
+      "loaded_instances": [],
+      "max_context_length": 262144,
+      "format": "mlx",
+      "capabilities": {
+        "vision": false,
+        "trained_for_tool_use": true
+      },
+      "description": null
+    },
+    {
+      "type": "llm",
+      "publisher": "mlx-community",
+      "key": "llama-3.2-1b-instruct",
+      "display_name": "Llama 3.2 1B Instruct",
+      "architecture": "llama",
+      "quantization": {
+        "name": "4bit",
+        "bits_per_weight": 4
+      },
+      "size_bytes": 712575975,
+      "params_string": "1B",
+      "loaded_instances": [],
+      "max_context_length": 131072,
+      "format": "mlx",
+      "capabilities": {
+        "vision": false,
+        "trained_for_tool_use": true
+      },
+      "description": null
+    },
+    {
+      "type": "llm",
+      "publisher": "unsloth",
+      "key": "diffusiongemma-26b-a4b-it",
+      "display_name": "Diffusiongemma 26B A4B Instruct",
+      "architecture": "diffusion-gemma",
+      "quantization": {
+        "name": "Q4_K_M",
+        "bits_per_weight": 4
+      },
+      "size_bytes": 16806810336,
+      "params_string": "128x2.6B",
+      "loaded_instances": [],
+      "max_context_length": 262144,
+      "format": "gguf",
+      "capabilities": {
+        "vision": false,
+        "trained_for_tool_use": true
+      },
+      "description": null
+    },
+    {
+      "type": "llm",
+      "publisher": "lmstudio-community",
+      "key": "qwen2.5-0.5b-instruct-mlx",
+      "display_name": "Qwen2.5 0.5B Instruct",
+      "architecture": "qwen2",
+      "quantization": {
+        "name": "4bit",
+        "bits_per_weight": 4
+      },
+      "size_bytes": 293989098,
+      "params_string": "0.5B",
+      "loaded_instances": [],
+      "max_context_length": 32768,
+      "format": "mlx",
+      "capabilities": {
+        "vision": false,
+        "trained_for_tool_use": true
+      },
+      "description": null
+    },
+    {
+      "type": "llm",
+      "publisher": "mlx-community",
+      "key": "glm-4.6v",
+      "display_name": "GLM 4.6V",
+      "architecture": "glm4v_moe",
+      "quantization": {
+        "name": "6bit",
+        "bits_per_weight": 6
+      },
+      "size_bytes": 88586224994,
+      "params_string": null,
+      "loaded_instances": [],
+      "max_context_length": 131072,
+      "format": "mlx",
+      "capabilities": {
+        "vision": true,
+        "trained_for_tool_use": true
+      },
+      "description": null
+    },
+    {
+      "type": "llm",
+      "publisher": "mlx-community",
+      "key": "qwen3.5-122b-a10b",
+      "display_name": "Qwen3.5 122B A10B",
+      "architecture": "qwen3_5_moe",
+      "quantization": {
+        "name": "5bit",
+        "bits_per_weight": 5
+      },
+      "size_bytes": 84884298099,
+      "params_string": "122B",
+      "loaded_instances": [],
+      "max_context_length": 262144,
+      "format": "mlx",
+      "capabilities": {
+        "vision": true,
+        "trained_for_tool_use": true
+      },
+      "description": null
+    },
+    {
+      "type": "llm",
+      "publisher": "unsloth",
+      "key": "unsloth/qwen3.6-27b-mlx",
+      "display_name": "Qwen3.6 27B",
+      "architecture": "qwen3_5",
+      "quantization": {
+        "name": "8bit",
+        "bits_per_weight": 8
+      },
+      "size_bytes": 34733957428,
+      "params_string": "27B",
+      "loaded_instances": [],
+      "max_context_length": 262144,
+      "format": "mlx",
+      "capabilities": {
+        "vision": true,
+        "trained_for_tool_use": true
+      },
+      "description": null
+    },
+    {
+      "type": "llm",
+      "publisher": "unsloth",
+      "key": "qwen3.6-27b-mtp",
+      "display_name": "Qwen3.6 27B UD",
+      "architecture": "qwen35",
+      "quantization": {
+        "name": "Q8_K_XL",
+        "bits_per_weight": 8
+      },
+      "size_bytes": 37619424960,
+      "params_string": "27B",
+      "loaded_instances": [],
+      "max_context_length": 262144,
+      "format": "gguf",
+      "capabilities": {
+        "vision": true,
+        "trained_for_tool_use": true
+      },
+      "description": null
+    },
+    {
+      "type": "llm",
+      "publisher": "qwen",
+      "key": "qwen/qwen3.6-27b",
+      "display_name": "Qwen3.6 27B",
+      "architecture": "qwen3_5",
+      "quantization": {
+        "name": "8bit",
+        "bits_per_weight": 8
+      },
+      "size_bytes": 29528361872,
+      "params_string": "27B",
+      "loaded_instances": [
+        {
+          "id": "qwen/qwen3.6-27b",
+          "config": {
+            "context_length": 8800,
+            "parallel": 4
+          }
+        }
+      ],
+      "max_context_length": 262144,
+      "format": "mlx",
+      "capabilities": {
+        "vision": true,
+        "trained_for_tool_use": true,
+        "reasoning": {
+          "allowed_options": [
+            "off",
+            "on"
+          ],
+          "default": "on"
+        }
+      },
+      "description": null,
+      "variants": [
+        "qwen/qwen3.6-27b@4bit",
+        "qwen/qwen3.6-27b@8bit"
+      ],
+      "selected_variant": "qwen/qwen3.6-27b@8bit"
+    },
+    {
+      "type": "llm",
+      "publisher": "google",
+      "key": "google/gemma-4-31b",
+      "display_name": "Gemma 4 31B",
+      "architecture": "gemma4",
+      "quantization": {
+        "name": "4bit",
+        "bits_per_weight": 4
+      },
+      "size_bytes": 28849069802,
+      "params_string": "31B",
+      "loaded_instances": [],
+      "max_context_length": 262144,
+      "format": "mlx",
+      "capabilities": {
+        "vision": true,
+        "trained_for_tool_use": true,
+        "reasoning": {
+          "allowed_options": [
+            "off",
+            "on"
+          ],
+          "default": "on"
+        }
+      },
+      "description": null,
+      "variants": [
+        "google/gemma-4-31b@4bit"
+      ],
+      "selected_variant": "google/gemma-4-31b@4bit"
+    },
+    {
+      "type": "llm",
+      "publisher": "google",
+      "key": "google/gemma-4-26b-a4b",
+      "display_name": "Gemma 4 26B A4B",
+      "architecture": "gemma4",
+      "quantization": {
+        "name": "8bit",
+        "bits_per_weight": 8
+      },
+      "size_bytes": 27986154957,
+      "params_string": "26B",
+      "loaded_instances": [],
+      "max_context_length": 262144,
+      "format": "mlx",
+      "capabilities": {
+        "vision": true,
+        "trained_for_tool_use": true,
+        "reasoning": {
+          "allowed_options": [
+            "off",
+            "on"
+          ],
+          "default": "on"
+        }
+      },
+      "description": null,
+      "variants": [
+        "google/gemma-4-26b-a4b@8bit"
+      ],
+      "selected_variant": "google/gemma-4-26b-a4b@8bit"
+    },
+    {
+      "type": "llm",
+      "publisher": "qwen",
+      "key": "qwen/qwen3.6-35b-a3b",
+      "display_name": "Qwen3.6 35B A3B",
+      "architecture": "qwen3_5_moe",
+      "quantization": {
+        "name": "8bit",
+        "bits_per_weight": 8
+      },
+      "size_bytes": 37748563037,
+      "params_string": "35B",
+      "loaded_instances": [
+        {
+          "id": "qwen/qwen3.6-35b-a3b",
+          "config": {
+            "context_length": 17106,
+            "parallel": 4
+          }
+        }
+      ],
+      "max_context_length": 262144,
+      "format": "mlx",
+      "capabilities": {
+        "vision": true,
+        "trained_for_tool_use": true,
+        "reasoning": {
+          "allowed_options": [
+            "off",
+            "on"
+          ],
+          "default": "on"
+        }
+      },
+      "description": null,
+      "variants": [
+        "qwen/qwen3.6-35b-a3b@8bit"
+      ],
+      "selected_variant": "qwen/qwen3.6-35b-a3b@8bit"
+    },
+    {
+      "type": "llm",
+      "publisher": "qwen",
+      "key": "qwen/qwen3-vl-30b",
+      "display_name": "Qwen3 VL 30B",
+      "architecture": "qwen3_vl_moe",
+      "quantization": {
+        "name": "4bit",
+        "bits_per_weight": 4
+      },
+      "size_bytes": 18268268217,
+      "params_string": "30B",
+      "loaded_instances": [],
+      "max_context_length": 262144,
+      "format": "mlx",
+      "capabilities": {
+        "vision": true,
+        "trained_for_tool_use": true
+      },
+      "description": null,
+      "variants": [
+        "qwen/qwen3-vl-30b@4bit"
+      ],
+      "selected_variant": "qwen/qwen3-vl-30b@4bit"
+    },
+    {
+      "type": "llm",
+      "publisher": "qwen",
+      "key": "qwen/qwen3-coder-next",
+      "display_name": "Qwen3 Coder Next",
+      "architecture": "qwen3_next",
+      "quantization": {
+        "name": "4bit",
+        "bits_per_weight": 4
+      },
+      "size_bytes": 44856096359,
+      "params_string": "80B",
+      "loaded_instances": [],
+      "max_context_length": 262144,
+      "format": "mlx",
+      "capabilities": {
+        "vision": false,
+        "trained_for_tool_use": true
+      },
+      "description": null,
+      "variants": [
+        "qwen/qwen3-coder-next@4bit",
+        "qwen/qwen3-coder-next@8bit"
+      ],
+      "selected_variant": "qwen/qwen3-coder-next@4bit"
+    },
+    {
+      "type": "llm",
+      "publisher": "unsloth",
+      "key": "qwen3.6-35b-a3b-ud-mlx",
+      "display_name": "Qwen3.6 35B A3B UD",
+      "architecture": "qwen3_5_moe",
+      "quantization": {
+        "name": "4bit",
+        "bits_per_weight": 4
+      },
+      "size_bytes": 21655309421,
+      "params_string": "35B",
+      "loaded_instances": [],
+      "max_context_length": 262144,
+      "format": "mlx",
+      "capabilities": {
+        "vision": true,
+        "trained_for_tool_use": true
+      },
+      "description": null
+    },
+    {
+      "type": "embedding",
+      "publisher": "nomic-ai",
+      "key": "text-embedding-nomic-embed-text-v1.5",
+      "display_name": "Nomic Embed Text v1.5",
+      "quantization": {
+        "name": "Q4_K_M",
+        "bits_per_weight": 4
+      },
+      "size_bytes": 84106624,
+      "params_string": null,
+      "loaded_instances": [],
+      "max_context_length": 2048,
+      "format": "gguf"
+    }
+  ]
+}
