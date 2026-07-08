@@ -43,3 +43,5 @@ uvloop==0.22.1
 watchfiles==1.2.0
 websockets==16.0
 Werkzeug==3.1.8
+playwright==1.61.0
+pytest-playwright==0.8.0
