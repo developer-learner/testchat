@@ -114,3 +114,19 @@ def test_thread_title_set_from_first_message(page: Page, app_url: str) -> None:
     expect(page.get_by_test_id("thread-item").first).to_contain_text("New Chat")
     _send(page, "The quick brown fox jumps over the lazy dog")
     expect(page.get_by_test_id("thread-item").first).to_contain_text("The quick brown fox")
+
+
+# AC-34 [M8 — replaces AC-25: refresh now RESTORES]
+def test_threads_survive_reload(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    _send(page, "persist me please")
+    _await_reply(page)
+    page.reload()
+    items = page.get_by_test_id("thread-item")
+    expect(items).to_have_count(1)
+    expect(items.first).to_contain_text("persist me please")
+    users = page.get_by_test_id("msg-user")
+    expect(users).to_have_count(1)
+    expect(users.first).to_contain_text("persist me please")
+    expect(page.get_by_test_id("msg-assistant").first).to_contain_text("Hello there")
+    expect(page.get_by_test_id("model-select")).to_be_disabled()

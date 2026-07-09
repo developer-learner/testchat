@@ -12,11 +12,17 @@ Content is synthetic, shape is real (PRD A13). Everything binds loopback
 only — sandbox-safe under --network none. This file must NOT import
 playwright: the D-58 determinism gate scopes to playwright-importing files,
 and server-readiness polling here legitimately sleeps.
+
+M8: the app under test persists threads (TESTCHAT_DATA points at a
+session temp file), and an autouse fixture clears the snapshot before each
+UI test — tests must stay independent now that state survives page loads.
+The fixture touches the app only for tests that actually use it.
 """
 import json
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -48,6 +54,7 @@ def _models_response() -> dict:
             {"type": "llm", "key": f"refresh-{_models_calls}", "loaded_instances": [{"identifier": "stamp"}]},
         ]
     }
+
 
 # shape: capture lmstudio-chat-stream.txt (choices[0].delta chunks, [DONE])
 STREAM_DELTAS = [
@@ -124,6 +131,7 @@ def llm_stub():
 
 @pytest.fixture(scope="session")
 def app_url(llm_stub):
+    data_path = Path(tempfile.mkdtemp(prefix="testchat-ui-")) / "threads.json"
     proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "src.main:app",
          "--host", "127.0.0.1", "--port", str(APP_PORT), "--log-level", "warning"],
@@ -132,6 +140,7 @@ def app_url(llm_stub):
             **os.environ,
             "LLM_ENDPOINT": f"{llm_stub}/v1/chat/completions",
             "PYTHONPATH": str(REPO_ROOT),
+            "TESTCHAT_DATA": str(data_path),
         },
     )
     try:
@@ -143,6 +152,19 @@ def app_url(llm_stub):
             proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
             proc.kill()
+
+
+@pytest.fixture(autouse=True)
+def _fresh_snapshot(request):
+    """Persistence isolation (M8): clear the saved snapshot before any test
+    that talks to the running app. Touches nothing for pure backend tests
+    (requesting app_url here would needlessly boot the app for them)."""
+    if "app_url" in request.fixturenames:
+        base = request.getfixturevalue("app_url")
+        req = urllib.request.Request(f"{base}/api/v1/threads", method="DELETE")
+        with urllib.request.urlopen(req, timeout=5):
+            pass
+    yield
 
 
 @pytest.fixture

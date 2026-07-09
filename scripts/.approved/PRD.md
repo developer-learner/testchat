@@ -1,135 +1,91 @@
-PRD — testchat M7: Browser Oracle Retrofit + Chat Hygiene Fixes (v11)
+PRD — testchat M8: Persistence (Threads Survive Everything)
 
 Milestone
 
-M7 has two purposes, deliberately coupled:
+M8 makes conversations durable. Today every thread lives only in the page's
+memory; refresh, browser restart, or machine restart erases them. After M8,
+the app keeps all threads in a data file it owns — any browser on this
+machine, any time, sees the same history. No accounts, no logins, no
+network storage: single-user, local, private.
 
-1. Retrofit: the acceptance criteria of M5/M6 that broke silently (think
-   rendering, per-thread model lock, thread switching) become frozen
-   Playwright UI tests (D-58). The pipeline's oracle learns to see exactly
-   what the CEO saw at the M6 demo.
-2. Fixes: two defects found in review of the M6/hotfix code, both invisible
-   to the old oracle, become spec'd behavior with covering UI tests:
-   (a) stored conversation history is contaminated with <think> markup that
-   gets re-sent to the model on every subsequent message; (b) the model list
-   refresh after Nemotron load/unload silently resets the active thread's
-   model selection.
-
-v11 delta (after the v10 halt): same milestone, same acceptance criteria,
-same frozen tests — the frontend is now split into three files
-(index.html shell, app.js, style.css) plus a one-line static-files mount
-in src/main.py, so each coder task is small and single-concern. The v10
-single-task decomposition asked one 638-line full-file rewrite and the
-coder deleted working features; the oracle caught it (efdda29). No SSE
-wire format or API schema changes.
+This milestone SUPERSEDES AC-25 (M6: "refresh clears all threads"). The new
+law is the opposite: refresh restores.
 
 What
 
-Frontend (src/static/index.html):
+Backend:
+- A storage service that saves and loads the full thread snapshot as one
+  JSON file (path from env TESTCHAT_DATA, default data/threads.json),
+  written atomically (temp file + rename), tolerant of a missing or corrupt
+  file (both read as "no saved threads").
+- Three routes: GET /api/v1/threads (the saved snapshot),
+  PUT /api/v1/threads (replace the snapshot), DELETE /api/v1/threads
+  (clear it — used by tests and as a future "clear history" hook).
 
-Locked DOM surface (D-58). Every element named in contracts.ui carries its
-data-testid attribute. These are the only hooks the frozen UI tests use;
-everything else in the DOM may be freely restructured.
-
-Think handling — captured reality (external:lmstudio-chat-stream). Thinking
-text arrives BOTH ways: as SSE 'think' events (reasoning_content configs)
-and INLINE as <think>...</think> inside 'token' events (the current LM
-Studio config — see the capture). The frontend renders thinking from either
-source inside the reply bubble, wrapped in elements carrying
-data-testid="think-content", hidden unless the global think toggle is on.
-
-History hygiene (fix a). The per-thread messages array — and therefore the
-history POSTed to /api/v1/chat — stores assistant content with ALL
-<think>...</think> spans stripped. Thinking text is display-only, in the
-live reply bubble. After a thread switch, re-rendered past messages show
-final content only (thinking display does not persist across switches —
-accepted, see A11).
-
-Model-selection stability (fix b). Rebuilding the model dropdown (after
-Nemotron load/unload) preserves the active thread's current selection when
-that model is still in the list. A locked thread's selection is never
-silently changed by a list refresh.
-
-All M6 behavior (threads, sidebar, titles, per-thread lock) is otherwise
-unchanged.
+Frontend (src/static/app.js, edit-mode changes only):
+- On page load, fetch the saved snapshot and rebuild the threads array,
+  sidebar, and active thread from it; fall back to today's single fresh
+  "New Chat" thread when the snapshot is empty or the fetch fails.
+- Persist the snapshot (PUT, fire-and-forget) at the moments state becomes
+  worth keeping: when an assistant reply completes ('done') and when a new
+  thread is created (which also captures the auto-title of the previous
+  thread).
 
 Acceptance Criteria (EARS notation)
 
-All M3–M6 acceptance criteria remain in force. AC-27..AC-31 are frozen
-Playwright UI tests (D-58); AC references in brackets name the earlier AC
-they retrofit.
+All M3–M7 criteria remain in force except AC-25, which this milestone
+replaces. AC-34 is a frozen Playwright UI test (D-58); AC-35..AC-38 are
+frozen backend tests.
 
-AC-27 [retrofits M5 think-streaming, broke in M6]: WHEN an assistant reply
-contains thinking text (inline <think> tokens or 'think' events), THE SYSTEM
-SHALL render it in the reply bubble inside think-content elements — hidden
-WHILE the think toggle is off, visible WHILE it is on.
+AC-34 [replaces AC-25]: WHEN the page is loaded and a saved snapshot
+exists, THE SYSTEM SHALL display the saved threads — sidebar titles,
+messages, and each thread's model-lock state — with the previously active
+behavior available (send continues the thread).
 
-AC-28 [retrofits AC-23, broke in M6]: WHEN the user has sent a message in
-thread A, THE SYSTEM SHALL disable the model selector in thread A, keep it
-enabled in a newly created thread B, and restore the disabled state when the
-user switches back to thread A.
+AC-35: WHEN an assistant reply completes, THE SYSTEM SHALL persist the
+snapshot such that a subsequent GET /api/v1/threads returns the updated
+thread.
 
-AC-29 [retrofits AC-20/AC-22]: WHEN the user sends messages in two threads
-and clicks between them in the sidebar, THE SYSTEM SHALL display exactly the
-clicked thread's messages.
+AC-36: WHEN GET /api/v1/threads is called with no saved data, THE SYSTEM
+SHALL return an empty threads array (HTTP 200, never an error).
 
-AC-30 [new — fix a]: WHEN the frontend POSTs to /api/v1/chat, THE SYSTEM
-SHALL send a history whose assistant entries contain no <think> markup.
+AC-37: WHEN PUT /api/v1/threads receives a valid payload, THE SYSTEM SHALL
+store it so that a following GET returns an equal payload; WHEN the payload
+is malformed, THE SYSTEM SHALL return 422 and leave the stored snapshot
+unchanged.
 
-AC-31 [new — fix b]: WHEN the model list is refreshed via Nemotron
-load/unload, THE SYSTEM SHALL preserve the active thread's model selection
-if that model is still present in the new list.
+AC-38: WHEN the snapshot file is missing or contains invalid JSON, THE
+SYSTEM SHALL treat it as empty (load returns []) rather than failing.
 
-AC-32 [retrofits AC-19]: WHEN the user clicks "New Chat", THE SYSTEM SHALL
-add a thread to the sidebar and show an empty chat panel.
+manual-only waivers (D-58):
+- Restart-the-Mac durability: same file-on-disk property AC-38 tests;
+  physically restarting hardware stays a CEO check.
+- Cross-browser visibility (Chrome vs Safari): same-snapshot-by-
+  construction; spot-check at the demo.
 
-AC-33 [retrofits AC-21]: WHEN the user sends the first message in a thread,
-THE SYSTEM SHALL set the thread's sidebar title from that message's leading
-characters.
+Out of Scope
 
-manual-only waivers (D-58 rule: every user-visible AC maps to a UI node-id
-or carries a waiver):
-- AC-24 (mid-stream thread switching): streaming-vs-click timing cannot be
-  made deterministic without instrumenting the app; remains CEO-demo only.
-- AC-25 (refresh clears state) and AC-26 (global Nemotron effect across
-  threads): low-risk, exercised implicitly by every UI test's fresh page
-  load; remain CEO-demo.
-
-Out of Scope (documented defects, deferred to a later milestone)
-
-- Error-path history retention: today a stream error loses the user's
-  message from the thread history (only 'done' commits), and the thread's
-  model lock can engage despite an empty committed history. Known defect,
-  NOT fixed in M7.
-- Concurrent streams: sending is globally disabled while any thread
-  streams; the shared reply buffer must become per-send state before this
-  can change. Known limitation, NOT fixed in M7.
-- Mid-stream lock/scroll targeting the viewed thread instead of the sending
-  thread. Known defect, NOT fixed in M7.
-- Persistence, thread deletion/renaming, mobile responsiveness (unchanged
-  from M6's out-of-scope list).
+Accounts, logins, or multi-user anything.
+Cloud/remote storage or sync between machines.
+Draft preservation (text typed but not sent is not saved).
+Thread deletion/renaming UI (DELETE route exists; no button yet).
+Saving mid-stream partial replies (a reply persists when it completes).
+The M9 polish items: Nemotron-unload crash dialog, port-8000 collision,
+error-path history retention.
 
 Flagged Assumptions (CEO sign-off at the freeze gate)
 
-A11: Thinking text is ephemeral display — after switching away and back to
-a thread, past replies show final content only. Re-showing historical
-thinking would require storing it separately per message; not worth the
-state complexity now.
-A12: "Preserve selection" (AC-31) means by model id string match. If the
-selected model disappears from the refreshed list, falling back to the
-first option is acceptable.
-A13: The UI test mock serves the captured LM Studio shapes with synthetic
-content (D-56: shape from capture, content test-chosen).
+A14: Storage is one JSON file owned by the app — not a database engine.
+Same durability at this scale, far fewer moving parts; a future multi-user
+milestone would replace only the storage service.
+A15: Concurrent tabs are last-write-wins. Two tabs chatting simultaneously
+will overwrite each other's snapshot; single-user local app, accepted.
+A16: Persistence moments are reply-completion and thread-creation. A crash
+between those moments loses at most the in-flight exchange.
 
 CEO Demo Script
 
-Open the page — one "New Chat" thread, model dropdown populated.
-Send a message — reply streams; thinking hidden; toggle 💭 on — thinking
-text appears greyed; toggle off — it hides.
-Send a second message — reply still coherent (history clean; previously the
-model was re-fed its own thinking).
-New Chat — selector unlocked; send in thread 2 — selector locks; click
-thread 1 — its messages and lock state return.
-Select a model in a fresh thread, click Unload Nemotron — selection stays.
-Start a long reply, switch threads mid-stream, switch back (AC-24 waiver —
-manual): completed reply visible.
+Chat in two threads. Hit refresh — both threads return, titles intact,
+lock states intact. Quit the browser entirely; reopen — still there.
+Open the app in a different browser — same threads. Restart the Mac if
+you're feeling thorough — still there.

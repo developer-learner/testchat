@@ -1,10 +1,10 @@
 {
- "erd_version": 14,
+ "erd_version": 15,
  "files": [
+  "src/services/storage.py",
+  "src/api/threads.py",
   "src/main.py",
-  "src/static/index.html",
-  "src/static/app.js",
-  "src/static/style.css"
+  "src/static/app.js"
  ],
  "entry_points": [
   "src.main:app",
@@ -15,7 +15,11 @@
   "src.services.models:load_nemotron",
   "src.services.models:unload_nemotron",
   "src.services.models:is_nemotron_loaded",
-  "src.api.chat"
+  "src.api.chat",
+  "src.services.storage",
+  "src.services.storage:load_snapshot",
+  "src.services.storage:save_snapshot",
+  "src.api.threads"
  ],
  "routes": [
   {
@@ -47,6 +51,21 @@
    "id": "route:GET /static/{path}",
    "method": "GET",
    "path": "/static/{path}"
+  },
+  {
+   "id": "route:GET /api/v1/threads",
+   "method": "GET",
+   "path": "/api/v1/threads"
+  },
+  {
+   "id": "route:PUT /api/v1/threads",
+   "method": "PUT",
+   "path": "/api/v1/threads"
+  },
+  {
+   "id": "route:DELETE /api/v1/threads",
+   "method": "DELETE",
+   "path": "/api/v1/threads"
   }
  ],
  "schemas": [
@@ -117,6 +136,22 @@
    "fields": {
     "status": "string, literal 'unloaded' or 'error'",
     "message": "string, optional"
+   }
+  },
+  {
+   "id": "schema:ThreadSnapshot",
+   "fields": {
+    "id": "integer",
+    "title": "string",
+    "messages": "array of HistoryEntry",
+    "model": "string, may be empty",
+    "locked": "boolean"
+   }
+  },
+  {
+   "id": "schema:ThreadsPayload",
+   "fields": {
+    "threads": "array of ThreadSnapshot"
    }
   }
  ],
@@ -196,9 +231,5 @@
    "description": "Unload Nemotron button"
   }
  ],
- "smoke_checks": {
-  "src/static/style.css": "grep -q '\\.think-content' src/static/style.css && grep -q 'show-thinking' src/static/style.css",
-  "src/main.py": "python3 -c \"from src.main import app; assert any(getattr(r, 'path', '').startswith('/static') for r in app.routes), 'no /static mount'\"",
-  "src/static/app.js": "grep -q 'thread-item' src/static/app.js && grep -q 'msg-assistant' src/static/app.js && grep -q 'think-content' src/static/app.js"
- }
+ "smoke_checks": {}
 }
