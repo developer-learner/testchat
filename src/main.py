@@ -2,8 +2,11 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 app = FastAPI()
+
+app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
 try:
     from src.api.chat import router as chat_router
