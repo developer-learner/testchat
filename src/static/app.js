@@ -78,8 +78,10 @@
           var bubble = document.createElement('div');
           bubble.className = 'chat-bubble ' + (msg.role === 'user' ? 'user' : 'reply');
           if (msg.role === 'assistant') {
+            bubble.setAttribute('data-testid', 'msg-assistant');
             bubble.innerHTML = renderThink(msg.content);
           } else {
+            bubble.setAttribute('data-testid', 'msg-user');
             bubble.textContent = msg.content;
           }
           container.appendChild(bubble);
@@ -93,6 +95,7 @@
           var thread = threads[i];
           var item = document.createElement('div');
           item.className = 'thread-item' + (thread.id === activeThreadId ? ' active' : '');
+          item.setAttribute('data-testid', 'thread-item');
           item.textContent = thread.title;
           (function (tid) {
             item.addEventListener('click', function () { switchThread(tid); });
@@ -104,6 +107,9 @@
       function appendBubble(text, type) {
         var bubble = document.createElement('div');
         bubble.className = 'chat-bubble ' + type;
+        if (type === 'user') {
+          bubble.setAttribute('data-testid', 'msg-user');
+        }
         bubble.textContent = text;
         container.appendChild(bubble);
         scrollToBottom();
@@ -116,134 +122,23 @@
       function renderThink(text) {
         var html = '';
         var inThink = false;
-        var parts = text.split(/(<think>|<\/think>)/);
-        for (var i = 0; i < parts.length; i++) {
-          var part = parts[i];
-          if (part === '<think>') { inThink = true; continue; }
-          if (part === '</think>') { inThink = false; continue; }
+        var parts = text.split(/(') { inThink = false; continue; }
           var escaped = part.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-          html += inThink ? '<span class="think-content">' + escaped + '</span>' : escaped;
+          html += inThink ? '<span class="think-content" data-testid="think-content">' + escaped + '</span>' : escaped;
         }
         return html;
       }
 
-      function fetchModels() {
-        fetch('/api/v1/models')
-          .then(function (response) {
-            if (!response.ok) throw new Error('Failed to fetch models');
-            return response.json();
-          })
-          .then(function (data) {
-            modelSelect.innerHTML = '';
-            var models = data.models || [];
-            if (models.length === 0) {
-              var opt = document.createElement('option');
-              opt.value = '';
-              opt.textContent = 'No models available';
-              modelSelect.appendChild(opt);
-              return;
-            }
-            for (var i = 0; i < models.length; i++) {
-              var opt = document.createElement('option');
-              var id = models[i].id || '';
-              opt.value = id;
-              opt.textContent = id;
-              modelSelect.appendChild(opt);
-            }
-          })
-          .catch(function () {
-            modelSelect.innerHTML = '<option value="">Failed to load models</option>';
-          });
-      }
-
-      function lockSelector() {
-        var thread = threads.find(function (t) { return t.id === activeThreadId; });
-        if (thread && !thread.locked) {
-          thread.locked = true;
-          modelSelect.disabled = true;
-        }
-      }
-
-      form.addEventListener('submit', function (e) {
-        e.preventDefault();
-        var message = input.value.trim();
-        if (!message) return;
-
-        var currentThread = threads.find(function (t) { return t.id === activeThreadId; });
-
-        if (currentThread.messages.length === 0) {
-          updateTitle(currentThread, message);
-        }
-
-        appendBubble(message, 'user');
-        input.value = '';
-        sendBtn.disabled = true;
-
-        var replyBubble = document.createElement('div');
-        replyBubble.className = 'chat-bubble reply';
-        container.appendChild(replyBubble);
-        replyText = '';
-
-        currentThread.model = modelSelect.value;
-
-        var bodyObj = { message: message, history: currentThread.messages };
-        if (modelSelect.value) {
-          bodyObj.model = modelSelect.value;
-        }
-
-        fetch('/api/v1/chat', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(bodyObj)
-        })
-        .then(function (response) {
-          if (!response.ok) {
-            throw new Error('Request failed with status ' + response.status);
-          }
-
-          var reader = response.body.getReader();
-          var decoder = new TextDecoder('utf-8');
-          var buffer = '';
-
-          function processFrame(frame) {
-            if (!frame || !frame.trim()) return;
-
-            var eventType = '';
-            var dataStr = '';
-
-            frame.split('\n').forEach(function (line) {
-              if (line.indexOf('event:') === 0) {
-                eventType = line.substring(6).trim();
-              } else if (line.indexOf('data:') === 0) {
-                dataStr += line.substring(5).trim();
-              }
-            });
-
-            if (!eventType) return;
-
-            if (eventType === 'token') {
-              try {
-                var parsed = JSON.parse(dataStr);
-                replyText += parsed.content;
+      function stripThink(text) {
+        return text.replace(/';
               } catch (err) {
-                replyText += dataStr;
-              }
-              replyBubble.innerHTML = renderThink(replyText);
-              scrollToBottom();
-            } else if (eventType === 'think') {
-              try {
-                var parsed = JSON.parse(dataStr);
-                replyText += '<think>' + parsed.content + '</think>';
-              } catch (err) {
-                replyText += '<think>' + dataStr + '</think>';
+                replyText += '';
               }
               replyBubble.innerHTML = renderThink(replyText);
               scrollToBottom();
             } else if (eventType === 'done') {
               currentThread.messages.push({ role: 'user', content: message });
-              currentThread.messages.push({ role: 'assistant', content: replyText });
+              currentThread.messages.push({ role: 'assistant', content: stripThink(replyText) });
             } else if (eventType === 'error') {
               replyBubble.className = 'chat-bubble error';
               try {
@@ -343,4 +238,3 @@
       fetchModels();
       input.focus();
     })();
-  
