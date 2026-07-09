@@ -1,5 +1,5 @@
 {
- "erd_version": 12,
+ "erd_version": 13,
  "files": [
   "src/main.py",
   "src/static/index.html",

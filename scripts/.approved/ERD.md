@@ -1,4 +1,4 @@
-ERD — testchat M7: Browser Oracle Retrofit + Chat Hygiene Fixes (erd_version 12)
+ERD — testchat M7: Browser Oracle Retrofit + Chat Hygiene Fixes (erd_version 13)
 
 What changes v10 → v11 (why this delta exists)
 
@@ -75,11 +75,17 @@ need the mount, the shell, the JS, and the CSS all in place. Map ALL
 SEVEN to the FINAL task in the DAG (src/static/index.html), which must
 depend_on every other task. Mapping any UI node-id to an earlier task
 guarantees a false strike: the app is not whole until the last task.
-The 60 carried-forward backend node-ids are handled by the shell (D-57)
-— do not map them. The style.css / main.py / app.js tasks carry NO mapped
-tests — their per-task acceptance is the contracts.smoke_checks entry for
-their file (added in v12 after the plan gate correctly rejected tasks
-without an acceptance signal).
+
+Because src/main.py is in this delta's inventory, every backend node-id
+whose test imports src.main is attributed to this delta by the validator
+(D-57) and MUST be mapped — map ALL node-ids from test_chat_api.py,
+test_chat_model_routing.py, test_models_api.py and test_page.py to the
+src/main.py task: the mount is purely additive, so they must pass
+immediately after it. Node-ids the validator does not attribute
+(test_llm_service.py, test_models_service.py) stay unmapped — the shell
+carries them to the final full-suite run. The style.css and app.js tasks
+carry NO mapped tests — their per-task acceptance is their
+contracts.smoke_checks entry (v12).
 
 AC-27 .. AC-33 → the seven tests/test_ui.py node-ids (see v10 mapping,
 unchanged). AC-24/25/26 → manual-only (PRD waivers).
