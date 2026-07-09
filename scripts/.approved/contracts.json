@@ -1,5 +1,5 @@
 {
- "erd_version": 11,
+ "erd_version": 12,
  "files": [
   "src/main.py",
   "src/static/index.html",
@@ -195,5 +195,10 @@
    "testid": "unload-nemotron",
    "description": "Unload Nemotron button"
   }
- ]
+ ],
+ "smoke_checks": {
+  "src/static/style.css": "grep -q '\\.think-content' src/static/style.css && grep -q 'show-thinking' src/static/style.css",
+  "src/main.py": "python3 -c \"from src.main import app; assert any(getattr(r, 'path', '').startswith('/static') for r in app.routes), 'no /static mount'\"",
+  "src/static/app.js": "grep -q 'thread-item' src/static/app.js && grep -q 'msg-assistant' src/static/app.js && grep -q 'think-content' src/static/app.js"
+ }
 }

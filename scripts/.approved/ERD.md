@@ -1,4 +1,4 @@
-ERD — testchat M7: Browser Oracle Retrofit + Chat Hygiene Fixes (erd_version 11)
+ERD — testchat M7: Browser Oracle Retrofit + Chat Hygiene Fixes (erd_version 12)
 
 What changes v10 → v11 (why this delta exists)
 
@@ -76,7 +76,10 @@ SEVEN to the FINAL task in the DAG (src/static/index.html), which must
 depend_on every other task. Mapping any UI node-id to an earlier task
 guarantees a false strike: the app is not whole until the last task.
 The 60 carried-forward backend node-ids are handled by the shell (D-57)
-— do not map them.
+— do not map them. The style.css / main.py / app.js tasks carry NO mapped
+tests — their per-task acceptance is the contracts.smoke_checks entry for
+their file (added in v12 after the plan gate correctly rejected tasks
+without an acceptance signal).
 
 AC-27 .. AC-33 → the seven tests/test_ui.py node-ids (see v10 mapping,
 unchanged). AC-24/25/26 → manual-only (PRD waivers).
