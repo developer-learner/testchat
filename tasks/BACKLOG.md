@@ -41,3 +41,4 @@
 |------|-----------|-------|
 | M1 — Echo Chat | 2026-07-03 | Canned responses, full stack wired |
 | M2 — Live LLM Proxy | 2026-07-04 | Real HTTP call to local LLM endpoint, env-based config, error fallback |
+D-59 candidate: validator auto-maps attributed node-ids (D-57 part 2) — needs CEO sign-off (Rule 3)
