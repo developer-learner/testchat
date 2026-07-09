@@ -9,21 +9,21 @@
 <body>
   <div class="app-wrapper">
     <aside class="sidebar">
-      <button type="button" class="new-thread-btn" id="new-thread-btn">+ New Chat</button>
+      <button type="button" class="new-thread-btn" id="new-thread-btn" data-testid="new-thread-btn">+ New Chat</button>
       <div class="thread-list" id="thread-list"></div>
     </aside>
     <main class="chat-panel">
       <div class="top-bar">
         <label for="model-select">Model:</label>
-        <select id="model-select"><option value="">Loading models...</option></select>
+        <select id="model-select" data-testid="model-select"><option value="">Loading models...</option></select>
         <button type="button" class="nemotron-btn load" id="load-nemotron">Load Nemotron</button>
-        <button type="button" class="nemotron-btn unload" id="unload-nemotron">Unload Nemotron</button>
+        <button type="button" class="nemotron-btn unload" id="unload-nemotron" data-testid="unload-nemotron">Unload Nemotron</button>
       </div>
       <div class="chat-container" id="chat-container"></div>
       <form class="input-area" id="chat-form">
-        <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off" required />
-        <button type="button" class="think-toggle" id="think-toggle" title="Toggle thinking display">💭</button>
-        <button type="submit" id="send-btn">Send</button>
+        <input type="text" id="message-input" data-testid="message-input" placeholder="Type a message..." autocomplete="off" required />
+        <button type="button" class="think-toggle" id="think-toggle" data-testid="think-toggle" title="Toggle thinking display">💭</button>
+        <button type="submit" id="send-btn" data-testid="send-btn">Send</button>
       </form>
     </main>
   </div>
