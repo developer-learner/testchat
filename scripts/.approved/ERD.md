@@ -1,97 +1,94 @@
-ERD — testchat M7: Browser Oracle Retrofit + Chat Hygiene Fixes (erd_version 10)
+ERD — testchat M7: Browser Oracle Retrofit + Chat Hygiene Fixes (erd_version 11)
 
-What changes M6 → M7
+What changes v10 → v11 (why this delta exists)
 
-Modified: src/static/index.html — the only file. Three changes:
-1. Locked testids: every contracts.ui element carries its data-testid.
-2. History hygiene: assistant content is stripped of <think>...</think>
-   before being pushed to the thread's messages array (display keeps the
-   full text in the live bubble; stored history is clean — AC-30).
-3. Selection stability: fetchModels() records the current selection before
-   rebuilding the dropdown options and restores it afterwards when the id
-   is still present (AC-31).
+The v10 build failed exactly as the model bench predicted: one task asking
+the coder to regenerate a 638-line index.html with three concerns deleted
+working features (commit efdda29, all 7 UI tests red — the oracle caught
+it). v11 changes the DECOMPOSITION, not the behavior: the frontend splits
+into three files so every coder task is small and single-concern. The
+frozen test suite is UNCHANGED from v10 — tests observe only the browser
+through locked testids, so this refactor is invisible to them.
 
-New frozen test files: tests/conftest.py (UI fixtures: capture-shaped LLM
-mock + app server) and tests/test_ui.py (Playwright suite, D-58). These are
-TPM artifacts, not inventory files — the coder never touches tests/.
+The repo has been mechanically pre-split (a byte-verified, behavior-
+preserving extraction committed before this milestone runs), so every task
+below EDITS an existing file — no file is written from scratch.
 
-No backend files change. No new routes, schemas, or SSE events.
+File inventory (M7 build) — intended DAG order
 
-File inventory (M7 build)
-
-src/static/index.html — modified
+1. src/static/style.css — modified (T-first, no dependencies)
+   All CSS, extracted verbatim from the old <style> block. M7 change:
+   NONE beyond what already exists. The task is a no-op guard: keep the
+   .think-content display rules (hidden by default, visible under
+   .show-thinking) intact.
+2. src/static/app.js — modified (depends on style.css)
+   All application JS, extracted from the old <script> block (the IIFE).
+   M7 changes, exactly three, all small:
+   a. data-testid attributes on DYNAMICALLY created elements:
+      thread-item (sidebar entries), msg-user / msg-assistant (chat
+      bubbles, including the live streaming reply bubble and re-rendered
+      history bubbles), think-content (the spans renderThink emits).
+   b. History hygiene (AC-30): one helper that strips <think>...</think>
+      spans (including an unterminated trailing <think>...) — applied in
+      exactly one place: when pushing the assistant reply into
+      thread.messages on the 'done' event. The live bubble keeps showing
+      the full text; only STORED history is stripped.
+   c. Selection stability (AC-31): fetchModels() records
+      modelSelect.value before rebuilding options and re-selects it after
+      if an option with that value still exists; also update the active
+      thread's stored model to the restored value.
+3. src/main.py — modified (independent; can run any order)
+   Add a StaticFiles mount so the browser can load the split assets:
+   from fastapi.staticfiles import StaticFiles;
+   app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
+   Everything else in the file stays exactly as it is.
+4. src/static/index.html — modified (LAST; depends on all above)
+   The static shell: head, top bar, sidebar, chat container, form. M7
+   changes: data-testid attributes on the STATIC elements
+   (new-thread-btn, message-input, send-btn, think-toggle, model-select,
+   unload-nemotron); it links the split assets via
+   <link rel="stylesheet" href="/static/style.css"> and
+   <script src="/static/app.js"></script> (already present after the
+   pre-split — preserve them).
 
 Data models
 
-Thread (frontend-only, unchanged from M6), with one semantic tightening:
-messages[].content for role 'assistant' is ALWAYS think-free (AC-30). The
-full streamed text (including think markup) exists only transiently in the
-live reply bubble's render state.
-
-Frontend architecture (implementation guidance, not contract)
-
-- data-testid placement: thread-item on each sidebar entry; msg-user /
-  msg-assistant on each chat bubble; think-content on each span wrapping
-  thinking text inside a reply bubble; the rest are 1:1 with existing
-  elements (new-thread-btn, message-input, send-btn, think-toggle,
-  model-select, unload-nemotron).
-- Think sources are unified at render time: 'think' SSE events wrap their
-  content in <think>...</think> before appending to the reply text (as the
-  M6 hotfix does); inline <think> arriving via 'token' events (captured
-  reality — see external:lmstudio-chat-stream) is already in that form. The
-  renderer turns <think> spans into hidden/visible think-content elements.
-- strip helper: one function removing <think>...</think> (including
-  unterminated trailing <think>... at stream end) used exactly once — when
-  committing the reply to thread.messages on 'done'.
-- fetchModels(): capture modelSelect.value before innerHTML rebuild;
-  after appending options, restore it if an option with that value exists;
-  also update the active thread's stored model to the restored value.
-- The M6 per-thread lock/save/restore mechanism (saveThreadModelState /
-  restoreThreadModelState / per-thread locked flag) is behavior to preserve,
-  not rewrite.
-
-Configuration
-
-No new environment variables for the app. UI-test fixtures use fixed
-loopback ports (stub LLM 8971, app under test 8972) and set LLM_ENDPOINT on
-the app subprocess — sandbox-safe under --network none (loopback only).
+Thread (frontend-only, unchanged from v10): messages[].content for role
+'assistant' is ALWAYS think-free (AC-30). Full streamed text exists only
+in the live reply bubble's render state.
 
 Constraints
 
-All M3–M6 constraints carry forward. New:
-C-14: UI tests locate elements ONLY via contracts.ui testids (D-58,
-enforced by check-test-surface.py at freeze).
-C-15: No sleeps or timeout-tuned waits in UI tests (D-58 determinism gate);
-Playwright auto-waiting only. Zero retries — a flaky UI test is a spec
-defect.
-C-16: The UI-test LLM mock serves the captured shapes from
-scripts/.approved/captures/ (D-56); content is synthetic, shape is real.
+All v10 constraints carry forward (C-14 testid-only UI tests, C-15 no
+sleeps, C-16 mocks from captures). New:
+C-17: main.py serves /static/* via StaticFiles; index.html references
+assets ONLY by those absolute /static/ paths.
+C-18: the split is a refactor — no behavior may change except the three
+M7 changes listed under app.js and the testid attributes. Deleting or
+rewriting working logic is a task failure even if unrelated tests stay
+green.
 
-Oracle Mapping (AC → test node)
+Oracle Mapping (AC → test node) — guidance for the plan
 
-AC-27 → tests/test_ui.py::test_think_toggle_reveals_and_hides_thinking
-AC-28 → tests/test_ui.py::test_model_lock_is_per_thread
-AC-29 → tests/test_ui.py::test_thread_switch_restores_history
-AC-30 → tests/test_ui.py::test_history_sent_to_backend_has_no_think_markup
-AC-31 → tests/test_ui.py::test_model_selection_survives_models_refresh
-AC-32 → tests/test_ui.py::test_new_chat_creates_unlocked_empty_thread
-AC-33 → tests/test_ui.py::test_thread_title_set_from_first_message
-AC-24/25/26 → manual-only (PRD waivers)
+The 7 UI node-ids (tests/test_ui.py::*) exercise the WHOLE stack — they
+need the mount, the shell, the JS, and the CSS all in place. Map ALL
+SEVEN to the FINAL task in the DAG (src/static/index.html), which must
+depend_on every other task. Mapping any UI node-id to an earlier task
+guarantees a false strike: the app is not whole until the last task.
+The 60 carried-forward backend node-ids are handled by the shell (D-57)
+— do not map them.
 
-The existing 60-test backend suite carries forward unchanged as the
-regression bucket (computed by the shell, D-57).
+AC-27 .. AC-33 → the seven tests/test_ui.py node-ids (see v10 mapping,
+unchanged). AC-24/25/26 → manual-only (PRD waivers).
 
 Milestone Justification
 
-Single milestone: the retrofit tests and the two fixes are one coherent
-deliverable — the fixes are exactly the defects the retrofit oracle must
-prove it can see. Proof criterion (D-58 acceptance): the retrofit tests
-fail against the M6 [success] tree (9bfc21a + testids) and pass after the
-hotfix (590e205 + testids); the fix tests fail against current HEAD until
-the M7 build lands.
+Same milestone as v10 — the delta only right-sizes the tasks after the
+v10 halt. Sizing per D-46: four atomic tasks, each well inside the
+coder-class comfort zone measured in the bench (single file, one concern,
+brief under 1000 chars).
 
 Test dependencies
 
-New: playwright, pytest-playwright (chromium provided by the sandbox image,
-D-58). Existing: pytest, fastapi.testclient, unittest.mock, httpx,
-pytest-httpserver, werkzeug.
+Unchanged from v10: playwright, pytest-playwright (chromium in the
+sandbox image), pytest, fastapi.testclient, httpx.

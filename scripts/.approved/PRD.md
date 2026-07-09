@@ -1,4 +1,4 @@
-PRD — testchat M7: Browser Oracle Retrofit + Chat Hygiene Fixes
+PRD — testchat M7: Browser Oracle Retrofit + Chat Hygiene Fixes (v11)
 
 Milestone
 
@@ -15,8 +15,13 @@ M7 has two purposes, deliberately coupled:
    refresh after Nemotron load/unload silently resets the active thread's
    model selection.
 
-This is a frontend-only milestone: src/static/index.html is the only file in
-the inventory. No backend routes, schemas, or SSE wire format change.
+v11 delta (after the v10 halt): same milestone, same acceptance criteria,
+same frozen tests — the frontend is now split into three files
+(index.html shell, app.js, style.css) plus a one-line static-files mount
+in src/main.py, so each coder task is small and single-concern. The v10
+single-task decomposition asked one 638-line full-file rewrite and the
+coder deleted working features; the oracle caught it (efdda29). No SSE
+wire format or API schema changes.
 
 What
 
