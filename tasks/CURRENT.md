@@ -85,3 +85,7 @@ Full frozen TPM suite green against spec v9. Feature built and validated.
 - Tomorrow: D-59 template work (coder reply = anchored edit blocks + applier
   in run_coder; strip_think_tags hazard; anchor rules in coder.md), CEO
   sign-off, sync, re-run M7 for in-band [success]. Then CEO demo (D-44).
+
+## Results
+
+Full frozen TPM suite green against spec v14. Feature built and validated.
