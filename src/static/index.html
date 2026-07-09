@@ -269,21 +269,21 @@
 <body>
   <div class="app-wrapper">
     <aside class="sidebar">
-      <button type="button" class="new-thread-btn" id="new-thread-btn" data-testid="new-thread-btn">+ New Chat</button>
+      <button type="button" class="new-thread-btn" id="new-thread-btn">+ New Chat</button>
       <div class="thread-list" id="thread-list"></div>
     </aside>
     <main class="chat-panel">
       <div class="top-bar">
         <label for="model-select">Model:</label>
-        <select id="model-select" data-testid="model-select"><option value="">Loading models...</option></select>
+        <select id="model-select"><option value="">Loading models...</option></select>
         <button type="button" class="nemotron-btn load" id="load-nemotron">Load Nemotron</button>
-        <button type="button" class="nemotron-btn unload" id="unload-nemotron" data-testid="unload-nemotron">Unload Nemotron</button>
+        <button type="button" class="nemotron-btn unload" id="unload-nemotron">Unload Nemotron</button>
       </div>
       <div class="chat-container" id="chat-container"></div>
       <form class="input-area" id="chat-form">
-        <input type="text" id="message-input" data-testid="message-input" placeholder="Type a message..." autocomplete="off" required />
-        <button type="button" class="think-toggle" id="think-toggle" data-testid="think-toggle" title="Toggle thinking display">💭</button>
-        <button type="submit" id="send-btn" data-testid="send-btn">Send</button>
+        <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off" required />
+        <button type="button" class="think-toggle" id="think-toggle" title="Toggle thinking display">💭</button>
+        <button type="submit" id="send-btn">Send</button>
       </form>
     </main>
   </div>
@@ -323,16 +323,102 @@
         modelSelect.disabled = !!thread.locked;
       }
 
-      function stripThinkMarkup(text) {
-        return text.replace(/') { inThink = false; continue; }
+      function createThread() {
+        threadCounter++;
+        var thread = {
+          id: threadCounter,
+          title: 'New Chat',
+          messages: [],
+          model: modelSelect.value,
+          locked: false
+        };
+        threads.push(thread);
+        activeThreadId = thread.id;
+        container.innerHTML = '';
+        container.classList.toggle('show-thinking', showThinking);
+        modelSelect.disabled = false;
+        renderSidebar();
+        input.focus();
+      }
+
+      function switchThread(id) {
+        saveThreadModelState();
+        activeThreadId = id;
+        container.innerHTML = '';
+        container.classList.toggle('show-thinking', showThinking);
+        var thread = threads.find(function (t) { return t.id === id; });
+        if (thread) {
+          renderThreadMessages(thread);
+          restoreThreadModelState(thread);
+        }
+        renderSidebar();
+      }
+
+      function updateTitle(thread, firstMessage) {
+        var title = firstMessage.trim();
+        if (title.length > 30) {
+          title = title.substring(0, 30) + '...';
+        }
+        thread.title = title;
+        renderSidebar();
+      }
+
+      function renderThreadMessages(thread) {
+        for (var i = 0; i < thread.messages.length; i++) {
+          var msg = thread.messages[i];
+          var bubble = document.createElement('div');
+          bubble.className = 'chat-bubble ' + (msg.role === 'user' ? 'user' : 'reply');
+          if (msg.role === 'assistant') {
+            bubble.innerHTML = renderThink(msg.content);
+          } else {
+            bubble.textContent = msg.content;
+          }
+          container.appendChild(bubble);
+        }
+        scrollToBottom();
+      }
+
+      function renderSidebar() {
+        threadListEl.innerHTML = '';
+        for (var i = 0; i < threads.length; i++) {
+          var thread = threads[i];
+          var item = document.createElement('div');
+          item.className = 'thread-item' + (thread.id === activeThreadId ? ' active' : '');
+          item.textContent = thread.title;
+          (function (tid) {
+            item.addEventListener('click', function () { switchThread(tid); });
+          })(thread.id);
+          threadListEl.appendChild(item);
+        }
+      }
+
+      function appendBubble(text, type) {
+        var bubble = document.createElement('div');
+        bubble.className = 'chat-bubble ' + type;
+        bubble.textContent = text;
+        container.appendChild(bubble);
+        scrollToBottom();
+      }
+
+      function scrollToBottom() {
+        container.scrollTop = container.scrollHeight;
+      }
+
+      function renderThink(text) {
+        var html = '';
+        var inThink = false;
+        var parts = text.split(/(<think>|<\/think>)/);
+        for (var i = 0; i < parts.length; i++) {
+          var part = parts[i];
+          if (part === '<think>') { inThink = true; continue; }
+          if (part === '</think>') { inThink = false; continue; }
           var escaped = part.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-          html += inThink ? '<span class="think-content" data-testid="think-content">' + escaped + '</span>' : escaped;
+          html += inThink ? '<span class="think-content">' + escaped + '</span>' : escaped;
         }
         return html;
       }
 
       function fetchModels() {
-        var currentValue = modelSelect.value;
         fetch('/api/v1/models')
           .then(function (response) {
             if (!response.ok) throw new Error('Failed to fetch models');
@@ -354,18 +440,6 @@
               opt.value = id;
               opt.textContent = id;
               modelSelect.appendChild(opt);
-            }
-            var found = false;
-            for (var j = 0; j < modelSelect.options.length; j++) {
-              if (modelSelect.options[j].value === currentValue) {
-                modelSelect.value = currentValue;
-                found = true;
-                break;
-              }
-            }
-            if (found) {
-              var thread = threads.find(function (t) { return t.id === activeThreadId; });
-              if (thread) thread.model = currentValue;
             }
           })
           .catch(function () {
@@ -398,7 +472,6 @@
 
         var replyBubble = document.createElement('div');
         replyBubble.className = 'chat-bubble reply';
-        replyBubble.setAttribute('data-testid', 'msg-assistant');
         container.appendChild(replyBubble);
         replyText = '';
 
@@ -453,15 +526,15 @@
             } else if (eventType === 'think') {
               try {
                 var parsed = JSON.parse(dataStr);
-                replyText += '';
+                replyText += '<think>' + parsed.content + '</think>';
               } catch (err) {
-                replyText += '';
+                replyText += '<think>' + dataStr + '</think>';
               }
               replyBubble.innerHTML = renderThink(replyText);
               scrollToBottom();
             } else if (eventType === 'done') {
               currentThread.messages.push({ role: 'user', content: message });
-              currentThread.messages.push({ role: 'assistant', content: stripThinkMarkup(replyText) });
+              currentThread.messages.push({ role: 'assistant', content: replyText });
             } else if (eventType === 'error') {
               replyBubble.className = 'chat-bubble error';
               try {
