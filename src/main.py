@@ -6,8 +6,6 @@ from fastapi.staticfiles import StaticFiles
 
 app = FastAPI()
 
-app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
-
 try:
     from src.api.chat import router as chat_router
 
@@ -28,3 +26,6 @@ _INDEX = Path(__file__).parent / "static" / "index.html"
 @app.get("/")
 async def serve_index() -> HTMLResponse:
     return HTMLResponse(content=_INDEX.read_text())
+
+
+app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
