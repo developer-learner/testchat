@@ -1,4 +1,4 @@
-ERD — testchat M7: Browser Oracle Retrofit + Chat Hygiene Fixes (erd_version 13)
+ERD — testchat M7: Browser Oracle Retrofit + Chat Hygiene Fixes (erd_version 14)
 
 What changes v10 → v11 (why this delta exists)
 
