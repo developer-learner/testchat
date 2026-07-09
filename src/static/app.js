@@ -77,11 +77,10 @@
           var msg = thread.messages[i];
           var bubble = document.createElement('div');
           bubble.className = 'chat-bubble ' + (msg.role === 'user' ? 'user' : 'reply');
+          bubble.setAttribute('data-testid', msg.role === 'user' ? 'msg-user' : 'msg-assistant');
           if (msg.role === 'assistant') {
-            bubble.setAttribute('data-testid', 'msg-assistant');
             bubble.innerHTML = renderThink(msg.content);
           } else {
-            bubble.setAttribute('data-testid', 'msg-user');
             bubble.textContent = msg.content;
           }
           container.appendChild(bubble);
@@ -95,8 +94,8 @@
           var thread = threads[i];
           var item = document.createElement('div');
           item.className = 'thread-item' + (thread.id === activeThreadId ? ' active' : '');
-          item.setAttribute('data-testid', 'thread-item');
           item.textContent = thread.title;
+          item.setAttribute('data-testid', 'thread-item');
           (function (tid) {
             item.addEventListener('click', function () { switchThread(tid); });
           })(thread.id);
@@ -107,10 +106,8 @@
       function appendBubble(text, type) {
         var bubble = document.createElement('div');
         bubble.className = 'chat-bubble ' + type;
-        if (type === 'user') {
-          bubble.setAttribute('data-testid', 'msg-user');
-        }
         bubble.textContent = text;
+        bubble.setAttribute('data-testid', type === 'user' ? 'msg-user' : 'msg-assistant');
         container.appendChild(bubble);
         scrollToBottom();
       }
@@ -122,7 +119,11 @@
       function renderThink(text) {
         var html = '';
         var inThink = false;
-        var parts = text.split(/(') { inThink = false; continue; }
+        var parts = text.split(/(<think>|<\/think>)/);
+        for (var i = 0; i < parts.length; i++) {
+          var part = parts[i];
+          if (part === '<think>') { inThink = true; continue; }
+          if (part === '</think>') { inThink = false; continue; }
           var escaped = part.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
           html += inThink ? '<span class="think-content" data-testid="think-content">' + escaped + '</span>' : escaped;
         }
@@ -130,9 +131,139 @@
       }
 
       function stripThink(text) {
-        return text.replace(/';
+        var OPEN_TAG = '<' + 'think>';
+        var CLOSE_TAG = '</' + 'think>';
+        var escapedOpen = OPEN_TAG.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        var escapedClose = CLOSE_TAG.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        var pattern = escapedOpen + '.*?' + escapedClose;
+        text = text.replace(new RegExp(pattern, 'gs'), '');
+        var pattern2 = escapedOpen + '.+$';
+        text = text.replace(new RegExp(pattern2, 's'), '');
+        return text;
+      }
+
+      function fetchModels() {
+        fetch('/api/v1/models')
+          .then(function (response) {
+            if (!response.ok) throw new Error('Failed to fetch models');
+            return response.json();
+          })
+          .then(function (data) {
+            var previous = modelSelect.value;
+            modelSelect.innerHTML = '';
+            var models = data.models || [];
+            if (models.length === 0) {
+              var opt = document.createElement('option');
+              opt.value = '';
+              opt.textContent = 'No models available';
+              modelSelect.appendChild(opt);
+              return;
+            }
+            for (var i = 0; i < models.length; i++) {
+              var opt = document.createElement('option');
+              var id = models[i].id || '';
+              opt.value = id;
+              opt.textContent = id;
+              modelSelect.appendChild(opt);
+            }
+            var opts = modelSelect.options;
+            for (var j = 0; j < opts.length; j++) {
+              if (opts[j].value === previous) {
+                modelSelect.value = previous;
+                var thread2 = threads.find(function (t) { return t.id === activeThreadId; });
+                if (thread2) thread2.model = previous;
+                break;
+              }
+            }
+          })
+          .catch(function () {
+            modelSelect.innerHTML = '<option value="">Failed to load models</option>';
+          });
+      }
+
+      function lockSelector() {
+        var thread = threads.find(function (t) { return t.id === activeThreadId; });
+        if (thread && !thread.locked) {
+          thread.locked = true;
+          modelSelect.disabled = true;
+        }
+      }
+
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var message = input.value.trim();
+        if (!message) return;
+
+        var currentThread = threads.find(function (t) { return t.id === activeThreadId; });
+
+        if (currentThread.messages.length === 0) {
+          updateTitle(currentThread, message);
+        }
+
+        appendBubble(message, 'user');
+        input.value = '';
+        sendBtn.disabled = true;
+
+        var replyBubble = document.createElement('div');
+        replyBubble.className = 'chat-bubble reply';
+        replyBubble.setAttribute('data-testid', 'msg-assistant');
+        container.appendChild(replyBubble);
+        replyText = '';
+
+        currentThread.model = modelSelect.value;
+
+        var bodyObj = { message: message, history: currentThread.messages };
+        if (modelSelect.value) {
+          bodyObj.model = modelSelect.value;
+        }
+
+        fetch('/api/v1/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(bodyObj)
+        })
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error('Request failed with status ' + response.status);
+          }
+
+          var reader = response.body.getReader();
+          var decoder = new TextDecoder('utf-8');
+          var buffer = '';
+
+          function processFrame(frame) {
+            if (!frame || !frame.trim()) return;
+
+            var eventType = '';
+            var dataStr = '';
+
+            frame.split('\n').forEach(function (line) {
+              if (line.indexOf('event:') === 0) {
+                eventType = line.substring(6).trim();
+              } else if (line.indexOf('data:') === 0) {
+                dataStr += line.substring(5).trim();
+              }
+            });
+
+            if (!eventType) return;
+
+            if (eventType === 'token') {
+              try {
+                var parsed = JSON.parse(dataStr);
+                replyText += parsed.content;
               } catch (err) {
-                replyText += '';
+                replyText += dataStr;
+              }
+              replyBubble.innerHTML = renderThink(replyText);
+              scrollToBottom();
+            } else if (eventType === 'think') {
+              try {
+                var parsed = JSON.parse(dataStr);
+                replyText += '<think>' + parsed.content + '</think>';
+              } catch (err) {
+                replyText += '<think>' + dataStr + '</think>';
               }
               replyBubble.innerHTML = renderThink(replyText);
               scrollToBottom();
@@ -238,3 +369,4 @@
       fetchModels();
       input.focus();
     })();
+  
