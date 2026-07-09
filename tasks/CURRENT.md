@@ -75,3 +75,13 @@ Full frozen TPM suite green against spec v7. Feature built and validated.
 ## Results
 
 Full frozen TPM suite green against spec v9. Feature built and validated.
+
+## 2026-07-09 — M7 landed outside-band (CEO-approved), D-59 pending
+- v14 frozen; T1/T2 green in-pipeline; T3 full-file coder attempt deleted 119
+  lines (browser oracle caught it at T4's gate); halt stands per protocol.
+- Working app.js landed via CEO-approved commit: coder-authored anchored edit
+  blocks, fail-closed apply, 67/67 in repo (incl. 7 UI tests). Repo tree is
+  demo-ready. No [success] tag — that awaits the in-band re-run.
+- Tomorrow: D-59 template work (coder reply = anchored edit blocks + applier
+  in run_coder; strip_think_tags hazard; anchor rules in coder.md), CEO
+  sign-off, sync, re-run M7 for in-band [success]. Then CEO demo (D-44).
