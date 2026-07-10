@@ -32,6 +32,14 @@
         modelSelect.disabled = !!thread.locked;
       }
 
+      function persistThreads() {
+        fetch('/api/v1/threads', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ threads: threads.map(function (t) { return { id: t.id, title: t.title, messages: t.messages, model: t.model || '', locked: !!t.locked }; }) })
+        }).catch(function () {});
+      }
+
       function createThread() {
         threadCounter++;
         var thread = {
@@ -48,6 +56,7 @@
         modelSelect.disabled = false;
         renderSidebar();
         input.focus();
+        persistThreads();
       }
 
       function switchThread(id) {
@@ -270,6 +279,7 @@
             } else if (eventType === 'done') {
               currentThread.messages.push({ role: 'user', content: message });
               currentThread.messages.push({ role: 'assistant', content: stripThink(replyText) });
+              persistThreads();
             } else if (eventType === 'error') {
               replyBubble.className = 'chat-bubble error';
               try {
@@ -360,7 +370,26 @@
           });
       });
 
-      createThread();
+      fetch('/api/v1/threads')
+        .then(function (response) { return response.json(); })
+        .then(function (data) {
+          if (data.threads && data.threads.length > 0) {
+            threads = data.threads;
+            threadCounter = 0;
+            for (var i = 0; i < threads.length; i++) {
+              if (threads[i].id > threadCounter) threadCounter = threads[i].id;
+            }
+            activeThreadId = threads[0].id;
+            renderThreadMessages(threads[0]);
+            restoreThreadModelState(threads[0]);
+            renderSidebar();
+          } else {
+            createThread();
+          }
+        })
+        .catch(function () {
+          createThread();
+        });
       modelSelect.addEventListener('change', function () {
         var thread = threads.find(function (t) { return t.id === activeThreadId; });
         if (thread) thread.model = modelSelect.value;
