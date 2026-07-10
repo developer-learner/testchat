@@ -1,4 +1,4 @@
-ERD — testchat M8: Persistence (erd_version 16)
+ERD — testchat M8: Persistence (erd_version 17)
 
 What changes M7 → M8
 
@@ -75,6 +75,9 @@ Backend node-ids map to the EARLIEST task after which pytest can both
 COLLECT and PASS them:
 - tests/test_storage_service.py::* → the storage.py task (imports only
   src.services.storage).
+- The threads.py task maps NO tests at all — every test that could
+  exercise it imports src.main and thus belongs to the main.py task; the
+  threads.py task's acceptance is its contracts.smoke_checks entry (v17).
 - tests/test_threads_api.py::* AND every other node-id the validator
   attributes via a src.main import (test_chat_api.py,
   test_chat_model_routing.py, test_models_api.py, test_page.py) → the
