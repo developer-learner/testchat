@@ -46,3 +46,4 @@ blueprint-dryrun*/
 .tpm/
 .venv-linux/
 .venv-vm/
+data/

@@ -108,7 +108,10 @@ unload shows a macOS "Python quit unexpectedly" dialog — an old uncommitted
 hand-fix that evaporated; fix + guard this time. (2) Port-8000 collision:
 NEMOTRON_BASE_URL hardcoded (src/services/models.py) vs app's default port.
 (3) Error-path history loss: messages only commit on 'done' — a stream
-error drops the user's message and can lock an empty thread. Later (~M10):
+error drops the user's message and can lock an empty thread. (4) UX: a
+'thinking...' placeholder in the reply bubble while a model reasons silently
+(qwen thinks for minutes; an empty bubble reads as frozen — CEO-reported
+2026-07-10). M8 was CEO-accepted 2026-07-10. Later (~M10):
 split app.js by feature when growth warrants (chat/threads-ui/persistence).
 
 Operational knowledge, hard-won:
