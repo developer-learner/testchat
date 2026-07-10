@@ -93,3 +93,36 @@ Full frozen TPM suite green against spec v14. Feature built and validated.
 ## Results
 
 Full frozen TPM suite green against spec v17. Feature built and validated.
+
+## 2026-07-09 (eve) — HANDOFF: state + operational knowledge (LLM-agnostic)
+Read CLAUDE.md, docs/CONDUCTOR-ROLE.md, docs/DECISIONS.md (template repo,
+D-55..D-60) before acting. Derive state from git, never from this note.
+
+State: M7 (`2391c38` v14) and M8 persistence (`a7f00a7` v17) both [success],
+78/78 frozen tests, zero post-success hand-fixes either milestone. M8 CEO
+demo acceptance (D-44) still pending. App runs on :8080 locally (port 8000
+must stay free for Nemotron — known collision, see M9).
+
+M9 queue (next milestone, TPM cycle, deliberately small): (1) Nemotron
+unload shows a macOS "Python quit unexpectedly" dialog — an old uncommitted
+hand-fix that evaporated; fix + guard this time. (2) Port-8000 collision:
+NEMOTRON_BASE_URL hardcoded (src/services/models.py) vs app's default port.
+(3) Error-path history loss: messages only commit on 'done' — a stream
+error drops the user's message and can lock an empty thread. Later (~M10):
+split app.js by feature when growth warrants (chat/threads-ui/persistence).
+
+Operational knowledge, hard-won:
+- Approvals: the CEO granted session-scoped delegation for refreeze/sync
+  gates on 2026-07-08/09. This does NOT carry over — re-ask the CEO.
+- Syncing template→child: after ANY sync, verify by content/hash (grep a
+  known new string in a synced file), never trust exit status — two silent
+  no-op syncs happened here. docs/ never syncs (manifest has no docs/
+  entries); child-visible law must ride in .opencode/prompts/*.
+- EM thrash pattern: if plan revisions oscillate between two errors, check
+  the spec for UNSATISFIABLE constraints first (v15/v16: a task with no
+  mapped tests AND no smoke_check is illegal by construction).
+- Pipeline runs ONLY in the VM: `limactl shell dev-vm`, repo at the same
+  absolute path. Model mapping: ~/.config/sw-dev-blueprint/models.env (VM
+  copy is separate from host!) — CEO-owned, agents never write it.
+- Chat-UI relays are lossy for code containing literal think tags; use the
+  raw llm-call path or concatenation-constructed tags (D-59 notes).
