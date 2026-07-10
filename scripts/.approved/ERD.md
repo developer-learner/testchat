@@ -1,4 +1,4 @@
-ERD — testchat M8: Persistence (erd_version 15)
+ERD — testchat M8: Persistence (erd_version 16)
 
 What changes M7 → M8
 
@@ -71,14 +71,17 @@ reintroduce it.
 
 Oracle Mapping (AC → test node) — guidance for the plan
 
-Backend node-ids map to the task owning their subject:
-- tests/test_storage_service.py::* → the storage.py task (T1).
-- tests/test_threads_api.py::*     → the threads.py task (T2).
-- The validator will attribute every node-id whose test imports src.main
-  (test_chat_api.py, test_chat_model_routing.py, test_models_api.py,
-  test_page.py, and test_threads_api.py's app-level tests) to this delta —
-  map ALL of those to the src/main.py task (T3): the router mount is
-  additive, they must pass immediately after it.
+Backend node-ids map to the EARLIEST task after which pytest can both
+COLLECT and PASS them:
+- tests/test_storage_service.py::* → the storage.py task (imports only
+  src.services.storage).
+- tests/test_threads_api.py::* AND every other node-id the validator
+  attributes via a src.main import (test_chat_api.py,
+  test_chat_model_routing.py, test_models_api.py, test_page.py) → the
+  src/main.py task. These files import src.main at module level, so they
+  cannot even be collected before the main.py task; the router mount is
+  additive, so they must all pass immediately after it. The main.py task
+  must depends_on the threads.py task.
 - ALL EIGHT UI node-ids (tests/test_ui.py::*, including the new
   test_threads_survive_reload) → the FINAL app.js task (T4), which
   depends_on T1..T3. Mapping any UI node-id earlier guarantees a false
