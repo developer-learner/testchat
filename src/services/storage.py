@@ -1,0 +1,49 @@
+import json
+import logging
+import os
+import tempfile
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_PATH = "data/threads.json"
+
+
+def _data_path() -> str:
+    return os.environ.get("TESTCHAT_DATA", DEFAULT_PATH)
+
+
+def load_snapshot() -> list[dict]:
+    path = _data_path()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, list):
+            logger.warning("Snapshot at %s is not a JSON list", path)
+            return []
+        return data
+    except FileNotFoundError:
+        return []
+    except (json.JSONDecodeError, ValueError) as exc:
+        logger.warning("Corrupt snapshot at %s: %s", path, exc)
+        return []
+    except OSError as exc:
+        logger.warning("Cannot read snapshot at %s: %s", path, exc)
+        return []
+
+
+def save_snapshot(threads: list[dict]) -> None:
+    path = _data_path()
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(threads, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
