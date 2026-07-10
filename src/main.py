@@ -20,6 +20,13 @@ try:
 except ImportError:
     pass
 
+try:
+    from src.api.threads import router as threads_router
+
+    app.include_router(threads_router)
+except ImportError:
+    pass
+
 _INDEX = Path(__file__).parent / "static" / "index.html"
 
 
