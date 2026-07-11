@@ -10,7 +10,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-NEMOTRON_BASE_URL = 'http://localhost:8000'
+NEMOTRON_BASE_URL = os.environ.get('NEMOTRON_URL', 'http://localhost:8600')
 NEMOTRON_CHAT_ENDPOINT = NEMOTRON_BASE_URL + '/v1/chat/completions'
 NEMOTRON_READY_URL = NEMOTRON_BASE_URL + '/v1/models'
 NEMOTRON_SCRIPT_PATH = '~/nemotron-vmlx.py'
