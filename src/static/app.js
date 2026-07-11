@@ -125,6 +125,12 @@
         container.scrollTop = container.scrollHeight;
       }
 
+      function renderReply(bubble, text) {
+        var html = renderThink(text);
+        var visible = html.replace(/<span class=\"think-content\"[^>]*>[\s\S]*?<\/span>/g, '').replace(/<[^>]+>/g, '').trim();
+        bubble.innerHTML = visible === '' ? 'thinking...' : html;
+      }
+
       function renderThink(text) {
         var html = '';
         var inThink = false;
@@ -217,7 +223,9 @@
         replyBubble.className = 'chat-bubble reply';
         replyBubble.setAttribute('data-testid', 'msg-assistant');
         container.appendChild(replyBubble);
+        replyBubble.textContent = 'thinking...';
         replyText = '';
+        var userStored = false;
 
         currentThread.model = modelSelect.value;
 
@@ -265,7 +273,7 @@
               } catch (err) {
                 replyText += dataStr;
               }
-              replyBubble.innerHTML = renderThink(replyText);
+              renderReply(replyBubble, replyText);
               scrollToBottom();
             } else if (eventType === 'think') {
               try {
@@ -274,13 +282,15 @@
               } catch (err) {
                 replyText += '<think>' + dataStr + '</think>';
               }
-              replyBubble.innerHTML = renderThink(replyText);
+              renderReply(replyBubble, replyText);
               scrollToBottom();
             } else if (eventType === 'done') {
+              userStored = true;
               currentThread.messages.push({ role: 'user', content: message });
               currentThread.messages.push({ role: 'assistant', content: stripThink(replyText) });
               persistThreads();
             } else if (eventType === 'error') {
+              if (!userStored) { currentThread.messages.push({ role: 'user', content: message }); userStored = true; persistThreads(); }
               replyBubble.className = 'chat-bubble error';
               try {
                 var errData = JSON.parse(dataStr);
@@ -317,6 +327,7 @@
           return read();
         })
         .catch(function () {
+          if (!userStored) { currentThread.messages.push({ role: 'user', content: message }); userStored = true; persistThreads(); }
           replyBubble.className = 'chat-bubble error';
           replyBubble.textContent = FALLBACK_REPLY;
         })
