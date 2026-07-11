@@ -129,3 +129,7 @@ Operational knowledge, hard-won:
   copy is separate from host!) — CEO-owned, agents never write it.
 - Chat-UI relays are lossy for code containing literal think tags; use the
   raw llm-call path or concatenation-constructed tags (D-59 notes).
+
+## Results
+
+Full frozen TPM suite green against spec v19. Feature built and validated.
