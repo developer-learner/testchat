@@ -130,3 +130,33 @@ def test_threads_survive_reload(page: Page, app_url: str) -> None:
     expect(users.first).to_contain_text("persist me please")
     expect(page.get_by_test_id("msg-assistant").first).to_contain_text("Hello there")
     expect(page.get_by_test_id("model-select")).to_be_disabled()
+
+
+# AC-41 [M9 — failed reply retains the user's message]
+def test_failed_reply_keeps_user_message(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    # Route the chat request to an aborted response so the stream fails.
+    page.route("**/api/v1/chat", lambda route: route.abort())
+    _send(page, "this must not vanish")
+    # user's message stays visible in the thread
+    users = page.get_by_test_id("msg-user")
+    expect(users).to_have_count(1)
+    expect(users.first).to_contain_text("this must not vanish")
+    # and it survives a thread switch (i.e. it entered stored history)
+    page.get_by_test_id("new-thread-btn").click()
+    page.get_by_test_id("thread-item").nth(0).click()
+    expect(page.get_by_test_id("msg-user")).to_have_count(1)
+    expect(page.get_by_test_id("msg-user").first).to_contain_text("this must not vanish")
+
+
+# AC-42 [M9 — "thinking..." placeholder before visible answer text]
+def test_thinking_placeholder_shows_then_clears(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    # SLOWPING routes the stub to: think tokens, flush, hold ~1.2s, then the
+    # visible answer. Auto-wait observes the placeholder window without any
+    # timing assertion in the test (D-58 determinism).
+    _send(page, "SLOWPING please think first")
+    reply = page.get_by_test_id("msg-assistant").last
+    expect(reply).to_contain_text("thinking...")        # visible during the hold
+    expect(reply).to_contain_text("Hello there")        # answer replaces it
+    expect(reply).not_to_contain_text("thinking...")    # placeholder is gone

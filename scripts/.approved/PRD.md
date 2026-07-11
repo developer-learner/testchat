@@ -1,91 +1,79 @@
-PRD — testchat M8: Persistence (Threads Survive Everything)
+PRD — testchat M9: Polish Sweep (three deterministic fixes)
 
 Milestone
 
-M8 makes conversations durable. Today every thread lives only in the page's
-memory; refresh, browser restart, or machine restart erases them. After M8,
-the app keeps all threads in a data file it owns — any browser on this
-machine, any time, sees the same history. No accounts, no logins, no
-network storage: single-user, local, private.
-
-This milestone SUPERSEDES AC-25 (M6: "refresh clears all threads"). The new
-law is the opposite: refresh restores.
+M9 fixes three defects the CEO hit during the M7/M8 demos. Each is small,
+one concern, and mechanically testable. A fourth known defect — the macOS
+"Python quit unexpectedly" dialog on Nemotron unload — is deliberately NOT
+in this milestone (see "Deferred" below): its cause is not deterministically
+reproducible in the test sandbox and the app's existing SIGINT shutdown was
+already the intended fix, so it needs live diagnosis on the real model, not
+a blind spec.
 
 What
 
-Backend:
-- A storage service that saves and loads the full thread snapshot as one
-  JSON file (path from env TESTCHAT_DATA, default data/threads.json),
-  written atomically (temp file + rename), tolerant of a missing or corrupt
-  file (both read as "no saved threads").
-- Three routes: GET /api/v1/threads (the saved snapshot),
-  PUT /api/v1/threads (replace the snapshot), DELETE /api/v1/threads
-  (clear it — used by tests and as a future "clear history" hook).
+1. Configurable Nemotron address (src/services/models.py).
+   The Nemotron server address is hardcoded to localhost:8000 — the port the
+   app itself commonly uses, so "Load Nemotron" fails whenever the app holds
+   8000 (the CEO hit this at the M7 demo). Make it configurable via env var
+   NEMOTRON_URL, default http://localhost:8600 (a port nothing else here
+   uses). Same pattern as the already-configurable LLM_ENDPOINT.
 
-Frontend (src/static/app.js, edit-mode changes only):
-- On page load, fetch the saved snapshot and rebuild the threads array,
-  sidebar, and active thread from it; fall back to today's single fresh
-  "New Chat" thread when the snapshot is empty or the fetch fails.
-- Persist the snapshot (PUT, fire-and-forget) at the moments state becomes
-  worth keeping: when an assistant reply completes ('done') and when a new
-  thread is created (which also captures the auto-title of the previous
-  thread).
+2. Failed replies keep the user's message (src/static/app.js).
+   Today a message is saved into the thread only on a 'done' event. If the
+   reply ends in 'error' or the network fails, the user's sent message
+   vanishes from stored history, and the thread can be left locked with no
+   messages. Fix: on failure, retain the user's message in history and
+   persist it (store no assistant message for the failed reply).
+
+3. "Thinking..." placeholder (src/static/app.js).
+   Some local models reason silently for minutes before any visible answer;
+   the reply bubble is blank the whole time and the app looks frozen (CEO-
+   reported, M8 demo). While a reply is in flight and no visible answer text
+   has rendered yet, the bubble shows "thinking...", which disappears the
+   moment visible answer text arrives.
 
 Acceptance Criteria (EARS notation)
 
-All M3–M7 criteria remain in force except AC-25, which this milestone
-replaces. AC-34 is a frozen Playwright UI test (D-58); AC-35..AC-38 are
-frozen backend tests.
+All prior criteria remain in force. AC-39/40 are frozen backend tests;
+AC-41/42 are frozen Playwright UI tests (D-58).
 
-AC-34 [replaces AC-25]: WHEN the page is loaded and a saved snapshot
-exists, THE SYSTEM SHALL display the saved threads — sidebar titles,
-messages, and each thread's model-lock state — with the previously active
-behavior available (send continues the thread).
+AC-39: WHEN NEMOTRON_URL is unset, THE SYSTEM SHALL address the Nemotron
+server at http://localhost:8600 for its chat and readiness endpoints.
 
-AC-35: WHEN an assistant reply completes, THE SYSTEM SHALL persist the
-snapshot such that a subsequent GET /api/v1/threads returns the updated
-thread.
+AC-40: WHEN NEMOTRON_URL is set, THE SYSTEM SHALL derive the Nemotron chat
+and readiness endpoints from that value.
 
-AC-36: WHEN GET /api/v1/threads is called with no saved data, THE SYSTEM
-SHALL return an empty threads array (HTTP 200, never an error).
+AC-41: WHEN a chat reply ends in an error event or the request fails, THE
+SYSTEM SHALL keep the user's sent message in the thread's stored history
+(retrievable after a thread switch) and persist it, and SHALL store no
+assistant message for the failed reply.
 
-AC-37: WHEN PUT /api/v1/threads receives a valid payload, THE SYSTEM SHALL
-store it so that a following GET returns an equal payload; WHEN the payload
-is malformed, THE SYSTEM SHALL return 422 and leave the stored snapshot
-unchanged.
+AC-42: WHILE a reply is streaming and no visible answer text has rendered
+yet, THE SYSTEM SHALL show "thinking..." in the reply bubble; WHEN visible
+answer text renders, THE SYSTEM SHALL replace the placeholder with it.
 
-AC-38: WHEN the snapshot file is missing or contains invalid JSON, THE
-SYSTEM SHALL treat it as empty (load returns []) rather than failing.
+Out of Scope / Deferred
 
-manual-only waivers (D-58):
-- Restart-the-Mac durability: same file-on-disk property AC-38 tests;
-  physically restarting hardware stays a CEO check.
-- Cross-browser visibility (Chrome vs Safari): same-snapshot-by-
-  construction; spot-check at the demo.
-
-Out of Scope
-
-Accounts, logins, or multi-user anything.
-Cloud/remote storage or sync between machines.
-Draft preservation (text typed but not sent is not saved).
-Thread deletion/renaming UI (DELETE route exists; no button yet).
-Saving mid-stream partial replies (a reply persists when it completes).
-The M9 polish items: Nemotron-unload crash dialog, port-8000 collision,
-error-path history retention.
+- The Nemotron-unload macOS crash dialog. The app already sends SIGINT (the
+  original intended fix); the dialog persists, so the cause is elsewhere
+  (child exits on a traceback, or the signal misses the child's process
+  group). Fixing it blind would be an untestable OS-behavior guess. It stays
+  open for a live load/unload investigation on the real model with the CEO.
+- Any change to the shutdown SIGNAL (the four frozen tests asserting SIGINT
+  stay valid this milestone).
+- Accounts, remote access, thread deletion UI, search — future milestones.
 
 Flagged Assumptions (CEO sign-off at the freeze gate)
 
-A14: Storage is one JSON file owned by the app — not a database engine.
-Same durability at this scale, far fewer moving parts; a future multi-user
-milestone would replace only the storage service.
-A15: Concurrent tabs are last-write-wins. Two tabs chatting simultaneously
-will overwrite each other's snapshot; single-user local app, accepted.
-A16: Persistence moments are reply-completion and thread-creation. A crash
-between those moments loses at most the in-flight exchange.
+A17: 8600 is a safe default Nemotron port (nothing else in this stack uses
+it). The operator can still override with NEMOTRON_URL.
+A18: The placeholder is the literal text "thinking..." — no spinner/anim
+(kept deterministic for the frozen UI test; animation is a future nicety).
 
 CEO Demo Script
 
-Chat in two threads. Hit refresh — both threads return, titles intact,
-lock states intact. Quit the browser entirely; reopen — still there.
-Open the app in a different browser — same threads. Restart the Mac if
-you're feeling thorough — still there.
+Run the app on 8080; NEMOTRON_URL unset. Load Nemotron — it now binds 8600
+and loads without the port clash. Send a message to a model that fails
+(e.g. stop LM Studio mid-reply) — your message stays in the thread. Send to
+a slow local model — the bubble shows "thinking..." until the answer starts.

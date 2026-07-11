@@ -1,107 +1,84 @@
-ERD — testchat M8: Persistence (erd_version 17)
+ERD — testchat M9: Polish Sweep (erd_version 18)
 
-What changes M7 → M8
+What changes M8 → M9
 
-Two NEW small backend files, two EDITS to existing files. Cut per D-60:
-every task is one concern; new files well under 150 lines; existing files
-get few, tightly-related anchored edits (D-59 — first production use).
+Two existing files, edit-mode only (D-59 anchored blocks). No new files, no
+new routes, no schema changes. Cut per D-60: each file gets tightly-related
+edits about one subject.
 
-File inventory (M8 build) — intended DAG order
+File inventory (M9 build)
 
-1. src/services/storage.py — NEW (~60 lines, no dependencies)
-   Pure snapshot persistence, stdlib only (json, os, tempfile, logging):
-   - SNAPSHOT_PATH from env TESTCHAT_DATA, default "data/threads.json"
-     (read the env var AT CALL TIME, not import time — tests repoint it).
-   - load_snapshot() -> list[dict]: missing file, unreadable file, or
-     invalid JSON all return [] (log a warning for corrupt, not an error).
-   - save_snapshot(threads: list[dict]) -> None: ensure parent dir exists;
-     write to a temp file in the same directory, then os.replace() onto the
-     target (atomic — a crash mid-write can never corrupt the stored file).
-2. src/api/threads.py — NEW (~55 lines, depends on storage.py)
-   APIRouter, pydantic models ThreadSnapshot {id: int, title: str,
-   messages: list[{role, content}], model: str = "", locked: bool = False}
-   and ThreadsPayload {threads: list[ThreadSnapshot]}.
-   - GET  /api/v1/threads    -> {"threads": load_snapshot()} (200 always)
-   - PUT  /api/v1/threads    body ThreadsPayload -> save_snapshot(
-                             payload as plain dicts) -> {"status": "ok"}
-                             (pydantic gives 422 on malformed input)
-   - DELETE /api/v1/threads  -> save_snapshot([]) -> {"status": "ok"}
-3. src/main.py — EDIT (one concern: mount the router)
-   Add a third defensive try/except import block, identical in shape to
-   the chat/models ones, including src.api.threads' router.
-4. src/static/app.js — EDIT (one concern: persistence wiring; LAST,
-   depends on all above). Four small anchored edits:
-   a. persistThreads() helper: fetch PUT /api/v1/threads with
-      JSON.stringify({threads: threads.map(t => ({id: t.id, title: t.title,
-      messages: t.messages, model: t.model || '', locked: !!t.locked}))}),
-      fire-and-forget (.catch swallowed — persistence must never break
-      chat).
-   b. hydrate on startup: replace the bare `createThread();` bootstrap
-      call with a fetch of GET /api/v1/threads: on a non-empty threads
-      array, rebuild state (threads = data.threads with messages/model/
-      locked; threadCounter = max id; activeThreadId = first thread's id;
-      renderThreadMessages + restoreThreadModelState + renderSidebar);
-      on empty array OR any fetch error, fall back to createThread().
-   c. call persistThreads() in the 'done' event handler, immediately after
-      the two messages are pushed.
-   d. call persistThreads() at the end of createThread().
+1. src/services/models.py — EDIT (subject: Nemotron address config)
+   Replace the three hardcoded nemotron URL constants so they derive from an
+   env var, read at import:
+     NEMOTRON_BASE_URL   = os.environ.get("NEMOTRON_URL", "http://localhost:8600")
+     NEMOTRON_CHAT_ENDPOINT = NEMOTRON_BASE_URL + "/v1/chat/completions"
+     NEMOTRON_READY_URL     = NEMOTRON_BASE_URL + "/v1/models"
+   KEEP the constant NAMES exactly (existing frozen tests monkeypatch them).
+   `os` is already imported. Change nothing else — the shutdown path,
+   signals, and timeouts are untouched this milestone.
+
+2. src/static/app.js — EDIT (subject: reply-bubble robustness; two related
+   edits in the streaming path)
+   a. Failed-reply history retention (AC-41): in BOTH failure branches — the
+      'error' event branch inside processFrame, and the fetch .catch at the
+      end of the submit handler — push { role: 'user', content: message }
+      into currentThread.messages (only if not already pushed) and call
+      persistThreads(). Do NOT push an assistant message. Do not alter the
+      'done' branch.
+   b. "thinking..." placeholder (AC-42): right after the reply bubble is
+      created, set its text to "thinking...". In the token/think render seam
+      (where replyBubble.innerHTML = renderThink(replyText) runs), when the
+      rendered VISIBLE text is empty (all content is think-spans or nothing),
+      show "thinking..." instead; otherwise show the rendered result. The
+      placeholder must never enter stored history (history is stripThink of
+      replyText, which never contains it) and must not appear once visible
+      answer text streams.
 
 Data models
 
-ThreadSnapshot / ThreadsPayload as above. The frontend Thread object is
-unchanged; the snapshot is its serializable subset (no DOM references).
-Assistant message content is already think-free (AC-30) — snapshots
-inherit that.
+None changed.
 
 Configuration
 
-TESTCHAT_DATA (env): snapshot file path. Default data/threads.json
-relative to the process working directory. The UI-test fixture sets it to
-a per-session temp path.
+NEMOTRON_URL (env): Nemotron server base URL, default
+http://localhost:8600. Read at models.py import.
 
 Constraints
 
 All prior constraints carry forward. New:
-C-19: storage is stdlib-only (json/os/tempfile/logging) — no new
-dependencies, no database engine (PRD A14).
-C-20: persistence failures are silent to the user (logged backend-side);
-chat must work fully even if the disk write fails.
-C-21: AC-25's "refresh clears" behavior is retired; no code or test may
-reintroduce it.
+C-22: constant NAMES in models.py are part of the frozen test surface — the
+config edit changes their VALUES' source, never their names.
+C-23: the "thinking..." placeholder is display-only; it is never written to
+thread.messages nor sent to the backend.
 
 Oracle Mapping (AC → test node) — guidance for the plan
 
-Backend node-ids map to the EARLIEST task after which pytest can both
-COLLECT and PASS them:
-- tests/test_storage_service.py::* → the storage.py task (imports only
-  src.services.storage).
-- The threads.py task maps NO tests at all — every test that could
-  exercise it imports src.main and thus belongs to the main.py task; the
-  threads.py task's acceptance is its contracts.smoke_checks entry (v17).
-- tests/test_threads_api.py::* AND every other node-id the validator
-  attributes via a src.main import (test_chat_api.py,
-  test_chat_model_routing.py, test_models_api.py, test_page.py) → the
-  src/main.py task. These files import src.main at module level, so they
-  cannot even be collected before the main.py task; the router mount is
-  additive, so they must all pass immediately after it. The main.py task
-  must depends_on the threads.py task.
-- ALL EIGHT UI node-ids (tests/test_ui.py::*, including the new
-  test_threads_survive_reload) → the FINAL app.js task (T4), which
-  depends_on T1..T3. Mapping any UI node-id earlier guarantees a false
-  strike.
-- test_llm_service.py / test_models_service.py stay unmapped (shell-owned
-  carry-forward, D-57).
+- src/services/models.py task: map ALL node-ids whose test imports
+  src.services.models — that is tests/test_nemotron_config.py::* (NEW, this
+  freeze; imports ONLY src.services.models), PLUS the already-frozen
+  tests/test_models_service.py::*, tests/test_models_api.py::*, and
+  tests/test_chat_model_routing.py::* (each imports src.services.models and
+  is attributed to this delta by the validator). All are collectable now
+  (src.main already exists on disk) and must pass immediately after the
+  models.py edit — the config change preserves constant names and the
+  default is inert under the tests' mocks/monkeypatches.
+- src/static/app.js task: map the two NEW UI node-ids
+  tests/test_ui.py::test_failed_reply_keeps_user_message and
+  ::test_thinking_placeholder_shows_then_clears, PLUS all existing
+  tests/test_ui.py::* (they exercise the same file). This task depends_on
+  the models.py task.
+- Unmapped, shell-carried (D-57): test_llm_service.py, test_storage_service.py,
+  test_chat_api.py, test_threads_api.py, test_page.py — none import
+  src.services.models and none are UI tests, so they are not attributed to
+  this delta.
 
 Milestone Justification
 
-Single milestone: one user promise (durability), four one-concern tasks,
-each inside the D-60 coder profile. The M9 polish sweep is deliberately
-separate.
+Single milestone: two files, one subject each, every AC mechanically
+checkable. The deferred crash-dialog item is explicitly separated because it
+is not deterministically testable and needs live diagnosis.
 
 Test dependencies
 
-No new dependencies (stdlib storage; existing pytest/playwright stack).
-tests/conftest.py changes in this freeze: the app fixture exports
-TESTCHAT_DATA to a session temp path, and an autouse fixture clears the
-snapshot (DELETE /api/v1/threads) before each UI test so tests stay
-independent now that state persists across page loads.
+No new dependencies (existing pytest + playwright stack).

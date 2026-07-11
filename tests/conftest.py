@@ -97,10 +97,26 @@ class _StubHandler(BaseHTTPRequestHandler):
             self._json(404, {"error": "unknown path"})
             return
         length = int(self.headers.get("Content-Length", "0"))
-        _chat_requests.append(json.loads(self.rfile.read(length)))
+        body = json.loads(self.rfile.read(length))
+        _chat_requests.append(body)
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.end_headers()
+        if "SLOWPING" in (body.get("message") or ""):
+            # think first, flush, hold, THEN answer — makes the pre-answer
+            # "thinking..." window real and observable by Playwright auto-wait.
+            for delta in [{"content": "<think>"}, {"content": "musing"}, {"content": "</think>"}]:
+                chunk = {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]}
+                self.wfile.write(b"data: " + json.dumps(chunk).encode() + b"\n\n")
+                self.wfile.flush()
+            time.sleep(1.2)
+            for delta in [{"content": "Hello"}, {"content": " there"}]:
+                chunk = {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]}
+                self.wfile.write(b"data: " + json.dumps(chunk).encode() + b"\n\n")
+                self.wfile.flush()
+            self.wfile.write(b"data: " + json.dumps({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}).encode() + b"\n\n")
+            self.wfile.write(b"data: [DONE]\n\n")
+            return
         for delta in STREAM_DELTAS:
             chunk = {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]}
             self.wfile.write(b"data: " + json.dumps(chunk).encode() + b"\n\n")
