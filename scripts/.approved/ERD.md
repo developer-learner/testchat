@@ -1,4 +1,4 @@
-ERD — testchat M9: Polish Sweep (erd_version 18)
+ERD — testchat M9: Polish Sweep (erd_version 19)
 
 What changes M8 → M9
 
@@ -51,6 +51,13 @@ C-22: constant NAMES in models.py are part of the frozen test surface — the
 config edit changes their VALUES' source, never their names.
 C-23: the "thinking..." placeholder is display-only; it is never written to
 thread.messages nor sent to the backend.
+
+Contract ids per task (the validator rejects invented ids):
+- src/services/models.py task: contracts = ["src.services.models"] (plus any
+  of its locked symbols if you wish).
+- src/static/app.js task: contracts = [] — an EMPTY list. Frontend files
+  have no module entry points; ui:* ids are legal but optional. NEVER invent
+  module-style ids (there is no 'src.static.app' in contracts.json).
 
 Oracle Mapping (AC → test node) — guidance for the plan
 
