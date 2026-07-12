@@ -1,0 +1,41 @@
+{
+  "changed_contract_ids": [
+    "route:GET /api/v1/settings",
+    "route:GET /api/v1/status",
+    "route:PUT /api/v1/settings",
+    "src.api.settings",
+    "src.api.status",
+    "src.services.settings",
+    "src.services.settings:get_system_prompt",
+    "src.services.settings:load_settings",
+    "src.services.settings:save_settings"
+  ],
+  "changed_tests": [
+    "tests/test_settings_api.py::test_corrupt_settings_file_reads_as_empty",
+    "tests/test_settings_api.py::test_env_var_precedence_empty_still_wins",
+    "tests/test_settings_api.py::test_env_var_precedence_set_wins",
+    "tests/test_settings_api.py::test_env_var_unset_falls_back_to_saved",
+    "tests/test_settings_api.py::test_get_default_is_empty_prompt",
+    "tests/test_settings_api.py::test_put_then_get_roundtrips",
+    "tests/test_settings_api.py::test_save_and_load_service_roundtrip",
+    "tests/test_status_api.py::test_status_is_repeatable",
+    "tests/test_status_api.py::test_status_returns_json_object",
+    "tests/test_ui.py::test_failed_reply_keeps_user_message",
+    "tests/test_ui.py::test_history_sent_to_backend_has_no_think_markup",
+    "tests/test_ui.py::test_markdown_renders_readably",
+    "tests/test_ui.py::test_model_lock_is_per_thread",
+    "tests/test_ui.py::test_model_selection_survives_models_refresh",
+    "tests/test_ui.py::test_new_chat_creates_unlocked_empty_thread",
+    "tests/test_ui.py::test_saved_system_prompt_reaches_requests",
+    "tests/test_ui.py::test_stop_button_keeps_partial_reply",
+    "tests/test_ui.py::test_theme_switch_persists_across_reload",
+    "tests/test_ui.py::test_think_toggle_reveals_and_hides_thinking",
+    "tests/test_ui.py::test_thinking_placeholder_shows_then_clears",
+    "tests/test_ui.py::test_thread_delete_removes_thread",
+    "tests/test_ui.py::test_thread_rename_via_sidebar_control",
+    "tests/test_ui.py::test_thread_switch_restores_history",
+    "tests/test_ui.py::test_thread_title_set_from_first_message",
+    "tests/test_ui.py::test_threads_survive_reload"
+  ],
+  "changed_files": []
+}

@@ -1,7 +1,7 @@
 {
- "erd_version": 19,
+ "erd_version": 20,
  "files": [
-  "src/services/models.py",
+  "src/static/index.html",
   "src/static/app.js"
  ],
  "entry_points": [
@@ -17,7 +17,13 @@
   "src.services.storage",
   "src.services.storage:load_snapshot",
   "src.services.storage:save_snapshot",
-  "src.api.threads"
+  "src.api.threads",
+  "src.api.settings",
+  "src.api.status",
+  "src.services.settings",
+  "src.services.settings:load_settings",
+  "src.services.settings:save_settings",
+  "src.services.settings:get_system_prompt"
  ],
  "routes": [
   {
@@ -64,6 +70,21 @@
    "id": "route:DELETE /api/v1/threads",
    "method": "DELETE",
    "path": "/api/v1/threads"
+  },
+  {
+   "id": "route:GET /api/v1/settings",
+   "method": "GET",
+   "path": "/api/v1/settings"
+  },
+  {
+   "id": "route:PUT /api/v1/settings",
+   "method": "PUT",
+   "path": "/api/v1/settings"
+  },
+  {
+   "id": "route:GET /api/v1/status",
+   "method": "GET",
+   "path": "/api/v1/status"
   }
  ],
  "schemas": [
@@ -227,7 +248,54 @@
    "id": "ui:unload-nemotron",
    "testid": "unload-nemotron",
    "description": "Unload Nemotron button"
+  },
+  {
+   "id": "ui:settings-toggle",
+   "testid": "settings-toggle",
+   "description": "gear button opening the system-prompt modal (already carries this testid)"
+  },
+  {
+   "id": "ui:theme-toggle",
+   "testid": "theme-toggle",
+   "description": "theme cycle button (already carries this testid)"
+  },
+  {
+   "id": "ui:system-prompt-input",
+   "testid": "system-prompt-input",
+   "description": "textarea inside the settings modal"
+  },
+  {
+   "id": "ui:settings-save",
+   "testid": "settings-save",
+   "description": "settings modal Save button"
+  },
+  {
+   "id": "ui:settings-cancel",
+   "testid": "settings-cancel",
+   "description": "settings modal Cancel button"
+  },
+  {
+   "id": "ui:status-strip",
+   "testid": "status-strip",
+   "description": "footer status strip (model / RAM / tok-s)"
+  },
+  {
+   "id": "ui:thread-rename-btn",
+   "testid": "thread-rename-btn",
+   "description": "per-thread rename button in the sidebar (one per thread)"
+  },
+  {
+   "id": "ui:thread-delete-btn",
+   "testid": "thread-delete-btn",
+   "description": "per-thread delete button in the sidebar (one per thread)"
+  },
+  {
+   "id": "ui:thread-rename-input",
+   "testid": "thread-rename-input",
+   "description": "inline rename input that replaces a thread title during rename"
   }
  ],
- "smoke_checks": {}
+ "smoke_checks": {
+  "src/static/index.html": "grep -q 'data-testid=\"system-prompt-input\"' src/static/index.html && grep -q 'data-testid=\"settings-save\"' src/static/index.html && grep -q 'data-testid=\"settings-cancel\"' src/static/index.html && grep -q 'data-testid=\"status-strip\"' src/static/index.html"
+ }
 }

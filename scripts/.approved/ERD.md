@@ -1,91 +1,88 @@
-ERD — testchat M9: Polish Sweep (erd_version 19)
+ERD — testchat M10: Ratify the Sprint (erd_version 20)
 
-What changes M8 → M9
+What changes v19 → v20
 
-Two existing files, edit-mode only (D-59 anchored blocks). No new files, no
-new routes, no schema changes. Cut per D-60: each file gets tightly-related
-edits about one subject.
+No behavior changes. Two edit-mode tasks add data-testid attributes so the
+new frozen browser tests can reach controls that already exist and work
+(D-58: tests locate only via locked testids). Everything else in this
+freeze is spec artifacts: contracts (3 new routes, 6 new entry points, 9
+new testids), AC-44..AC-52, six new UI tests, two new backend test files,
+and fixture upkeep in tests/conftest.py.
 
-File inventory (M9 build)
+File inventory (M10 build) — DAG order
 
-1. src/services/models.py — EDIT (subject: Nemotron address config)
-   Replace the three hardcoded nemotron URL constants so they derive from an
-   env var, read at import:
-     NEMOTRON_BASE_URL   = os.environ.get("NEMOTRON_URL", "http://localhost:8600")
-     NEMOTRON_CHAT_ENDPOINT = NEMOTRON_BASE_URL + "/v1/chat/completions"
-     NEMOTRON_READY_URL     = NEMOTRON_BASE_URL + "/v1/models"
-   KEEP the constant NAMES exactly (existing frozen tests monkeypatch them).
-   `os` is already imported. Change nothing else — the shutdown path,
-   signals, and timeouts are untouched this milestone.
-
-2. src/static/app.js — EDIT (subject: reply-bubble robustness; two related
-   edits in the streaming path)
-   a. Failed-reply history retention (AC-41): in BOTH failure branches — the
-      'error' event branch inside processFrame, and the fetch .catch at the
-      end of the submit handler — push { role: 'user', content: message }
-      into currentThread.messages (only if not already pushed) and call
-      persistThreads(). Do NOT push an assistant message. Do not alter the
-      'done' branch.
-   b. "thinking..." placeholder (AC-42): right after the reply bubble is
-      created, set its text to "thinking...". In the token/think render seam
-      (where replyBubble.innerHTML = renderThink(replyText) runs), when the
-      rendered VISIBLE text is empty (all content is think-spans or nothing),
-      show "thinking..." instead; otherwise show the rendered result. The
-      placeholder must never enter stored history (history is stripThink of
-      replyText, which never contains it) and must not appear once visible
-      answer text streams.
-
-Data models
-
-None changed.
-
-Configuration
-
-NEMOTRON_URL (env): Nemotron server base URL, default
-http://localhost:8600. Read at models.py import.
+1. src/static/index.html — modified (static testids)
+   Add data-testid, values exactly: "system-prompt-input" on the
+   #system-prompt-input textarea; "settings-save" on #settings-save;
+   "settings-cancel" on #settings-cancel; "status-strip" on the
+   #status-strip div. The gear (#settings-toggle) and theme
+   (#theme-toggle) buttons ALREADY carry their testids — leave them.
+   Change nothing else.
+2. src/static/app.js — modified (dynamic testids; LAST, depends on 1)
+   Three one-line setAttribute additions where renderSidebar creates the
+   per-thread controls and where startRename creates the inline input:
+   - renBtn.setAttribute('data-testid', 'thread-rename-btn');
+   - delBtn.setAttribute('data-testid', 'thread-delete-btn');
+   - inp.setAttribute('data-testid', 'thread-rename-input');
+   Change nothing else — no behavior edits of any kind (C-22).
 
 Constraints
 
 All prior constraints carry forward. New:
-C-22: constant NAMES in models.py are part of the frozen test surface — the
-config edit changes their VALUES' source, never their names.
-C-23: the "thinking..." placeholder is display-only; it is never written to
-thread.messages nor sent to the backend.
+C-22: this milestone may not alter any behavior — testid attributes only.
+A task whose diff touches logic is a task failure even if tests stay
+green.
+C-23: ratifying tests pin current behavior verbatim (PRD A17); where a
+current behavior is quirky, the PRD waives rather than the test bending.
 
 Contract ids per task (the validator rejects invented ids):
-- src/services/models.py task: contracts = ["src.services.models"] (plus any
-  of its locked symbols if you wish).
-- src/static/app.js task: contracts = [] — an EMPTY list. Frontend files
-  have no module entry points; ui:* ids are legal but optional. NEVER invent
-  module-style ids (there is no 'src.static.app' in contracts.json).
+- src/static/index.html task: contracts = [] (frontend file — never
+  invent module-style ids).
+- src/static/app.js task: contracts = [] — same rule.
 
 Oracle Mapping (AC → test node) — guidance for the plan
 
-- src/services/models.py task: map ALL node-ids whose test imports
-  src.services.models — that is tests/test_nemotron_config.py::* (NEW, this
-  freeze; imports ONLY src.services.models), PLUS the already-frozen
-  tests/test_models_service.py::*, tests/test_models_api.py::*, and
-  tests/test_chat_model_routing.py::* (each imports src.services.models and
-  is attributed to this delta by the validator). All are collectable now
-  (src.main already exists on disk) and must pass immediately after the
-  models.py edit — the config change preserves constant names and the
-  default is inert under the tests' mocks/monkeypatches.
-- src/static/app.js task: map the two NEW UI node-ids
-  tests/test_ui.py::test_failed_reply_keeps_user_message and
-  ::test_thinking_placeholder_shows_then_clears, PLUS all existing
-  tests/test_ui.py::* (they exercise the same file). This task depends_on
-  the models.py task.
-- Unmapped, shell-carried (D-57): test_llm_service.py, test_storage_service.py,
-  test_chat_api.py, test_threads_api.py, test_page.py — none import
-  src.services.models and none are UI tests, so they are not attributed to
-  this delta.
+- ALL browser node-ids (tests/test_ui.py::*, now 14 of them) → the FINAL
+  task (src/static/app.js), which must depends_on the index.html task.
+  Mapping any UI node-id earlier guarantees a false strike (the modal
+  testids arrive in task 1, the sidebar testids in task 2).
+- The index.html task carries NO mapped tests — its acceptance is its
+  contracts.smoke_checks entry (grep for the four new static testids).
+- The new backend node-ids (tests/test_settings_api.py::*,
+  tests/test_status_api.py::*) exercise no inventory file — do NOT map
+  them; the shell runs them in the final full-suite acceptance (D-57).
+
+AC-44 → tests/test_ui.py::test_markdown_renders_readably
+AC-45 → tests/test_ui.py::test_theme_switch_persists_across_reload
+AC-46 → tests/test_ui.py::test_thread_rename_via_sidebar_control
+AC-47 → tests/test_ui.py::test_thread_delete_removes_thread
+AC-48 → tests/test_ui.py::test_stop_button_keeps_partial_reply
+AC-49 → tests/test_ui.py::test_saved_system_prompt_reaches_requests
+AC-50 → tests/test_settings_api.py (roundtrip / default / corrupt-file)
+AC-51 → tests/test_settings_api.py::test_env_var_precedence*
+AC-52 → tests/test_status_api.py::test_status_returns_json_object
+
+Test-fixture notes (tests/conftest.py changes in this freeze)
+
+- The app fixture exports TESTCHAT_SETTINGS to a session temp path
+  (settings isolation, like TESTCHAT_DATA).
+- The autouse _fresh_snapshot fixture also resets the saved system prompt
+  (PUT empty) before app-facing tests — settings persist across page
+  loads now, tests must stay independent.
+- The stub LLM gains: (a) a markdown tail on the standard reply so AC-44
+  is assertable ("**bold move**", "`mono bit`"); existing assertions on
+  "Hello there" are unaffected; (b) a "slow-model" entry whose stream
+  emits ~20 spaced chunks over ~3s (sleeps live in conftest, permitted —
+  the determinism gate scopes to playwright-importing files) so AC-48 can
+  deterministically click Stop mid-stream.
 
 Milestone Justification
 
-Single milestone: two files, one subject each, every AC mechanically
-checkable. The deferred crash-dialog item is explicitly separated because it
-is not deterministically testable and needs live diagnosis.
+One milestone, two trivial edit-mode tasks, everything else frozen
+artifacts. The debt this clears: six shipped features currently have zero
+mechanical defense; every future build gambles with them until this
+lands.
 
 Test dependencies
 
-No new dependencies (existing pytest + playwright stack).
+No new dependencies.

@@ -51,6 +51,7 @@ def _models_response() -> dict:
         "models": [
             {"type": "llm", "key": "alpha-model", "loaded_instances": [{"identifier": "alpha-model"}]},
             {"type": "llm", "key": "beta-model", "loaded_instances": [{"identifier": "beta-model"}]},
+            {"type": "llm", "key": "slow-model", "loaded_instances": [{"identifier": "slow-model"}]},
             {"type": "llm", "key": f"refresh-{_models_calls}", "loaded_instances": [{"identifier": "stamp"}]},
         ]
     }
@@ -64,7 +65,11 @@ STREAM_DELTAS = [
     {"content": "</think>"},
     {"content": "Hello"},
     {"content": " there"},
+    {"content": "\n\nA **bold move** and `mono bit` close."},
 ]
+
+# AC-48 (M10): a deliberately slow stream so a test can click Stop mid-reply.
+SLOW_DELTAS = [{"content": "tick" + str(i) + " "} for i in range(20)]
 
 _chat_requests: list[dict] = []
 
@@ -117,9 +122,13 @@ class _StubHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"data: " + json.dumps({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}).encode() + b"\n\n")
             self.wfile.write(b"data: [DONE]\n\n")
             return
-        for delta in STREAM_DELTAS:
+        slow = body.get("model") == "slow-model"
+        for delta in (SLOW_DELTAS if slow else STREAM_DELTAS):
             chunk = {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]}
             self.wfile.write(b"data: " + json.dumps(chunk).encode() + b"\n\n")
+            if slow:
+                self.wfile.flush()
+                time.sleep(0.15)
         final = {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
         self.wfile.write(b"data: " + json.dumps(final).encode() + b"\n\n")
         self.wfile.write(b"data: [DONE]\n\n")
@@ -157,6 +166,7 @@ def app_url(llm_stub):
             "LLM_ENDPOINT": f"{llm_stub}/v1/chat/completions",
             "PYTHONPATH": str(REPO_ROOT),
             "TESTCHAT_DATA": str(data_path),
+            "TESTCHAT_SETTINGS": str(data_path.parent / "settings.json"),
         },
     )
     try:
@@ -178,6 +188,13 @@ def _fresh_snapshot(request):
     if "app_url" in request.fixturenames:
         base = request.getfixturevalue("app_url")
         req = urllib.request.Request(f"{base}/api/v1/threads", method="DELETE")
+        with urllib.request.urlopen(req, timeout=5):
+            pass
+        req = urllib.request.Request(
+            f"{base}/api/v1/settings", method="PUT",
+            data=json.dumps({"system_prompt": ""}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
         with urllib.request.urlopen(req, timeout=5):
             pass
     yield

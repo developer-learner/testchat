@@ -160,3 +160,90 @@ def test_thinking_placeholder_shows_then_clears(page: Page, app_url: str) -> Non
     expect(reply).to_contain_text("thinking...")        # visible during the hold
     expect(reply).to_contain_text("Hello there")        # answer replaces it
     expect(reply).not_to_contain_text("thinking...")    # placeholder is gone
+
+
+# AC-44 [M10 ratify — markdown rendering]
+def test_markdown_renders_readably(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    _send(page, "format something")
+    _await_reply(page)
+    bubble = page.get_by_test_id("msg-assistant").last
+    expect(bubble).to_contain_text("bold move")
+    expect(bubble).not_to_contain_text("**bold move**")
+    expect(bubble).to_contain_text("mono bit")
+    expect(bubble).not_to_contain_text("`mono bit`")
+
+
+# AC-45 [M10 ratify — theme switch + persistence]
+def test_theme_switch_persists_across_reload(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    before = page.evaluate("document.documentElement.getAttribute('data-theme')")
+    page.get_by_test_id("theme-toggle").click()
+    after = page.evaluate("document.documentElement.getAttribute('data-theme')")
+    assert after != before, "toggle must switch the theme"
+    page.reload()
+    restored = page.evaluate("document.documentElement.getAttribute('data-theme')")
+    assert restored == after, "reload must restore the selected theme"
+
+
+# AC-46 [M10 ratify — thread rename]
+def test_thread_rename_via_sidebar_control(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    item = page.get_by_test_id("thread-item").first
+    item.hover()
+    page.get_by_test_id("thread-rename-btn").first.click()
+    box = page.get_by_test_id("thread-rename-input")
+    box.fill("Renamed by test")
+    box.press("Enter")
+    expect(page.get_by_test_id("thread-item").first).to_contain_text("Renamed by test")
+    page.reload()
+    expect(page.get_by_test_id("thread-item").first).to_contain_text("Renamed by test")
+
+
+# AC-47 [M10 ratify — thread delete]
+def test_thread_delete_removes_thread(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    _send(page, "first thread message")
+    _await_reply(page)
+    page.get_by_test_id("new-thread-btn").click()
+    items = page.get_by_test_id("thread-item")
+    expect(items).to_have_count(2)
+    page.once("dialog", lambda dialog: dialog.accept())
+    items.first.hover()
+    page.get_by_test_id("thread-delete-btn").first.click()
+    expect(page.get_by_test_id("thread-item")).to_have_count(1)
+    page.reload()
+    expect(page.get_by_test_id("thread-item")).to_have_count(1)
+
+
+# AC-48 [M10 ratify — stop button keeps the partial reply]
+def test_stop_button_keeps_partial_reply(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    select = page.get_by_test_id("model-select")
+    expect(select).to_have_value("alpha-model")
+    select.select_option("slow-model")
+    _send(page, "stream slowly")
+    send = page.get_by_test_id("send-btn")
+    expect(send).to_have_text("Stop")
+    expect(page.get_by_test_id("msg-assistant").last).to_contain_text("tick0")
+    send.click()
+    expect(send).to_have_text("Send")
+    expect(send).to_be_enabled()
+    expect(page.get_by_test_id("msg-assistant").last).to_contain_text("tick0")
+
+
+# AC-49 [M10 ratify — saved system prompt reaches every request]
+def test_saved_system_prompt_reaches_requests(
+    page: Page, app_url: str, last_chat_request
+) -> None:
+    page.goto(app_url)
+    page.get_by_test_id("settings-toggle").click()
+    box = page.get_by_test_id("system-prompt-input")
+    box.fill("You are a test harness. Be terse.")
+    page.get_by_test_id("settings-save").click()
+    _send(page, "obey the prompt")
+    _await_reply(page)
+    req = last_chat_request()
+    first = req["messages"][0]
+    assert first["role"] == "system"
+    assert first["content"] == "You are a test harness. Be terse."

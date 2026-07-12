@@ -61,6 +61,15 @@ tests/test_nemotron_config.py::test_env_overrides_all_endpoints
 tests/test_nemotron_config.py::test_default_is_not_the_app_port
 tests/test_page.py::test_root_serves_html_page
 tests/test_page.py::test_page_wires_chat_endpoint
+tests/test_settings_api.py::test_get_default_is_empty_prompt
+tests/test_settings_api.py::test_put_then_get_roundtrips
+tests/test_settings_api.py::test_corrupt_settings_file_reads_as_empty
+tests/test_settings_api.py::test_save_and_load_service_roundtrip
+tests/test_settings_api.py::test_env_var_precedence_set_wins
+tests/test_settings_api.py::test_env_var_precedence_empty_still_wins
+tests/test_settings_api.py::test_env_var_unset_falls_back_to_saved
+tests/test_status_api.py::test_status_returns_json_object
+tests/test_status_api.py::test_status_is_repeatable
 tests/test_storage_service.py::test_roundtrip_preserves_snapshot
 tests/test_storage_service.py::test_missing_file_loads_empty
 tests/test_storage_service.py::test_corrupt_file_loads_empty
@@ -82,3 +91,9 @@ tests/test_ui.py::test_thread_title_set_from_first_message
 tests/test_ui.py::test_threads_survive_reload
 tests/test_ui.py::test_failed_reply_keeps_user_message
 tests/test_ui.py::test_thinking_placeholder_shows_then_clears
+tests/test_ui.py::test_markdown_renders_readably
+tests/test_ui.py::test_theme_switch_persists_across_reload
+tests/test_ui.py::test_thread_rename_via_sidebar_control
+tests/test_ui.py::test_thread_delete_removes_thread
+tests/test_ui.py::test_stop_button_keeps_partial_reply
+tests/test_ui.py::test_saved_system_prompt_reaches_requests
