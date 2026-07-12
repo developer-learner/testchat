@@ -163,6 +163,7 @@
       border-radius: 1rem;
       line-height: 1.4;
       word-wrap: break-word;
+      white-space: pre-wrap;
     }
 
     .chat-bubble.user {
