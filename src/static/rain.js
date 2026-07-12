@@ -24,12 +24,10 @@
     canvas = document.createElement('canvas');
     canvas.setAttribute('data-testid', 'matrix-rain');
     canvas.style.position = 'fixed';
-    canvas.style.top = '0';
-    canvas.style.left = '0';
-    canvas.style.width = '100%';
-    canvas.style.height = '100%';
-    canvas.style.pointerEvents = 'none';
+    canvas.style.inset = '0';
     canvas.style.zIndex = '0';
+    canvas.style.pointerEvents = 'none';
+    canvas.style.opacity = '0.35';
 
     document.body.appendChild(canvas);
 
@@ -60,7 +58,7 @@
   function draw() {
     if (!ctx || !canvas) return;
 
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     for (var i = 0; i < columns.length; i++) {
@@ -70,8 +68,10 @@
       ctx.fillText(col.glyph, i * fontSize, col.y * fontSize);
 
       if (col.y > 0) {
+        ctx.globalAlpha = 0.9;
         ctx.fillStyle = '#fff';
         ctx.fillText(col.glyph, i * fontSize, (col.y - 1) * fontSize);
+        ctx.globalAlpha = 1.0;
       }
 
       col.y += col.speed;
