@@ -42,6 +42,13 @@ try:
 except ImportError:
     pass
 
+try:
+    from src.api.settings import router as settings_router
+
+    app.include_router(settings_router)
+except ImportError:
+    pass
+
 _INDEX = Path(__file__).parent / "static" / "index.html"
 
 

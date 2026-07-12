@@ -22,7 +22,12 @@ def stream_reply(
         if endpoint_override is not None
         else os.environ.get("LLM_ENDPOINT", "http://localhost:1234/v1/chat/completions")
     )
-    LLM_SYSTEM_PROMPT = os.environ.get("LLM_SYSTEM_PROMPT", "")
+    try:
+        from src.services.settings import get_system_prompt
+
+        LLM_SYSTEM_PROMPT = get_system_prompt()
+    except ImportError:
+        LLM_SYSTEM_PROMPT = os.environ.get("LLM_SYSTEM_PROMPT", "")
     LLM_TIMEOUT_SECONDS = float(os.environ.get("LLM_TIMEOUT_SECONDS", "120"))
 
     request_model = model or os.environ.get("LLM_MODEL", "local-model")
