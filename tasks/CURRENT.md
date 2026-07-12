@@ -198,3 +198,17 @@ Full frozen TPM suite green against spec v19. Feature built and validated.
   stream, gone on done; strip showed nemotron 43.1 GB RSS and 42 tok/s live.
   74/74 backend green; ruff clean. Test exchanges removed from data/.
 - Still owed: TPM spec backfill for all session-2 features; VM Playwright run.
+
+## 2026-07-12 (later) — Debt: VM suite GREEN; system-prompt feature landed
+- DEBT ITEM 1 CLEARED: full frozen suite run in VM sandbox (sandbox-run.sh,
+  podman, --network none): 84/84 PASSED incl. Playwright UI tests — all
+  session-1/2 UI changes (markdown, themes, chrome, strip) survived frozen
+  assertions untouched.
+- DEBT ITEM 2 (TPM spec backfill for live-fix features) still open — needs
+  the CEO's TPM web-chat cycle; conductor can produce the tpm-pack bundle.
+- New feature (CEO-requested): app-wide system prompt. ea96321 settings
+  service + API (env var stays authoritative when present — frozen chat
+  tests pin that, incl. empty-string); f893262 gear-button modal UI + fix
+  for [hidden] defeated by display:flex (invisible overlay ate clicks).
+  Verified live: saved "pirate" prompt -> nemotron replied "ARRR Hello";
+  cleared afterwards. 74/74 host, ruff clean.
