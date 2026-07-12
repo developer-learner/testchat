@@ -1,6 +1,8 @@
 {
- "erd_version": 21,
+ "erd_version": 22,
  "files": [
+  "src/static/rain.js",
+  "src/static/style.css",
   "src/static/index.html",
   "src/static/app.js"
  ],
@@ -293,9 +295,16 @@
    "id": "ui:thread-rename-input",
    "testid": "thread-rename-input",
    "description": "inline rename input that replaces a thread title during rename"
+  },
+  {
+   "id": "ui:matrix-rain",
+   "testid": "matrix-rain",
+   "description": "full-screen digital-rain canvas backdrop; present and visible ONLY while the phosphor theme is active"
   }
  ],
  "smoke_checks": {
-  "src/static/index.html": "grep -q 'data-testid=\"system-prompt-input\"' src/static/index.html && grep -q 'data-testid=\"settings-save\"' src/static/index.html && grep -q 'data-testid=\"settings-cancel\"' src/static/index.html && grep -q 'data-testid=\"status-strip\"' src/static/index.html"
+  "src/static/rain.js": "grep -q 'function' src/static/rain.js && grep -q 'requestAnimationFrame' src/static/rain.js",
+  "src/static/style.css": "grep -q 'data-theme=\"phosphor\"' src/static/style.css && grep -q 'matrix-scanlines' src/static/style.css",
+  "src/static/index.html": "grep -q '/static/rain.js' src/static/index.html"
  }
 }

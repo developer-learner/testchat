@@ -97,3 +97,5 @@ tests/test_ui.py::test_thread_rename_via_sidebar_control
 tests/test_ui.py::test_thread_delete_removes_thread
 tests/test_ui.py::test_stop_button_keeps_partial_reply
 tests/test_ui.py::test_saved_system_prompt_reaches_requests
+tests/test_ui.py::test_theme_cycle_reaches_phosphor_and_wraps
+tests/test_ui.py::test_rain_backdrop_only_in_phosphor

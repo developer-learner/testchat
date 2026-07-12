@@ -247,3 +247,28 @@ def test_saved_system_prompt_reaches_requests(
     first = req["messages"][0]
     assert first["role"] == "system"
     assert first["content"] == "You are a test harness. Be terse."
+
+
+# AC-53 [M11a — phosphor joins the theme cycle, which wraps at four]
+def test_theme_cycle_reaches_phosphor_and_wraps(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    start = page.evaluate("document.documentElement.getAttribute('data-theme')")
+    seen = []
+    for _ in range(4):
+        page.get_by_test_id("theme-toggle").click()
+        seen.append(page.evaluate("document.documentElement.getAttribute('data-theme')"))
+    assert "phosphor" in seen, f"cycle never reached phosphor: {seen}"
+    assert seen[-1] == start, f"four clicks must wrap to the start: {start} -> {seen}"
+
+
+# AC-54 [M11a — rain backdrop only while phosphor is active]
+def test_rain_backdrop_only_in_phosphor(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    for _ in range(4):
+        if page.evaluate("document.documentElement.getAttribute('data-theme')") == "phosphor":
+            break
+        page.get_by_test_id("theme-toggle").click()
+    assert page.evaluate("document.documentElement.getAttribute('data-theme')") == "phosphor"
+    expect(page.get_by_test_id("matrix-rain")).to_be_visible()
+    page.get_by_test_id("theme-toggle").click()
+    expect(page.get_by_test_id("matrix-rain")).to_be_hidden()
