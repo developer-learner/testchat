@@ -186,3 +186,15 @@ Full frozen TPM suite green against spec v19. Feature built and validated.
 - NOTE: these were CEO-directed live fixes; the TPM has no ACs for them yet.
   Next TPM cycle should backfill spec coverage (or fold into M10 split).
   Frozen Playwright suite still needs a VM re-run.
+
+## 2026-07-12 (cont) — Design evolution items 1-4 landed + verified live
+- 6cf6b10 /api/v1/status (stdlib RAM/RSS probes) + HistoryEntry ts/model
+  (optional, defaulted; chat.py still forwards role/content only).
+- c251263 centered 52rem reading column, per-bubble hover chrome (copy /
+  delete-pair / time+model via pseudo-content — textContent unchanged),
+  blinking stream cursor, footer status strip (model, RAM, nemotron RSS,
+  live + avg tok/s).
+- Verified live: column gutters symmetric at 1400px; cursor present during
+  stream, gone on done; strip showed nemotron 43.1 GB RSS and 42 tok/s live.
+  74/74 backend green; ruff clean. Test exchanges removed from data/.
+- Still owed: TPM spec backfill for all session-2 features; VM Playwright run.
