@@ -614,6 +614,21 @@
         replyText = '';
         var userStored = false;
 
+        // re-rendering the full markdown on every token is O(reply length);
+        // coalesce to one render per 30ms so long replies stream smoothly
+        var streamEnded = false;
+        var renderQueued = false;
+        function queueRender() {
+          if (renderQueued) return;
+          renderQueued = true;
+          setTimeout(function () {
+            renderQueued = false;
+            if (streamEnded) return;
+            renderReply(replyBubble, replyText, true);
+            scrollToBottom();
+          }, 30);
+        }
+
         currentThread.model = modelSelect.value;
 
         var bodyObj = { message: message, history: currentThread.messages };
@@ -662,8 +677,7 @@
                 replyText += dataStr;
               }
               chunkCount++;
-              renderReply(replyBubble, replyText, true);
-              scrollToBottom();
+              queueRender();
             } else if (eventType === 'think') {
               try {
                 var parsed = JSON.parse(dataStr);
@@ -672,9 +686,9 @@
                 replyText += '<think>' + dataStr + '</think>';
               }
               chunkCount++;
-              renderReply(replyBubble, replyText, true);
-              scrollToBottom();
+              queueRender();
             } else if (eventType === 'done') {
+              streamEnded = true;
               userStored = true;
               var now = Date.now() / 1000;
               currentThread.messages.push({ role: 'user', content: message, ts: now });
@@ -684,6 +698,7 @@
               maybeRetitle(currentThread);
               persistThreads();
             } else if (eventType === 'error') {
+              streamEnded = true;
               if (!userStored) { currentThread.messages.push({ role: 'user', content: message }); userStored = true; persistThreads(); }
               replyBubble.className = 'chat-bubble error';
               try {
@@ -721,6 +736,7 @@
           return read();
         })
         .catch(function (err) {
+          streamEnded = true;
           if (!userStored) { currentThread.messages.push({ role: 'user', content: message, ts: Date.now() / 1000 }); userStored = true; }
           if (err && err.name === 'AbortError') {
             // user hit Stop: keep the partial answer if any visible text
