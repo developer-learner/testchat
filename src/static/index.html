@@ -18,7 +18,8 @@
         <select id="model-select" data-testid="model-select"><option value="">Loading models...</option></select>
         <button type="button" class="nemotron-btn load" id="load-nemotron">Load Nemotron</button>
         <button type="button" class="nemotron-btn unload" id="unload-nemotron" data-testid="unload-nemotron">Unload Nemotron</button>
-        <button type="button" class="theme-toggle" id="theme-toggle" data-testid="theme-toggle" title="Switch theme">☀️</button>
+        <button type="button" class="theme-toggle" id="settings-toggle" data-testid="settings-toggle" title="System prompt">⚙</button>
+        <button type="button" class="theme-toggle no-auto-margin" id="theme-toggle" data-testid="theme-toggle" title="Switch theme">☀️</button>
       </div>
       <div class="chat-container" id="chat-container"></div>
       <form class="input-area" id="chat-form">
@@ -33,6 +34,18 @@
         <span id="status-tps"></span>
       </div>
     </main>
+  </div>
+
+  <div class="modal-overlay" id="settings-modal" hidden>
+    <div class="modal">
+      <div class="modal-title">System prompt</div>
+      <p class="modal-hint">Sent as the system message at the start of every request — all threads, all models. Leave empty for none.</p>
+      <textarea id="system-prompt-input" rows="7" placeholder="e.g. You are a concise assistant. Prefer plain language and short answers."></textarea>
+      <div class="modal-actions">
+        <button type="button" id="settings-cancel">Cancel</button>
+        <button type="button" id="settings-save" class="primary">Save</button>
+      </div>
+    </div>
   </div>
 
   <script src="/static/app.js"></script>

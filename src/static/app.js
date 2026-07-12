@@ -539,6 +539,41 @@
       setInterval(pollStatus, 5000);
       pollStatus();
 
+      var settingsToggle = document.getElementById('settings-toggle');
+      var settingsModal = document.getElementById('settings-modal');
+      var systemPromptInput = document.getElementById('system-prompt-input');
+
+      function openSettings() {
+        fetch('/api/v1/settings')
+          .then(function (r) { return r.json(); })
+          .then(function (d) { systemPromptInput.value = d.system_prompt || ''; })
+          .catch(function () { systemPromptInput.value = ''; })
+          .finally(function () {
+            settingsModal.hidden = false;
+            systemPromptInput.focus();
+          });
+      }
+
+      function closeSettings() {
+        settingsModal.hidden = true;
+      }
+
+      settingsToggle.addEventListener('click', openSettings);
+      document.getElementById('settings-cancel').addEventListener('click', closeSettings);
+      document.getElementById('settings-save').addEventListener('click', function () {
+        fetch('/api/v1/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ system_prompt: systemPromptInput.value })
+        }).then(closeSettings).catch(closeSettings);
+      });
+      settingsModal.addEventListener('click', function (e) {
+        if (e.target === settingsModal) closeSettings();
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && !settingsModal.hidden) closeSettings();
+      });
+
       sendBtn.addEventListener('click', function () {
         if (streaming && currentController) currentController.abort();
       });

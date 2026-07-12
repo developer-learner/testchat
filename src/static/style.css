@@ -371,6 +371,104 @@
       transform: scale(0.92);
     }
 
+    .theme-toggle.no-auto-margin {
+      margin-left: 0;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    /* the display:flex above would otherwise defeat the hidden attribute */
+    .modal-overlay[hidden] {
+      display: none;
+    }
+
+    .modal {
+      width: min(34rem, calc(100vw - 3rem));
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1.25rem 1.4rem 1.1rem;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+    }
+
+    :root[data-theme="matrix"] .modal {
+      border-radius: 0.25rem;
+      box-shadow: 0 0 30px rgba(0, 255, 65, 0.12);
+    }
+
+    .modal-title {
+      font-weight: 700;
+      font-size: 1.05rem;
+      margin-bottom: 0.35rem;
+    }
+
+    .modal-hint {
+      font-size: 0.8rem;
+      color: var(--muted-text);
+      margin-bottom: 0.8rem;
+    }
+
+    .modal textarea {
+      width: 100%;
+      resize: vertical;
+      background: var(--input-bg);
+      color: var(--input-text);
+      border: 1px solid var(--input-border);
+      border-radius: 0.5rem;
+      padding: 0.6rem 0.75rem;
+      font: inherit;
+      font-size: 0.9rem;
+      outline: none;
+      caret-color: var(--accent);
+    }
+
+    .modal textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--focus-ring);
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      margin-top: 0.9rem;
+    }
+
+    .modal-actions button {
+      padding: 0.45rem 1rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--input-border);
+      background: transparent;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.875rem;
+      cursor: pointer;
+    }
+
+    .modal-actions button.primary {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      border-color: transparent;
+      font-weight: 600;
+    }
+
+    .modal-actions button:hover {
+      border-color: var(--accent);
+    }
+
+    .modal-actions button.primary:hover {
+      background: var(--accent-hover);
+    }
+
     .nemotron-btn {
       padding: 0.45rem 0.9rem;
       border: 1px solid transparent;
