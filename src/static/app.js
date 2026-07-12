@@ -11,6 +11,24 @@
       var unloadNemotronBtn = document.getElementById('unload-nemotron');
       var newThreadBtn = document.getElementById('new-thread-btn');
       var threadListEl = document.getElementById('thread-list');
+      var themeToggle = document.getElementById('theme-toggle');
+
+      var THEMES = ['light', 'dark', 'matrix'];
+      var THEME_ICONS = { light: '☀️', dark: '🌙', matrix: '💊' };
+
+      function applyTheme(theme) {
+        if (THEMES.indexOf(theme) === -1) theme = 'light';
+        document.documentElement.setAttribute('data-theme', theme);
+        themeToggle.textContent = THEME_ICONS[theme];
+        try { localStorage.setItem('testchat-theme', theme); } catch (e) { /* private mode */ }
+      }
+
+      themeToggle.addEventListener('click', function () {
+        var current = document.documentElement.getAttribute('data-theme') || 'light';
+        applyTheme(THEMES[(THEMES.indexOf(current) + 1) % THEMES.length]);
+      });
+
+      try { applyTheme(localStorage.getItem('testchat-theme') || 'light'); } catch (e) { applyTheme('light'); }
 
       var showThinking = false;
       var replyText = '';

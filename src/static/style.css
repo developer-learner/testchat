@@ -1,3 +1,109 @@
+    :root {
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+      --bg: #f0f2f5;
+      --panel: #fff;
+      --border: #e0e0e0;
+      --text: #333;
+      --sidebar-bg: #202123;
+      --sidebar-text: #ececf1;
+      --sidebar-border: #565869;
+      --sidebar-hover: #2a2b32;
+      --sidebar-active: #343541;
+      --accent: #0084ff;
+      --accent-hover: #0073e6;
+      --accent-disabled: #99c8ff;
+      --accent-contrast: #fff;
+      --danger: #ff4d4f;
+      --danger-hover: #e04345;
+      --danger-disabled: #ffa3a4;
+      --bubble-user-bg: #0084ff;
+      --bubble-user-text: #fff;
+      --bubble-reply-bg: #fff;
+      --bubble-reply-text: #1a1a1a;
+      --bubble-reply-border: #e0e0e0;
+      --error-bg: #ffe0e0;
+      --error-text: #cc0000;
+      --error-border: #ffcccc;
+      --think-color: #888;
+      --input-border: #ccc;
+      --input-bg: #fff;
+      --input-text: #333;
+      --muted-bg: #e8e8e8;
+      --muted-text: #666;
+      --toggle-on-bg: #e0f0ff;
+      --glow: none;
+    }
+
+    :root[data-theme="dark"] {
+      --bg: #141416;
+      --panel: #1e1f24;
+      --border: #33343a;
+      --text: #ececf1;
+      --sidebar-bg: #0f0f11;
+      --sidebar-text: #ececf1;
+      --sidebar-border: #44454d;
+      --sidebar-hover: #232429;
+      --sidebar-active: #2f3038;
+      --accent: #3b9cff;
+      --accent-hover: #61afff;
+      --accent-disabled: #274a70;
+      --accent-contrast: #0b0b0d;
+      --danger: #ff5a5c;
+      --danger-hover: #ff7c7e;
+      --danger-disabled: #6e3435;
+      --bubble-user-bg: #2f6fb8;
+      --bubble-user-text: #f2f7ff;
+      --bubble-reply-bg: #232429;
+      --bubble-reply-text: #ececf1;
+      --bubble-reply-border: #33343a;
+      --error-bg: #3a1d1e;
+      --error-text: #ff8a8c;
+      --error-border: #5c2b2c;
+      --think-color: #9a9aa5;
+      --input-border: #44454d;
+      --input-bg: #232429;
+      --input-text: #ececf1;
+      --muted-bg: #2a2b31;
+      --muted-text: #b9b9c3;
+      --toggle-on-bg: #1c3350;
+    }
+
+    :root[data-theme="matrix"] {
+      --font: 'SF Mono', 'Menlo', 'Fira Code', 'Courier New', monospace;
+      --bg: #000;
+      --panel: #030903;
+      --border: #0f3d0f;
+      --text: #00ff41;
+      --sidebar-bg: #010401;
+      --sidebar-text: #00ff41;
+      --sidebar-border: #0f3d0f;
+      --sidebar-hover: #052405;
+      --sidebar-active: #0a350a;
+      --accent: #00ff41;
+      --accent-hover: #66ff8c;
+      --accent-disabled: #0a4d1d;
+      --accent-contrast: #000;
+      --danger: #ff3b3b;
+      --danger-hover: #ff6b6b;
+      --danger-disabled: #5c1414;
+      --bubble-user-bg: #032e0e;
+      --bubble-user-text: #00ff41;
+      --bubble-reply-bg: #010c04;
+      --bubble-reply-text: #00ff41;
+      --bubble-reply-border: #0f3d0f;
+      --error-bg: #2e0303;
+      --error-text: #ff5c5c;
+      --error-border: #5c1414;
+      --think-color: #0a8f2e;
+      --input-border: #0f3d0f;
+      --input-bg: #010c04;
+      --input-text: #00ff41;
+      --muted-bg: #052405;
+      --muted-text: #0abf3e;
+      --toggle-on-bg: #0a350a;
+      --glow: 0 0 6px rgba(0, 255, 65, 0.45);
+    }
+
     * {
       margin: 0;
       padding: 0;
@@ -5,10 +111,15 @@
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
-      background: #f0f2f5;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
       height: 100vh;
       overflow: hidden;
+    }
+
+    :root[data-theme="matrix"] body {
+      text-shadow: var(--glow);
     }
 
     .app-wrapper {
@@ -20,28 +131,30 @@
     .sidebar {
       width: 250px;
       min-width: 250px;
-      background: #202123;
-      color: #ececf1;
+      background: var(--sidebar-bg);
+      color: var(--sidebar-text);
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      border-right: 1px solid var(--border);
     }
 
     .new-thread-btn {
       margin: 0.75rem;
       padding: 0.6rem 1rem;
       background: transparent;
-      color: #ececf1;
-      border: 1px solid #565869;
+      color: var(--sidebar-text);
+      border: 1px solid var(--sidebar-border);
       border-radius: 0.5rem;
       font-size: 0.875rem;
+      font-family: inherit;
       cursor: pointer;
       text-align: left;
       transition: background 0.2s;
     }
 
     .new-thread-btn:hover {
-      background: #2a2b32;
+      background: var(--sidebar-hover);
     }
 
     .thread-list {
@@ -63,11 +176,11 @@
     }
 
     .thread-item:hover {
-      background: #2a2b32;
+      background: var(--sidebar-hover);
     }
 
     .thread-item.active {
-      background: #343541;
+      background: var(--sidebar-active);
     }
 
     .chat-panel {
@@ -81,34 +194,52 @@
       display: flex;
       align-items: center;
       padding: 0.75rem 1rem;
-      background: #fff;
-      border-bottom: 1px solid #e0e0e0;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
       gap: 0.75rem;
     }
 
     .top-bar label {
       font-size: 0.875rem;
-      color: #333;
+      color: var(--text);
       font-weight: 600;
     }
 
     .top-bar select {
       padding: 0.5rem 2rem 0.5rem 0.75rem;
-      border: 1px solid #ccc;
+      border: 1px solid var(--input-border);
       border-radius: 0.5rem;
       font-size: 0.875rem;
+      font-family: inherit;
       outline: none;
-      background: #fff;
+      background: var(--input-bg);
+      color: var(--input-text);
       cursor: pointer;
     }
 
     .top-bar select:focus {
-      border-color: #0084ff;
+      border-color: var(--accent);
     }
 
     .top-bar select:disabled {
-      background: #f0f0f0;
+      background: var(--muted-bg);
       cursor: not-allowed;
+    }
+
+    .theme-toggle {
+      margin-left: auto;
+      background: var(--muted-bg);
+      color: var(--muted-text);
+      border: 1px solid var(--input-border);
+      border-radius: 0.5rem;
+      padding: 0.5rem 0.75rem;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .theme-toggle:hover {
+      border-color: var(--accent);
     }
 
     .nemotron-btn {
@@ -116,35 +247,36 @@
       border: none;
       border-radius: 0.5rem;
       font-size: 0.875rem;
+      font-family: inherit;
       cursor: pointer;
       transition: background 0.2s, opacity 0.2s;
     }
 
     .nemotron-btn.load {
-      background: #0084ff;
-      color: #fff;
+      background: var(--accent);
+      color: var(--accent-contrast);
     }
 
     .nemotron-btn.load:hover {
-      background: #0073e6;
+      background: var(--accent-hover);
     }
 
     .nemotron-btn.load:disabled {
-      background: #99c8ff;
+      background: var(--accent-disabled);
       cursor: not-allowed;
     }
 
     .nemotron-btn.unload {
-      background: #ff4d4f;
-      color: #fff;
+      background: var(--danger);
+      color: var(--accent-contrast);
     }
 
     .nemotron-btn.unload:hover {
-      background: #e04345;
+      background: var(--danger-hover);
     }
 
     .nemotron-btn.unload:disabled {
-      background: #ffa3a4;
+      background: var(--danger-disabled);
       cursor: not-allowed;
     }
 
@@ -155,6 +287,7 @@
       display: flex;
       flex-direction: column;
       gap: 0.75rem;
+      background: var(--bg);
     }
 
     .chat-bubble {
@@ -168,29 +301,29 @@
 
     .chat-bubble.user {
       align-self: flex-end;
-      background: #0084ff;
-      color: #fff;
+      background: var(--bubble-user-bg);
+      color: var(--bubble-user-text);
       border-bottom-right-radius: 0.25rem;
     }
 
     .chat-bubble.reply {
       align-self: flex-start;
-      background: #fff;
-      color: #1a1a1a;
-      border: 1px solid #e0e0e0;
+      background: var(--bubble-reply-bg);
+      color: var(--bubble-reply-text);
+      border: 1px solid var(--bubble-reply-border);
       border-bottom-left-radius: 0.25rem;
     }
 
     .chat-bubble.error {
       align-self: center;
-      background: #ffe0e0;
-      color: #cc0000;
-      border: 1px solid #ffcccc;
+      background: var(--error-bg);
+      color: var(--error-text);
+      border: 1px solid var(--error-border);
     }
 
     .think-content {
       display: none;
-      color: #888;
+      color: var(--think-color);
       font-style: italic;
     }
 
@@ -202,49 +335,53 @@
     .input-area {
       display: flex;
       padding: 1rem;
-      background: #fff;
-      border-top: 1px solid #e0e0e0;
+      background: var(--panel);
+      border-top: 1px solid var(--border);
       gap: 0.5rem;
     }
 
     .input-area input {
       flex: 1;
       padding: 0.75rem 1rem;
-      border: 1px solid #ccc;
+      border: 1px solid var(--input-border);
       border-radius: 2rem;
       font-size: 1rem;
+      font-family: inherit;
       outline: none;
+      background: var(--input-bg);
+      color: var(--input-text);
       transition: border-color 0.2s;
     }
 
     .input-area input:focus {
-      border-color: #0084ff;
+      border-color: var(--accent);
     }
 
     .input-area button {
       padding: 0.75rem 1.5rem;
-      background: #0084ff;
-      color: #fff;
+      background: var(--accent);
+      color: var(--accent-contrast);
       border: none;
       border-radius: 2rem;
       font-size: 1rem;
+      font-family: inherit;
       cursor: pointer;
       transition: background 0.2s;
     }
 
     .input-area button:hover {
-      background: #0073e6;
+      background: var(--accent-hover);
     }
 
     .input-area button:disabled {
-      background: #99c8ff;
+      background: var(--accent-disabled);
       cursor: not-allowed;
     }
 
     .think-toggle {
-      background: #e8e8e8;
-      color: #666;
-      border: 1px solid #ccc;
+      background: var(--muted-bg);
+      color: var(--muted-text);
+      border: 1px solid var(--input-border);
       border-radius: 2rem;
       padding: 0.75rem 0.9rem;
       font-size: 1rem;
@@ -254,9 +391,7 @@
     }
 
     .think-toggle.on {
-      background: #e0f0ff;
-      color: #0084ff;
-      border-color: #0084ff;
+      background: var(--toggle-on-bg);
+      color: var(--accent);
+      border-color: var(--accent);
     }
-
-  
