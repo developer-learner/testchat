@@ -401,9 +401,21 @@
             flushPara();
             var items = [];
             while (i < lines.length) {
+              // models often blank-line-separate list items; a lone blank
+              // followed by another item is still the same list
+              if (lines[i].trim() === '' && i + 1 < lines.length &&
+                  /^(\s*)([-*+]|\d+[.)])\s+/.test(lines[i + 1])) {
+                i++;
+                continue;
+              }
               var lm = lines[i].match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
               if (!lm) break;
-              items.push({ lvl: lm[1].length >= 2 ? 1 : 0, ord: /\d/.test(lm[2].charAt(0)), text: lm[3] });
+              items.push({
+                lvl: lm[1].length >= 2 ? 1 : 0,
+                ord: /\d/.test(lm[2].charAt(0)),
+                num: parseInt(lm[2], 10) || 0,
+                text: lm[3]
+              });
               i++;
             }
             i--;
@@ -433,7 +445,9 @@
             out += '</' + open.pop() + '>';
           }
           while (open.length < depth) { out += '<' + tag + '>'; open.push(tag); }
-          out += '<li>' + renderMarkdownInline(it.text) + '</li>';
+          // carry the source numbering so lists render exactly as written
+          // (loose lists, restarts, lists starting past 1)
+          out += (it.ord && it.num ? '<li value="' + it.num + '">' : '<li>') + renderMarkdownInline(it.text) + '</li>';
         }
         while (open.length) { out += '</' + open.pop() + '>'; }
         return out;
