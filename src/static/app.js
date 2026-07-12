@@ -190,10 +190,12 @@
             renBtn.type = 'button';
             renBtn.className = 't-act t-ren';
             renBtn.title = 'Rename';
+            renBtn.setAttribute('data-testid', 'thread-rename-btn');
             var delBtn = document.createElement('button');
             delBtn.type = 'button';
             delBtn.className = 't-act t-del';
             delBtn.title = 'Delete';
+            delBtn.setAttribute('data-testid', 'thread-delete-btn');
             actions.appendChild(renBtn);
             actions.appendChild(delBtn);
             item.appendChild(actions);
@@ -216,6 +218,7 @@
       function startRename(thread, titleEl, itemEl) {
         var inp = document.createElement('input');
         inp.className = 'thread-rename';
+        inp.setAttribute('data-testid', 'thread-rename-input');
         inp.value = thread.title;
         itemEl.replaceChild(inp, titleEl);
         inp.focus();
