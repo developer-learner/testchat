@@ -134,15 +134,24 @@
       function renderThink(text) {
         var html = '';
         var inThink = false;
+        var afterThink = false;
         var parts = text.split(/(<think>|<\/think>)/);
         for (var i = 0; i < parts.length; i++) {
           var part = parts[i];
           if (part === '<think>') { inThink = true; continue; }
-          if (part === '</think>') { inThink = false; continue; }
+          if (part === '</think>') { inThink = false; afterThink = true; continue; }
           var escaped = part.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-          html += inThink ? '<span class="think-content" data-testid="think-content">' + escaped + '</span>' : renderMarkdown(escaped);
+          if (inThink) {
+            html += '<span class="think-content" data-testid="think-content">' + escaped + '</span>';
+          } else {
+            // pre-wrap renders the newlines around a hidden think block as
+            // blank lines at the bubble top — trim at those boundaries.
+            if (html === '' || afterThink) escaped = escaped.replace(/^\s+/, '');
+            html += renderMarkdown(escaped);
+            afterThink = false;
+          }
         }
-        return html;
+        return html.replace(/\s+$/, '');
       }
 
       // Minimal markdown for already-HTML-escaped text; bubbles use

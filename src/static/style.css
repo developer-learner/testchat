@@ -195,7 +195,8 @@
     }
 
     .show-thinking .think-content {
-      display: inline;
+      display: block;
+      margin-bottom: 0.5rem;
     }
 
     .input-area {
