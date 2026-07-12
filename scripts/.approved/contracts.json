@@ -1,5 +1,5 @@
 {
- "erd_version": 22,
+ "erd_version": 23,
  "files": [
   "src/static/rain.js",
   "src/static/style.css",

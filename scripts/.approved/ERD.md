@@ -1,4 +1,4 @@
-ERD — testchat M11a: Phosphor Theme (erd_version 22)
+ERD — testchat M11a: Phosphor Theme (erd_version 23)
 
 What changes v21 → v22
 
@@ -9,21 +9,53 @@ localStorage persistence) — phosphor plugs into it; nothing is redesigned.
 
 File inventory (M11a build) — DAG order
 
-1. src/static/rain.js — NEW (~70 lines, no dependencies, plain script like
-   app.js — an IIFE exposing window.MatrixRain = { start: fn, stop: fn }).
-   start(): create (once) a full-viewport <canvas> as document.body's first
-   child with data-testid="matrix-rain", position fixed, inset 0,
-   z-index 0, pointer-events none, opacity 0.35; run the classic digital
-   rain: columns ~14px wide, each drawing a random glyph from katakana +
-   digits (e.g. charcodes 0x30A0-0x30FF plus 0-9) falling one row per
-   frame-step, head brighter than tail, fading via a translucent black
-   fillRect each frame; colors from the phosphor palette (head
-   'rgb(190,255,200)', trail 'rgb(60,220,120)'); throttle to ~20 fps via
-   requestAnimationFrame + timestamp check; pause when document.hidden
-   (visibilitychange); handle window resize. If
-   matchMedia('(prefers-reduced-motion: reduce)').matches, draw ONE static
-   frame and do not animate. stop(): cancel the animation and hide the
-   canvas (display none) — do not destroy it.
+1. src/static/rain.js — NEW (~70 lines). Every decision is made below;
+   TRANSCRIBE this skeleton into working JavaScript, no analysis:
+
+   (function () {
+     var canvas = null, ctx = null, raf = null, last = 0, drops = [];
+     var FONT = 14, STEP_MS = 50;
+     var GLYPHS = katakana 0x30A0..0x30FF plus digits 0-9, as one string
+       built with String.fromCharCode in a small loop;
+     function ensureCanvas():
+       if canvas already created -> return; create <canvas>, set
+       data-testid="matrix-rain", style: position fixed, inset 0,
+       zIndex 0, pointerEvents 'none', opacity 0.35; insert as
+       document.body.firstChild; ctx = getContext('2d'); call resize();
+       window.addEventListener('resize', resize);
+       document.addEventListener('visibilitychange', function(){ /* raf
+         loop simply does nothing while document.hidden */ });
+     function resize(): canvas.width/height = innerWidth/innerHeight;
+       drops = new Array(Math.ceil(canvas.width / FONT)).fill(0).map(
+         function(){ return Math.floor(Math.random() * canvas.height / FONT); });
+     function frame(ts):
+       raf = requestAnimationFrame(frame);
+       if (document.hidden) return;
+       if (ts - last < STEP_MS) return; last = ts;
+       ctx.fillStyle = 'rgba(0,0,0,0.08)';
+       ctx.fillRect(0,0,canvas.width,canvas.height);
+       ctx.font = FONT + 'px monospace';
+       for each column i in drops:
+         var ch = random glyph from GLYPHS;
+         var x = i * FONT, y = drops[i] * FONT;
+         ctx.fillStyle = 'rgb(60,220,120)'; ctx.fillText(ch, x, y);
+         ctx.fillStyle = 'rgb(190,255,200)'; ctx.fillText(ch, x, y); //head brighter: draw same glyph once more at lower alpha via globalAlpha 0.9, then restore globalAlpha 1
+         drops[i] = (y > canvas.height && Math.random() > 0.975) ? 0 : drops[i] + 1;
+     function start():
+       ensureCanvas(); canvas.style.display = 'block';
+       if (matchMedia('(prefers-reduced-motion: reduce)').matches)
+         { draw ONE frame by calling the frame body once without
+           scheduling; return; }
+       if (!raf) { last = 0; raf = requestAnimationFrame(frame); }
+     function stop():
+       if (raf) { cancelAnimationFrame(raf); raf = null; }
+       if (canvas) canvas.style.display = 'none';
+     window.MatrixRain = { start: start, stop: stop };
+   })();
+
+   Anything the skeleton leaves as prose (e.g. the head-brightness line),
+   resolve in the simplest way that satisfies it — do not add features.
+
 2. src/static/style.css — EDIT (one concern: the phosphor theme block).
    Append a [data-theme="phosphor"] variable block mapping the EXISTING
    theme variable names (copy the set the matrix block defines) to the
