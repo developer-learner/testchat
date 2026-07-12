@@ -1,5 +1,5 @@
 {
- "erd_version": 23,
+ "erd_version": 24,
  "files": [
   "src/static/rain.js",
   "src/static/style.css",
@@ -304,7 +304,7 @@
  ],
  "smoke_checks": {
   "src/static/rain.js": "grep -q 'function' src/static/rain.js && grep -q 'requestAnimationFrame' src/static/rain.js",
-  "src/static/style.css": "grep -q 'data-theme=\"phosphor\"' src/static/style.css && grep -q 'matrix-scanlines' src/static/style.css",
+  "src/static/style.css": "grep -q 'data-theme=\"phosphor\"' src/static/style.css && grep -q 'repeating-linear-gradient' src/static/style.css",
   "src/static/index.html": "grep -q '/static/rain.js' src/static/index.html"
  }
 }

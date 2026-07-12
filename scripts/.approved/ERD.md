@@ -1,4 +1,4 @@
-ERD — testchat M11a: Phosphor Theme (erd_version 23)
+ERD — testchat M11a: Phosphor Theme (erd_version 24)
 
 What changes v21 → v22
 
@@ -67,7 +67,7 @@ File inventory (M11a build) — DAG order
    ring 60% (color-mix or oklch alpha); border radius overridden to
    0.25rem; font-family for the whole app under this theme: ui-monospace,
    SFMono-Regular, Menlo, Consolas, monospace. Also under
-   [data-theme="phosphor"] only: a .matrix-scanlines overlay on the chat
+   [data-theme="phosphor"] only: a scanline overlay (any class name; substance is the repeating-linear-gradient) on the chat
    panel via a repeating-linear-gradient ::before (2px period, very low
    alpha, pointer-events none); text glow on assistant text and headers
    (text-shadow 0 0 6px currentColor at low alpha); .box-glow on the
