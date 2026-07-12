@@ -174,3 +174,15 @@ Full frozen TPM suite green against spec v19. Feature built and validated.
   exits ~1s, ZERO new DiagnosticReports, no Problem Reporter dialog.
   (All 4 of today's crashed PIDs had the app as parent — the load-timeout
   SIGINT path crashed the same way; it is now silent too.)
+
+## 2026-07-12 — Live CEO session #2: M10-class features landed outside-band
+- 5a80fa6 markdown block renderer (fenced code + copy, headings, nested
+  lists, quotes, hr, links), thread rename/delete (persisted), auto-retitle
+  of generic titles from first reply, Send->Stop (abort keeps partial reply
+  + user msg). 2281b2a styles + matrix sharpness (glow 2px, 15px antialiased).
+- All verified live in-browser: block-by-block render check, rename/delete
+  round-trip through PUT /threads, stop mid-nemotron-stream (partial kept,
+  no error bubble). Backend suite 74/74 after every commit.
+- NOTE: these were CEO-directed live fixes; the TPM has no ACs for them yet.
+  Next TPM cycle should backfill spec coverage (or fold into M10 split).
+  Frozen Playwright suite still needs a VM re-run.
