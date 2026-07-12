@@ -1012,3 +1012,17 @@
     :root[data-theme="midnight"] * {
       text-shadow: none;
     }
+
+    /* CEO dark-room feedback 2026-07-13: readability wants contrast anchors —
+       emphasis in warm amber, code in cool slate, headings amber. Muted
+       saturation preserved; only *marked* text gets color. */
+    :root[data-theme="midnight"] .chat-bubble strong,
+    :root[data-theme="midnight"] .chat-bubble b,
+    :root[data-theme="midnight"] .chat-bubble h1,
+    :root[data-theme="midnight"] .chat-bubble h2,
+    :root[data-theme="midnight"] .chat-bubble h3 {
+      color: oklch(0.78 0.13 70);
+    }
+    :root[data-theme="midnight"] .chat-bubble code {
+      color: oklch(0.80 0.07 220);
+    }

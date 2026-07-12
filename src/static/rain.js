@@ -44,7 +44,7 @@
     while (columns.length < colCount) {
       columns.push({
         y: Math.random() * -100,
-        speed: 0.5 + Math.random() * 1.5,
+        speed: 0.18 + Math.random() * 0.55,
         glyph: randomGlyph(),
       });
     }
@@ -79,7 +79,7 @@
       if (col.y * fontSize > canvas.height) {
         if (Math.random() > 0.975) {
           col.y = Math.random() * -10;
-          col.speed = 0.5 + Math.random() * 1.5;
+          col.speed = 0.18 + Math.random() * 0.55;
         } else {
           col.y = -Math.floor(Math.random() * 20);
         }
