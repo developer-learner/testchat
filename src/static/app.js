@@ -140,9 +140,20 @@
           if (part === '<think>') { inThink = true; continue; }
           if (part === '</think>') { inThink = false; continue; }
           var escaped = part.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-          html += inThink ? '<span class="think-content" data-testid="think-content">' + escaped + '</span>' : escaped;
+          html += inThink ? '<span class="think-content" data-testid="think-content">' + escaped + '</span>' : renderMarkdown(escaped);
         }
         return html;
+      }
+
+      // Minimal markdown for already-HTML-escaped text; bubbles use
+      // white-space: pre-wrap, so line structure is preserved as-is.
+      function renderMarkdown(escaped) {
+        return escaped
+          .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+          .replace(/\*\*([^*\n][^*]*?)\*\*/g, '<strong>$1</strong>')
+          .replace(/(^|[\s(])\*([^*\s][^*\n]*?)\*(?=[\s.,;:!?)]|$)/gm, '$1<em>$2</em>')
+          .replace(/^#{1,6}\s+(.+)$/gm, '<strong>$1</strong>')
+          .replace(/^(\s*)-\s+/gm, '$1• ');
       }
 
       function stripThink(text) {
