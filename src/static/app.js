@@ -13,8 +13,8 @@
       var threadListEl = document.getElementById('thread-list');
       var themeToggle = document.getElementById('theme-toggle');
 
-      var THEMES = ['light', 'dark', 'matrix', 'phosphor'];
-      var THEME_ICONS = { light: '☀️', dark: '🌙', matrix: '💊', phosphor: '>_' };
+      var THEMES = ['light', 'dark', 'matrix', 'phosphor', 'midnight'];
+      var THEME_ICONS = { light: '☀️', dark: '🌙', matrix: '💊', phosphor: '>_ ', midnight: '\u{1F319}' };
 
       function applyTheme(theme) {
         if (THEMES.indexOf(theme) === -1) theme = 'light';
