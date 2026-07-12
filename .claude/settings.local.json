@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//home/lima.guest/**)",
+      "Read(//Users/arc.elixir/dev/**)",
+      "Bash(git -C /Users/arc.elixir/dev/sw-dev-blueprint log --oneline -6)",
+      "Bash(git -C /Users/arc.elixir/dev/sw-dev-blueprint status --short)"
+    ]
+  }
+}
