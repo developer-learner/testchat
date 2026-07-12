@@ -990,3 +990,25 @@
       color: var(--accent);
       border-color: var(--accent);
     }
+
+    :root[data-theme="midnight"] {
+      --font: inherit;
+      --bg: oklch(0.18 0 0);
+      --panel: oklch(0.22 0.003 90);
+      --text: oklch(0.92 0.01 90);
+      --border: oklch(0.92 0.01 90 / 0.08);
+      --sidebar-bg: oklch(0.16 0 0);
+      --sidebar-text: oklch(0.85 0.01 90);
+      --sidebar-border: oklch(0.85 0.01 90 / 0.08);
+      --sidebar-hover: oklch(0.22 0 0);
+      --sidebar-active: oklch(0.26 0.003 90);
+      --sidebar-active-bar: oklch(0.75 0.12 75);
+      --accent-primary: oklch(0.75 0.12 75);
+      --accent-secondary: oklch(0.72 0.06 220);
+      --accent-error: oklch(0.55 0.12 25);
+      --bubble-user: oklch(0.78 0.06 220);
+    }
+
+    :root[data-theme="midnight"] * {
+      text-shadow: none;
+    }
