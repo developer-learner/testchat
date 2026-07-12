@@ -99,6 +99,40 @@
         renderSidebar();
       }
 
+      // meta line and hover actions ride on data-attributes + CSS pseudo
+      // content so they never leak into the bubble's textContent
+      function addBubbleChrome(bubble, raw, ts, model, idx) {
+        bubble.dataset.raw = raw;
+        var metaText = '';
+        if (ts) {
+          var d = new Date(ts * 1000);
+          metaText = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+        }
+        if (model) metaText += (metaText ? ' · ' : '') + model;
+        if (metaText) {
+          var meta = document.createElement('span');
+          meta.className = 'bubble-meta';
+          meta.setAttribute('data-meta', metaText);
+          bubble.appendChild(meta);
+        }
+        var actions = document.createElement('span');
+        actions.className = 'bubble-actions';
+        var copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'b-act b-copy';
+        copyBtn.title = 'Copy message';
+        actions.appendChild(copyBtn);
+        if (typeof idx === 'number') {
+          var delBtn = document.createElement('button');
+          delBtn.type = 'button';
+          delBtn.className = 'b-act b-del';
+          delBtn.title = 'Delete message';
+          delBtn.setAttribute('data-idx', String(idx));
+          actions.appendChild(delBtn);
+        }
+        bubble.appendChild(actions);
+      }
+
       function renderThreadMessages(thread) {
         for (var i = 0; i < thread.messages.length; i++) {
           var msg = thread.messages[i];
@@ -110,9 +144,31 @@
           } else {
             bubble.textContent = msg.content;
           }
+          addBubbleChrome(bubble, msg.content, msg.ts || 0, msg.role === 'assistant' ? (msg.model || '') : '', i);
           container.appendChild(bubble);
         }
         scrollToBottom();
+      }
+
+      function deleteMessagePair(idx) {
+        var thread = threads.find(function (t) { return t.id === activeThreadId; });
+        if (!thread || idx < 0 || idx >= thread.messages.length) return;
+        if (!window.confirm('Delete this message' + (pairSpan(thread, idx) === 2 ? ' pair' : '') + '?')) return;
+        var span = pairSpan(thread, idx);
+        var start = idx;
+        if (span === 2 && thread.messages[idx].role === 'assistant') start = idx - 1;
+        thread.messages.splice(start, span);
+        persistThreads();
+        container.innerHTML = '';
+        container.classList.toggle('show-thinking', showThinking);
+        renderThreadMessages(thread);
+      }
+
+      function pairSpan(thread, idx) {
+        var msg = thread.messages[idx];
+        if (msg.role === 'user' && idx + 1 < thread.messages.length && thread.messages[idx + 1].role === 'assistant') return 2;
+        if (msg.role === 'assistant' && idx > 0 && thread.messages[idx - 1].role === 'user') return 2;
+        return 1;
       }
 
       function renderSidebar() {
@@ -225,16 +281,30 @@
         bubble.setAttribute('data-testid', type === 'user' ? 'msg-user' : 'msg-assistant');
         container.appendChild(bubble);
         scrollToBottom();
+        return bubble;
       }
 
       function scrollToBottom() {
         container.scrollTop = container.scrollHeight;
       }
 
-      function renderReply(bubble, text) {
+      function renderReply(bubble, text, live) {
         var html = renderThink(text);
         var visible = html.replace(/<span class=\"think-content\"[^>]*>[\s\S]*?<\/span>/g, '').replace(/<[^>]+>/g, '').trim();
         bubble.innerHTML = visible === '' ? 'thinking...' : html;
+        bubble.dataset.raw = stripThink(text);
+        if (live) appendStreamCursor(bubble);
+      }
+
+      function appendStreamCursor(bubble) {
+        var el = bubble;
+        while (el.lastElementChild && el.lastElementChild.tagName !== 'HR' &&
+               !el.lastElementChild.classList.contains('copy-btn')) {
+          el = el.lastElementChild;
+        }
+        var c = document.createElement('span');
+        c.className = 'stream-cursor';
+        el.appendChild(c);
       }
 
       function renderThink(text) {
@@ -430,6 +500,30 @@
 
       var streaming = false;
       var currentController = null;
+      var chunkCount = 0;
+      var streamStartMs = 0;
+      var tpsTimer = null;
+      var statusModel = document.getElementById('status-model');
+      var statusRam = document.getElementById('status-ram');
+      var statusTps = document.getElementById('status-tps');
+
+      function pollStatus() {
+        statusModel.textContent = '● ' + (modelSelect.value || 'no model');
+        statusModel.classList.toggle('ok', !!modelSelect.value);
+        fetch('/api/v1/status')
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            var ram = 'RAM ' + d.ram_used_gb + '/' + d.ram_total_gb + ' GB';
+            if (d.nemotron_loaded && d.nemotron_rss_gb) {
+              ram += ' · nemotron ' + d.nemotron_rss_gb + ' GB';
+            }
+            statusRam.textContent = ram;
+          })
+          .catch(function () { statusRam.textContent = ''; });
+      }
+
+      setInterval(pollStatus, 5000);
+      pollStatus();
 
       sendBtn.addEventListener('click', function () {
         if (streaming && currentController) currentController.abort();
@@ -447,13 +541,21 @@
           updateTitle(currentThread, message);
         }
 
-        appendBubble(message, 'user');
+        var userBubble = appendBubble(message, 'user');
+        addBubbleChrome(userBubble, message, Date.now() / 1000, '');
         input.value = '';
         streaming = true;
         currentController = new AbortController();
         sendBtn.type = 'button';
         sendBtn.textContent = 'Stop';
         sendBtn.classList.add('stop');
+        chunkCount = 0;
+        streamStartMs = Date.now();
+        var lastTpsCount = 0;
+        tpsTimer = setInterval(function () {
+          statusTps.textContent = (chunkCount - lastTpsCount) + ' tok/s';
+          lastTpsCount = chunkCount;
+        }, 1000);
 
         var replyBubble = document.createElement('div');
         replyBubble.className = 'chat-bubble reply';
@@ -510,7 +612,8 @@
               } catch (err) {
                 replyText += dataStr;
               }
-              renderReply(replyBubble, replyText);
+              chunkCount++;
+              renderReply(replyBubble, replyText, true);
               scrollToBottom();
             } else if (eventType === 'think') {
               try {
@@ -519,12 +622,16 @@
               } catch (err) {
                 replyText += '<think>' + dataStr + '</think>';
               }
-              renderReply(replyBubble, replyText);
+              chunkCount++;
+              renderReply(replyBubble, replyText, true);
               scrollToBottom();
             } else if (eventType === 'done') {
               userStored = true;
-              currentThread.messages.push({ role: 'user', content: message });
-              currentThread.messages.push({ role: 'assistant', content: stripThink(replyText) });
+              var now = Date.now() / 1000;
+              currentThread.messages.push({ role: 'user', content: message, ts: now });
+              currentThread.messages.push({ role: 'assistant', content: stripThink(replyText), ts: now, model: modelSelect.value || '' });
+              renderReply(replyBubble, replyText);
+              addBubbleChrome(replyBubble, stripThink(replyText), now, modelSelect.value || '', currentThread.messages.length - 1);
               maybeRetitle(currentThread);
               persistThreads();
             } else if (eventType === 'error') {
@@ -565,13 +672,13 @@
           return read();
         })
         .catch(function (err) {
-          if (!userStored) { currentThread.messages.push({ role: 'user', content: message }); userStored = true; }
+          if (!userStored) { currentThread.messages.push({ role: 'user', content: message, ts: Date.now() / 1000 }); userStored = true; }
           if (err && err.name === 'AbortError') {
             // user hit Stop: keep the partial answer if any visible text
             // arrived, otherwise just drop the placeholder bubble
             var partial = stripThink(replyText).replace(/^\s+|\s+$/g, '');
             if (partial) {
-              currentThread.messages.push({ role: 'assistant', content: partial });
+              currentThread.messages.push({ role: 'assistant', content: partial, ts: Date.now() / 1000, model: modelSelect.value || '' });
               renderReply(replyBubble, replyText);
             } else if (replyBubble.parentNode) {
               replyBubble.parentNode.removeChild(replyBubble);
@@ -589,9 +696,45 @@
           sendBtn.textContent = 'Send';
           sendBtn.classList.remove('stop');
           sendBtn.disabled = false;
+          if (tpsTimer) { clearInterval(tpsTimer); tpsTimer = null; }
+          var dur = (Date.now() - streamStartMs) / 1000;
+          if (chunkCount && dur > 0.5) {
+            statusTps.textContent = 'avg ' + (chunkCount / dur).toFixed(1) + ' tok/s';
+          }
           input.focus();
         });
       });
+
+      // per-message hover actions (event delegation)
+      container.addEventListener('click', function (e) {
+        var btn = e.target;
+        if (!btn.classList) return;
+        if (btn.classList.contains('b-copy')) {
+          copyToClipboard(btn.closest('.chat-bubble').dataset.raw || '', btn);
+        } else if (btn.classList.contains('b-del')) {
+          deleteMessagePair(parseInt(btn.getAttribute('data-idx'), 10));
+        }
+      });
+
+      function copyToClipboard(text, btn) {
+        var flash = function () {
+          btn.classList.add('done');
+          setTimeout(function () { btn.classList.remove('done'); }, 1200);
+        };
+        var legacy = function () {
+          var ta = document.createElement('textarea');
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          try { if (document.execCommand('copy')) flash(); } catch (err) {}
+          document.body.removeChild(ta);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(flash).catch(legacy);
+        } else {
+          legacy();
+        }
+      }
 
       // copy button on fenced code blocks (event delegation — blocks are
       // re-rendered on every streamed chunk)
@@ -646,6 +789,7 @@
           })
           .finally(function () {
             loadNemotronBtn.disabled = false;
+            pollStatus();
           });
       });
 
@@ -661,6 +805,7 @@
           })
           .finally(function () {
             unloadNemotronBtn.disabled = false;
+            pollStatus();
           });
       });
 
@@ -687,6 +832,7 @@
       modelSelect.addEventListener('change', function () {
         var thread = threads.find(function (t) { return t.id === activeThreadId; });
         if (thread) thread.model = modelSelect.value;
+        pollStatus();
       });
 
       fetchModels();
