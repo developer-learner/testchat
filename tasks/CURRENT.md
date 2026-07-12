@@ -147,3 +147,18 @@ Full frozen TPM suite green against spec v19. Feature built and validated.
   (unload crash dialog) is explicitly deferred by the frozen PRD.
 - Fixed stale Active Feature header (was still M6/v9).
 - Remaining before M9 closes: CEO demo acceptance (D-44).
+
+## 2026-07-11 (eve) — Live CEO session: crash root-caused, 3 UI live-fixes
+- Nemotron crash dialog ROOT-CAUSED from the .ips report: SIGSEGV in MLX's
+  CompilerCache C++ destructor during interpreter teardown — crash is on
+  clean EXIT, not in signal handling (why the SIGINT fix "didn't work").
+  Fix: SIGINT/SIGTERM -> os._exit(0) prepended to ~/nemotron-vmlx.py
+  (host-owned, backup at ~/nemotron-vmlx.py.bak). First unload of an
+  already-running old process still shows the dialog once.
+- Live-fixes (CEO-delegated): 32fa2b4 pre-wrap bubbles; 2ece022 minimal
+  markdown rendering (escape-first) in reply bubbles; b07882d no-cache on
+  / and /static (stale-CSS/JS bites every UI change). 74/74 backend green.
+- CAVEAT: the 7 frozen Playwright UI tests did NOT run (host has no
+  playwright; VM-only). renderThink output changed (adds strong/em/code,
+  '- '->'•'), which could touch text assertions — re-run the full suite in
+  the VM before any new [success] claim.
