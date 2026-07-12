@@ -118,15 +118,103 @@
       function renderSidebar() {
         threadListEl.innerHTML = '';
         for (var i = 0; i < threads.length; i++) {
-          var thread = threads[i];
-          var item = document.createElement('div');
-          item.className = 'thread-item' + (thread.id === activeThreadId ? ' active' : '');
-          item.textContent = thread.title;
-          item.setAttribute('data-testid', 'thread-item');
-          (function (tid) {
-            item.addEventListener('click', function () { switchThread(tid); });
-          })(thread.id);
-          threadListEl.appendChild(item);
+          (function (thread) {
+            var item = document.createElement('div');
+            item.className = 'thread-item' + (thread.id === activeThreadId ? ' active' : '');
+            item.setAttribute('data-testid', 'thread-item');
+
+            var title = document.createElement('span');
+            title.className = 'thread-title';
+            title.textContent = thread.title;
+            item.appendChild(title);
+
+            var actions = document.createElement('span');
+            actions.className = 'thread-actions';
+            var renBtn = document.createElement('button');
+            renBtn.type = 'button';
+            renBtn.className = 't-act t-ren';
+            renBtn.title = 'Rename';
+            var delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.className = 't-act t-del';
+            delBtn.title = 'Delete';
+            actions.appendChild(renBtn);
+            actions.appendChild(delBtn);
+            item.appendChild(actions);
+
+            item.addEventListener('click', function () { switchThread(thread.id); });
+            renBtn.addEventListener('click', function (e) {
+              e.stopPropagation();
+              startRename(thread, title, item);
+            });
+            delBtn.addEventListener('click', function (e) {
+              e.stopPropagation();
+              deleteThread(thread.id);
+            });
+
+            threadListEl.appendChild(item);
+          })(threads[i]);
+        }
+      }
+
+      function startRename(thread, titleEl, itemEl) {
+        var inp = document.createElement('input');
+        inp.className = 'thread-rename';
+        inp.value = thread.title;
+        itemEl.replaceChild(inp, titleEl);
+        inp.focus();
+        inp.select();
+        var done = false;
+        function commit() {
+          if (done) return;
+          done = true;
+          var v = inp.value.trim();
+          if (v) {
+            thread.title = v;
+            persistThreads();
+          }
+          renderSidebar();
+        }
+        inp.addEventListener('click', function (e) { e.stopPropagation(); });
+        inp.addEventListener('keydown', function (e) {
+          e.stopPropagation();
+          if (e.key === 'Enter') commit();
+          if (e.key === 'Escape') { done = true; renderSidebar(); }
+        });
+        inp.addEventListener('blur', commit);
+      }
+
+      function deleteThread(id) {
+        if (!window.confirm('Delete this chat?')) return;
+        threads = threads.filter(function (t) { return t.id !== id; });
+        persistThreads();
+        if (activeThreadId === id) {
+          if (threads.length) {
+            switchThread(threads[0].id);
+          } else {
+            createThread();
+          }
+        } else {
+          renderSidebar();
+        }
+      }
+
+      // A title like "hi" says nothing once the reply exists — retitle
+      // generic threads from the first line of the first assistant reply.
+      function maybeRetitle(thread) {
+        var generic = thread.title === 'New Chat' ||
+          (/^(hi+|hello|hey|yo|sup|test)\b/i.test(thread.title) && thread.title.length <= 12);
+        if (!generic) return;
+        var reply = null;
+        for (var i = 0; i < thread.messages.length; i++) {
+          if (thread.messages[i].role === 'assistant') { reply = thread.messages[i]; break; }
+        }
+        if (!reply) return;
+        var t = stripThink(reply.content).replace(/[#*`>_]/g, '').replace(/\s+/g, ' ').trim();
+        if (t.length > 30) t = t.substring(0, 30) + '...';
+        if (t) {
+          thread.title = t;
+          renderSidebar();
         }
       }
 
@@ -165,25 +253,120 @@
           if (inThink) {
             html += '<span class="think-content" data-testid="think-content">' + escaped.replace(/^\s+|\s+$/g, '') + '</span>';
           } else {
-            // pre-wrap renders the newlines around a hidden think block as
-            // blank lines at the bubble top — trim at those boundaries.
-            if (html === '' || afterThink) escaped = escaped.replace(/^\s+/, '');
-            html += renderMarkdown(escaped);
+            var visiblePart = escaped.replace(/^\s+|\s+$/g, '');
+            if (visiblePart !== '') {
+              html += '<div class="md">' + renderMarkdownBlocks(visiblePart) + '</div>';
+            }
             afterThink = false;
           }
         }
-        return html.replace(/\s+$/, '');
+        return html;
       }
 
-      // Minimal markdown for already-HTML-escaped text; bubbles use
-      // white-space: pre-wrap, so line structure is preserved as-is.
-      function renderMarkdown(escaped) {
+      // Inline markdown for already-HTML-escaped text.
+      function renderMarkdownInline(escaped) {
         return escaped
           .replace(/`([^`\n]+)`/g, '<code>$1</code>')
           .replace(/\*\*([^*\n][^*]*?)\*\*/g, '<strong>$1</strong>')
-          .replace(/(^|[\s(])\*([^*\s][^*\n]*?)\*(?=[\s.,;:!?)]|$)/gm, '$1<em>$2</em>')
-          .replace(/^#{1,6}\s+(.+)$/gm, '<strong>$1</strong>')
-          .replace(/^(\s*)-\s+/gm, '$1• ');
+          .replace(/(^|[\s(])\*([^*\s][^*\n]*?)\*(?=[\s.,;:!?)]|$)/g, '$1<em>$2</em>')
+          .replace(/\[([^\]]+)\]\((https?:[^)\s"]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+      }
+
+      // Block-level markdown for already-HTML-escaped text: fenced code
+      // (with copy button), headings, ul/ol (one nesting level), block
+      // quotes, hr, paragraphs. Single newlines inside a paragraph become
+      // <br> so the model's line intent is preserved without pre-wrap.
+      function renderMarkdownBlocks(escaped) {
+        var lines = escaped.split('\n');
+        var out = '';
+        var para = [];
+        var i, m;
+
+        function flushPara() {
+          if (para.length) {
+            out += '<p>' + para.join('<br>') + '</p>';
+            para = [];
+          }
+        }
+
+        for (i = 0; i < lines.length; i++) {
+          var line = lines[i];
+
+          if (/^```/.test(line)) {
+            flushPara();
+            var code = [];
+            i++;
+            while (i < lines.length && !/^```/.test(lines[i])) { code.push(lines[i]); i++; }
+            out += '<div class="code-block"><button type="button" class="copy-btn">copy</button><pre><code>' + code.join('\n') + '</code></pre></div>';
+            continue;
+          }
+
+          m = line.match(/^(#{1,6})\s+(.*)$/);
+          if (m) {
+            flushPara();
+            out += '<div class="md-h md-h' + m[1].length + '">' + renderMarkdownInline(m[2]) + '</div>';
+            continue;
+          }
+
+          if (/^\s*([-*_])\s*\1\s*\1[\s\-*_]*$/.test(line)) {
+            flushPara();
+            out += '<hr>';
+            continue;
+          }
+
+          if (/^&gt;\s?/.test(line)) {
+            flushPara();
+            var quote = [];
+            while (i < lines.length && /^&gt;\s?/.test(lines[i])) {
+              quote.push(renderMarkdownInline(lines[i].replace(/^&gt;\s?/, '')));
+              i++;
+            }
+            i--;
+            out += '<blockquote>' + quote.join('<br>') + '</blockquote>';
+            continue;
+          }
+
+          m = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+          if (m) {
+            flushPara();
+            var items = [];
+            while (i < lines.length) {
+              var lm = lines[i].match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+              if (!lm) break;
+              items.push({ lvl: lm[1].length >= 2 ? 1 : 0, ord: /\d/.test(lm[2].charAt(0)), text: lm[3] });
+              i++;
+            }
+            i--;
+            out += renderListItems(items);
+            continue;
+          }
+
+          if (line.trim() === '') {
+            flushPara();
+            continue;
+          }
+          para.push(renderMarkdownInline(line));
+        }
+        flushPara();
+        return out;
+      }
+
+      function renderListItems(items) {
+        var out = '';
+        var open = [];
+        for (var k = 0; k < items.length; k++) {
+          var it = items[k];
+          var tag = it.ord ? 'ol' : 'ul';
+          var depth = it.lvl + 1;
+          while (open.length > depth) { out += '</' + open.pop() + '>'; }
+          if (open.length === depth && open[open.length - 1] !== tag && it.lvl === 0) {
+            out += '</' + open.pop() + '>';
+          }
+          while (open.length < depth) { out += '<' + tag + '>'; open.push(tag); }
+          out += '<li>' + renderMarkdownInline(it.text) + '</li>';
+        }
+        while (open.length) { out += '</' + open.pop() + '>'; }
+        return out;
       }
 
       function stripThink(text) {
@@ -245,8 +428,16 @@
         }
       }
 
+      var streaming = false;
+      var currentController = null;
+
+      sendBtn.addEventListener('click', function () {
+        if (streaming && currentController) currentController.abort();
+      });
+
       form.addEventListener('submit', function (e) {
         e.preventDefault();
+        if (streaming) return;
         var message = input.value.trim();
         if (!message) return;
 
@@ -258,7 +449,11 @@
 
         appendBubble(message, 'user');
         input.value = '';
-        sendBtn.disabled = true;
+        streaming = true;
+        currentController = new AbortController();
+        sendBtn.type = 'button';
+        sendBtn.textContent = 'Stop';
+        sendBtn.classList.add('stop');
 
         var replyBubble = document.createElement('div');
         replyBubble.className = 'chat-bubble reply';
@@ -280,7 +475,8 @@
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(bodyObj)
+          body: JSON.stringify(bodyObj),
+          signal: currentController.signal
         })
         .then(function (response) {
           if (!response.ok) {
@@ -329,6 +525,7 @@
               userStored = true;
               currentThread.messages.push({ role: 'user', content: message });
               currentThread.messages.push({ role: 'assistant', content: stripThink(replyText) });
+              maybeRetitle(currentThread);
               persistThreads();
             } else if (eventType === 'error') {
               if (!userStored) { currentThread.messages.push({ role: 'user', content: message }); userStored = true; persistThreads(); }
@@ -367,15 +564,60 @@
           lockSelector();
           return read();
         })
-        .catch(function () {
-          if (!userStored) { currentThread.messages.push({ role: 'user', content: message }); userStored = true; persistThreads(); }
-          replyBubble.className = 'chat-bubble error';
-          replyBubble.textContent = FALLBACK_REPLY;
+        .catch(function (err) {
+          if (!userStored) { currentThread.messages.push({ role: 'user', content: message }); userStored = true; }
+          if (err && err.name === 'AbortError') {
+            // user hit Stop: keep the partial answer if any visible text
+            // arrived, otherwise just drop the placeholder bubble
+            var partial = stripThink(replyText).replace(/^\s+|\s+$/g, '');
+            if (partial) {
+              currentThread.messages.push({ role: 'assistant', content: partial });
+              renderReply(replyBubble, replyText);
+            } else if (replyBubble.parentNode) {
+              replyBubble.parentNode.removeChild(replyBubble);
+            }
+          } else {
+            replyBubble.className = 'chat-bubble error';
+            replyBubble.textContent = FALLBACK_REPLY;
+          }
+          persistThreads();
         })
         .finally(function () {
+          streaming = false;
+          currentController = null;
+          sendBtn.type = 'submit';
+          sendBtn.textContent = 'Send';
+          sendBtn.classList.remove('stop');
           sendBtn.disabled = false;
           input.focus();
         });
+      });
+
+      // copy button on fenced code blocks (event delegation — blocks are
+      // re-rendered on every streamed chunk)
+      container.addEventListener('click', function (e) {
+        var btn = e.target;
+        if (!btn.classList || !btn.classList.contains('copy-btn')) return;
+        var codeEl = btn.parentNode.querySelector('code');
+        if (!codeEl) return;
+        var text = codeEl.textContent;
+        var copied = function () {
+          btn.textContent = 'copied!';
+          setTimeout(function () { btn.textContent = 'copy'; }, 1200);
+        };
+        var legacyCopy = function () {
+          var ta = document.createElement('textarea');
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          try { if (document.execCommand('copy')) copied(); } catch (err) {}
+          document.body.removeChild(ta);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(copied).catch(legacyCopy);
+        } else {
+          legacyCopy();
+        }
       });
 
       thinkToggle.addEventListener('click', function () {
