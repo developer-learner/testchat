@@ -13,12 +13,17 @@
       var threadListEl = document.getElementById('thread-list');
       var themeToggle = document.getElementById('theme-toggle');
 
-      var THEMES = ['light', 'dark', 'matrix'];
-      var THEME_ICONS = { light: '☀️', dark: '🌙', matrix: '💊' };
+      var THEMES = ['light', 'dark', 'matrix', 'phosphor'];
+      var THEME_ICONS = { light: '☀️', dark: '🌙', matrix: '💊', phosphor: '>_' };
 
       function applyTheme(theme) {
         if (THEMES.indexOf(theme) === -1) theme = 'light';
         document.documentElement.setAttribute('data-theme', theme);
+        if (theme === 'phosphor') {
+          if (typeof window.MatrixRain !== 'undefined') { window.MatrixRain.start(); }
+        } else {
+          if (typeof window.MatrixRain !== 'undefined') { window.MatrixRain.stop(); }
+        }
         themeToggle.textContent = THEME_ICONS[theme];
         try { localStorage.setItem('testchat-theme', theme); } catch (e) { /* private mode */ }
       }
