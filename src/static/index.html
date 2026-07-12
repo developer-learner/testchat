@@ -27,7 +27,7 @@
         <button type="button" class="think-toggle" id="think-toggle" data-testid="think-toggle" title="Toggle thinking display">💭</button>
         <button type="submit" id="send-btn" data-testid="send-btn">Send</button>
       </form>
-      <div class="status-strip" id="status-strip">
+      <div class="status-strip" id="status-strip" data-testid="status-strip">
         <span id="status-model">no model</span>
         <span id="status-ram"></span>
         <span class="status-spacer"></span>
@@ -40,10 +40,10 @@
     <div class="modal">
       <div class="modal-title">System prompt</div>
       <p class="modal-hint">Sent as the system message at the start of every request — all threads, all models. Leave empty for none.</p>
-      <textarea id="system-prompt-input" rows="7" placeholder="e.g. You are a concise assistant. Prefer plain language and short answers."></textarea>
+      <textarea id="system-prompt-input" data-testid="system-prompt-input" rows="7" placeholder="e.g. You are a concise assistant. Prefer plain language and short answers."></textarea>
       <div class="modal-actions">
-        <button type="button" id="settings-cancel">Cancel</button>
-        <button type="button" id="settings-save" class="primary">Save</button>
+        <button type="button" id="settings-cancel" data-testid="settings-cancel">Cancel</button>
+        <button type="button" id="settings-save" data-testid="settings-save" class="primary">Save</button>
       </div>
     </div>
   </div>
