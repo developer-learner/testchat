@@ -1,4 +1,4 @@
-ERD — testchat M10: Ratify the Sprint (erd_version 20)
+ERD — testchat M10: Ratify the Sprint (erd_version 21)
 
 What changes v19 → v20
 

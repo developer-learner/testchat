@@ -187,9 +187,19 @@ def _fresh_snapshot(request):
     (requesting app_url here would needlessly boot the app for them)."""
     if "app_url" in request.fixturenames:
         base = request.getfixturevalue("app_url")
-        req = urllib.request.Request(f"{base}/api/v1/threads", method="DELETE")
-        with urllib.request.urlopen(req, timeout=5):
-            pass
+        # A fire-and-forget persist from the PREVIOUS test's page can land
+        # AFTER our delete and resurrect its thread (caught in the sandbox:
+        # the stop-test's abort->persist PUT raced this fixture and handed
+        # the next test a ghost thread). Delete until the snapshot stays
+        # empty across a settle window.
+        for _ in range(20):
+            req = urllib.request.Request(f"{base}/api/v1/threads", method="DELETE")
+            with urllib.request.urlopen(req, timeout=5):
+                pass
+            time.sleep(0.05)
+            with urllib.request.urlopen(f"{base}/api/v1/threads", timeout=5) as r:
+                if json.loads(r.read()) == {"threads": []}:
+                    break
         req = urllib.request.Request(
             f"{base}/api/v1/settings", method="PUT",
             data=json.dumps({"system_prompt": ""}).encode(),

@@ -1,5 +1,5 @@
 {
- "erd_version": 20,
+ "erd_version": 21,
  "files": [
   "src/static/index.html",
   "src/static/app.js"
