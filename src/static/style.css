@@ -113,7 +113,7 @@
       --toggle-on-bg: #072807;
       --focus-ring: rgba(0, 255, 65, 0.18);
       --scrollbar-thumb: #0d360d;
-      --glow: 0 0 7px rgba(0, 255, 65, 0.4);
+      --glow: 0 0 2px rgba(0, 255, 65, 0.28);
     }
 
     * {
@@ -134,9 +134,12 @@
       overflow: hidden;
     }
 
-    /* CRT scanlines + phosphor glow, matrix only */
+    /* CRT scanlines + phosphor glow, matrix only. Glow is kept faint and
+       font smoothing forced to grayscale so glyphs stay sharp. */
     :root[data-theme="matrix"] body {
       text-shadow: var(--glow);
+      font-size: 0.9375rem;
+      -webkit-font-smoothing: antialiased;
     }
 
     :root[data-theme="matrix"] body::after {
@@ -215,16 +218,68 @@
 
     .thread-item {
       position: relative;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
       padding: 0.6rem 0.75rem;
       margin: 0.15rem 0;
       border-radius: 0.5rem;
       font-size: 0.875rem;
       cursor: pointer;
+      opacity: 0.82;
+      transition: background 0.15s, opacity 0.15s;
+    }
+
+    .thread-title {
+      flex: 1;
+      min-width: 0;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      opacity: 0.82;
-      transition: background 0.15s, opacity 0.15s;
+    }
+
+    .thread-actions {
+      display: none;
+      flex: none;
+    }
+
+    .thread-item:hover .thread-actions {
+      display: inline-flex;
+      gap: 0.1rem;
+    }
+
+    .t-act {
+      background: transparent;
+      border: none;
+      color: var(--sidebar-text);
+      opacity: 0.55;
+      cursor: pointer;
+      padding: 0.1rem 0.3rem;
+      border-radius: 0.3rem;
+      font-size: 0.8rem;
+      font-family: inherit;
+      line-height: 1;
+    }
+
+    .t-act:hover {
+      opacity: 1;
+      background: var(--sidebar-active);
+    }
+
+    .t-ren::before { content: '✎'; }
+    .t-del::before { content: '✕'; }
+
+    .thread-rename {
+      flex: 1;
+      min-width: 0;
+      background: var(--input-bg);
+      color: var(--input-text);
+      border: 1px solid var(--accent);
+      border-radius: 0.3rem;
+      padding: 0.15rem 0.4rem;
+      font: inherit;
+      font-size: 0.875rem;
+      outline: none;
     }
 
     .thread-item:hover {
@@ -422,6 +477,106 @@
       background: rgba(0, 0, 0, 0.22);
     }
 
+    /* markdown blocks in reply bubbles — the .md wrapper opts out of the
+       bubble's pre-wrap; structure comes from real block elements */
+    .chat-bubble .md {
+      white-space: normal;
+    }
+
+    .chat-bubble .md p {
+      margin: 0 0 0.55em;
+    }
+
+    .chat-bubble .md > :last-child {
+      margin-bottom: 0;
+    }
+
+    .md-h {
+      font-weight: 700;
+      margin: 0.8em 0 0.35em;
+    }
+
+    .chat-bubble .md > .md-h:first-child {
+      margin-top: 0;
+    }
+
+    .md-h1, .md-h2 { font-size: 1.12em; }
+    .md-h3 { font-size: 1.04em; }
+
+    .chat-bubble .md ul,
+    .chat-bubble .md ol {
+      margin: 0 0 0.55em;
+      padding-left: 1.35em;
+    }
+
+    .chat-bubble .md ul ul,
+    .chat-bubble .md ul ol,
+    .chat-bubble .md ol ul,
+    .chat-bubble .md ol ol {
+      margin-bottom: 0;
+    }
+
+    .chat-bubble .md li {
+      margin: 0.18em 0;
+    }
+
+    .chat-bubble .md blockquote {
+      border-left: 3px solid var(--border);
+      padding: 0.1em 0 0.1em 0.7em;
+      margin: 0 0 0.55em;
+      color: var(--muted-text);
+    }
+
+    .chat-bubble .md hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 0.7em 0;
+    }
+
+    .chat-bubble .md a {
+      color: var(--accent);
+    }
+
+    .code-block {
+      position: relative;
+      margin: 0 0 0.6em;
+    }
+
+    .code-block pre {
+      background: var(--muted-bg);
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      padding: 0.7rem 0.9rem;
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    .code-block code {
+      background: none;
+      padding: 0;
+      font-size: 0.85em;
+    }
+
+    .copy-btn {
+      position: absolute;
+      top: 0.4rem;
+      right: 0.4rem;
+      font-size: 0.7rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 0.35rem;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--muted-text);
+      cursor: pointer;
+      font-family: inherit;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+
+    .code-block:hover .copy-btn {
+      opacity: 1;
+    }
+
     /* terminal treatment, matrix only */
     :root[data-theme="matrix"] .chat-bubble {
       border-radius: 0.25rem;
@@ -506,6 +661,14 @@
       background: var(--accent-disabled);
       cursor: not-allowed;
       box-shadow: none;
+    }
+
+    .input-area button.stop {
+      background: var(--danger);
+    }
+
+    .input-area button.stop:hover {
+      background: var(--danger-hover);
     }
 
     .think-toggle {
