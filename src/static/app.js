@@ -150,6 +150,9 @@
       }
 
       function renderThink(text) {
+        // streaming wraps each think chunk in its own tag pair; merge
+        // adjacent blocks so they render as one span, not one per chunk
+        text = text.replace(/<\/think>\s*<think>/g, '');
         var html = '';
         var inThink = false;
         var afterThink = false;
@@ -160,7 +163,7 @@
           if (part === '</think>') { inThink = false; afterThink = true; continue; }
           var escaped = part.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
           if (inThink) {
-            html += '<span class="think-content" data-testid="think-content">' + escaped + '</span>';
+            html += '<span class="think-content" data-testid="think-content">' + escaped.replace(/^\s+|\s+$/g, '') + '</span>';
           } else {
             // pre-wrap renders the newlines around a hidden think block as
             // blank lines at the bubble top — trim at those boundaries.
