@@ -9,6 +9,8 @@ router = APIRouter()
 class HistoryEntry(BaseModel):
     role: str
     content: str
+    ts: float = 0
+    model: str = ""
 
 
 class ThreadSnapshot(BaseModel):
