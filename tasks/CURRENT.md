@@ -212,3 +212,7 @@ Full frozen TPM suite green against spec v19. Feature built and validated.
   for [hidden] defeated by display:flex (invisible overlay ate clicks).
   Verified live: saved "pirate" prompt -> nemotron replied "ARRR Hello";
   cleared afterwards. 74/74 host, ruff clean.
+
+## Results
+
+Full frozen TPM suite green against spec v21. Feature built and validated.
