@@ -9,19 +9,25 @@
 
 ## Active Feature
 
-**Feature:** M6 — Multichat (in-memory threads)
-**Frozen spec version:** v9 (frozen)
-**Orchestrator state:** done (60/60 tests green)
+**Feature:** M9 — Polish Sweep (three deterministic fixes)
+**Frozen spec version:** v19 (frozen)
+**Orchestrator state:** done ([success] spec v19, commit `07bb7d0`)
 **Branch:** `main`
 
 ---
 
 ## Latest Results
 
-**M6 (Multichat in-memory threads)** — built and validated. All 60 frozen tests pass. Frontend-only milestone.
-- `src/static/index.html` — sidebar with thread list, New Chat button, per-thread message history/model/lock state, background streaming on thread switch, auto-title from first message.
+**M9 (Polish Sweep)** — all three in-scope items landed and green:
+- AC-39/40 — `NEMOTRON_URL` env config, default `http://localhost:8600` (`src/services/models.py`, T1 `4c774e9`).
+- AC-41 — failed replies retain the user's message (`src/static/app.js`, `da19ff8`, CEO-delegated).
+- AC-42 — "thinking..." placeholder while no visible answer text has rendered (`src/static/app.js`, `da19ff8`).
 
-CEO acceptance pending (D-44). See PRD CEO demo script for manual verification steps.
+Deferred by the frozen PRD (NOT in M9): the macOS "Python quit unexpectedly"
+dialog on Nemotron unload — needs live diagnosis on the real model with the
+CEO; SIGINT shutdown (`1d7defd`) was already the intended fix.
+
+CEO demo acceptance pending (D-44). See PRD v19 CEO demo script.
 
 ---
 
@@ -133,3 +139,11 @@ Operational knowledge, hard-won:
 ## Results
 
 Full frozen TPM suite green against spec v19. Feature built and validated.
+
+## 2026-07-11 — Session: M9 status verified, CURRENT.md brought current
+- Verified from git + host test run (74/74 non-UI frozen tests pass; UI tests
+  need playwright, VM-only): M9's three in-scope items all landed, [success]
+  spec v19 tagged. No code work remained — the handoff's 4th queue item
+  (unload crash dialog) is explicitly deferred by the frozen PRD.
+- Fixed stale Active Feature header (was still M6/v9).
+- Remaining before M9 closes: CEO demo acceptance (D-44).
