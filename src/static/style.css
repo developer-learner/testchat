@@ -161,6 +161,16 @@
       z-index: 1;
     }
 
+    /* the rain backdrop must show THROUGH the main surfaces — they filled
+       the viewport opaquely, fully occluding the fixed canvas below z:1
+       (CEO demo find, 2026-07-13) */
+    :root[data-theme="phosphor"] .chat-container {
+      background: oklch(0.16 0.02 155 / 0.72);
+    }
+    :root[data-theme="phosphor"] .sidebar {
+      background: oklch(0.14 0.02 155 / 0.85);
+    }
+
     :root[data-theme="phosphor"] .chat-panel::before {
       content: '';
       position: absolute;
