@@ -162,3 +162,15 @@ Full frozen TPM suite green against spec v19. Feature built and validated.
   playwright; VM-only). renderThink output changed (adds strong/em/code,
   '- '->'•'), which could touch text assertions — re-run the full suite in
   the VM before any new [success] claim.
+
+## 2026-07-11 (late) — Crash fix v2: VERIFIED FIXED (2 live cycles)
+- CORRECTION: the first os._exit patch (signal handlers only) did NOT hold —
+  a post-patch process (launched 21:46) still segfaulted. Cause: vmlx_engine
+  runs uvicorn.run(), whose signal capture can supersede wrapper handlers.
+- v2 patch in ~/nemotron-vmlx.py, three layers: SIGINT/SIGTERM handlers +
+  uvicorn.run wrapped in try/finally os._exit(0) + atexit os._exit(0). Every
+  exit path now bypasses the segfaulting MLX CompilerCache teardown.
+- Verified live via the app UI: two full Load->ready->Unload cycles, process
+  exits ~1s, ZERO new DiagnosticReports, no Problem Reporter dialog.
+  (All 4 of today's crashed PIDs had the app as parent — the load-timeout
+  SIGINT path crashed the same way; it is now silent too.)
