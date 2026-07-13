@@ -75,28 +75,31 @@
       // retry chain can never work — and mutating the DOM (hiding the
       // clicked button) before the call can void the activation in WebKit.
       fullscreenToggle.addEventListener('click', function () {
-        // target <body>, not <html>: WebKit rejects fullscreen on the
-        // root element. Prefer the webkit-prefixed method when present:
-        // some Safari builds gate the unprefixed one behind a flag while
-        // the prefixed call works (Chrome aliases it, Firefox lacks it).
-        var el = document.body;
-        var usedMethod = el.webkitRequestFullscreen ? 'webkitRequestFullscreen' : (el.requestFullscreen ? 'requestFullscreen' : null);
-        if (usedMethod) {
+        // target the app wrapper DIV: Safari silently refuses fullscreen
+        // on <html>/<body> but accepts regular elements (YouTube-style).
+        // Prefer the webkit-prefixed method when present: some Safari
+        // builds gate the unprefixed one behind a flag while the prefixed
+        // call works (Chrome aliases it, Firefox lacks it).
+        var gestureAtClick = navigator.userActivation ? String(navigator.userActivation.isActive) : 'n/a';
+        var el = document.querySelector('.app-wrapper') || document.body;
+        var methodName = el.webkitRequestFullscreen ? 'webkitRequestFullscreen' : (el.requestFullscreen ? 'requestFullscreen' : null);
+        var label = methodName + ' on ' + (el.className || el.tagName) + ', gestureAtClick: ' + gestureAtClick;
+        if (methodName) {
           try {
-            var p = el[usedMethod]();
+            var p = el[methodName]();
             if (p && p.catch) {
-              p.catch(function (err) { fsDiag(err, usedMethod); });
+              p.catch(function (err) { fsDiag(err, label); });
             } else {
               // prefixed calls return undefined; report a silent failure
               setTimeout(function () {
-                if (!fullscreenEl()) fsDiag('request returned without entering fullscreen', usedMethod);
+                if (!fullscreenEl()) fsDiag('request returned without entering fullscreen', label);
               }, 400);
             }
           } catch (err) {
-            fsDiag(err, usedMethod);
+            fsDiag(err, label);
           }
         } else {
-          fsDiag('no Fullscreen API method on element', 'none');
+          fsDiag('no Fullscreen API method on element', label);
         }
         document.body.classList.add('zen');
       });
