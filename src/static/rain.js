@@ -1,33 +1,22 @@
 (function () {
   'use strict';
 
-  var GLYPHS = [];
-  for (var i = 0x30a0; i <= 0x30ff; i++) {
-    GLYPHS.push(String.fromCharCode(i));
-  }
-  for (var j = 0; j <= 9; j++) {
-    GLYPHS.push(String(j));
-  }
-
+  var CHARS = 'アイウエオカキクケコサシスセソﾊﾋﾌﾍﾎ0123456789ABCDEF<>/\\|=+*'.split('');
   var canvas = null;
   var ctx = null;
   var rafId = null;
-  var columns = [];
-  var fontSize = 14;
+  var drops = [];
+  var fontSize = 16;
   var prefersReducedMotion = false;
-
-  function randomGlyph() {
-    return GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
-  }
 
   function initCanvas() {
     canvas = document.createElement('canvas');
     canvas.setAttribute('data-testid', 'matrix-rain');
     canvas.style.position = 'fixed';
     canvas.style.inset = '0';
-    canvas.style.zIndex = '0';
+    canvas.style.zIndex = '50';
+    canvas.style.opacity = '0.25';
     canvas.style.pointerEvents = 'none';
-    canvas.style.opacity = '0.35';
 
     document.body.appendChild(canvas);
 
@@ -37,57 +26,66 @@
 
   function resizeCanvas() {
     if (!canvas) return;
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    var w = window.innerWidth;
+    var h = window.innerHeight;
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    var colCount = Math.floor(canvas.width / fontSize);
-    while (columns.length < colCount) {
-      columns.push({
-        y: Math.random() * -100,
-        speed: 0.18 + Math.random() * 0.55,
-        glyph: randomGlyph(),
+    var cols = Math.floor(w / fontSize);
+    while (drops.length < cols) {
+      drops.push({
+        y: Math.random() < 0.6 ? Math.random() * -100 : Math.random() * h / fontSize,
+        alpha: 0.3 + Math.random() * 0.7,
+        fading: false,
       });
     }
-    if (columns.length > colCount) {
-      columns = columns.slice(0, colCount);
+    if (drops.length > cols) {
+      drops.length = cols;
     }
-
-    ctx.font = fontSize + 'px monospace';
   }
 
   function draw() {
     if (!ctx || !canvas) return;
 
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'rgba(5, 16, 10, 0.04)';
+    ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
 
-    for (var i = 0; i < columns.length; i++) {
-      var col = columns[i];
+    ctx.font = fontSize + 'px "JetBrains Mono", "SF Mono", "Menlo", "Fira Code", monospace';
 
-      ctx.fillStyle = '#0f0';
-      ctx.fillText(col.glyph, i * fontSize, col.y * fontSize);
+    for (var i = 0; i < drops.length; i++) {
+      var d = drops[i];
+      var text = CHARS[Math.floor(Math.random() * CHARS.length)];
+      var x = i * fontSize;
+      var y = d.y * fontSize;
 
-      if (col.y > 0) {
-        ctx.globalAlpha = 0.9;
-        ctx.fillStyle = '#fff';
-        ctx.fillText(col.glyph, i * fontSize, (col.y - 1) * fontSize);
-        ctx.globalAlpha = 1.0;
+      if (!d.fading && Math.random() > 0.995) {
+        d.fading = true;
       }
 
-      col.y += col.speed;
-
-      if (col.y * fontSize > canvas.height) {
-        if (Math.random() > 0.975) {
-          col.y = Math.random() * -10;
-          col.speed = 0.18 + Math.random() * 0.55;
-        } else {
-          col.y = -Math.floor(Math.random() * 20);
-        }
+      if (d.fading) {
+        d.alpha -= 0.015 + Math.random() * 0.015;
+        if (d.alpha < 0) d.alpha = 0;
       }
 
-      if (Math.random() > 0.95) {
-        col.glyph = randomGlyph();
+      if (d.alpha <= 0 || y > window.innerHeight + 50) {
+        d.y = Math.random() < 0.6 ? Math.random() * -100 : Math.random() * (window.innerHeight / fontSize);
+        d.alpha = 0.3 + Math.random() * 0.7;
+        d.fading = false;
+        continue;
       }
+
+      var isHead = Math.random() > 0.975;
+      var baseAlpha = isHead ? 0.95 : 0.55;
+      ctx.fillStyle = isHead
+        ? 'rgba(190, 255, 200, ' + (baseAlpha * d.alpha).toFixed(3) + ')'
+        : 'rgba(40, 220, 120, ' + (baseAlpha * d.alpha).toFixed(3) + ')';
+      ctx.fillText(text, x, y);
+
+      d.y += 0.25;
     }
   }
 

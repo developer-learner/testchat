@@ -21,7 +21,7 @@
       function applyTheme(theme) {
         if (THEMES.indexOf(theme) === -1) theme = 'light';
         document.documentElement.setAttribute('data-theme', theme);
-        if (theme === 'phosphor') {
+        if (theme === 'matrix' || theme === 'phosphor') {
           if (typeof window.MatrixRain !== 'undefined') { window.MatrixRain.start(); }
         } else {
           if (typeof window.MatrixRain !== 'undefined') { window.MatrixRain.stop(); }
@@ -70,7 +70,7 @@
 
       fullscreenToggle.addEventListener('click', function () {
         var gestureAtClick = navigator.userActivation ? String(navigator.userActivation.isActive) : 'n/a';
-        var el = document.querySelector('.app-wrapper') || document.body;
+        var el = document.documentElement || document.body;
         var methodName = el.webkitRequestFullscreen ? 'webkitRequestFullscreen' : (el.requestFullscreen ? 'requestFullscreen' : null);
         var label = methodName + ' on ' + (el.className || el.tagName) + ', gestureAtClick: ' + gestureAtClick;
         if (methodName) {
@@ -257,7 +257,7 @@
 
         currentThread.model = modelSelect.value;
 
-        var bodyObj = { message: message, history: currentThread.messages };
+        var bodyObj = { message: message, history: currentThread.messages.map(function (m) { return { role: m.role, content: MD.stripThink(m.content) }; }) };
         if (modelSelect.value) {
           bodyObj.model = modelSelect.value;
         }
@@ -316,7 +316,7 @@
               userStored = true;
               var now = Date.now() / 1000;
               currentThread.messages.push({ role: 'user', content: message, ts: now });
-              currentThread.messages.push({ role: 'assistant', content: MD.stripThink(replyText), ts: now, model: modelSelect.value || '' });
+              currentThread.messages.push({ role: 'assistant', content: replyText, ts: now, model: modelSelect.value || '' });
               renderReply(replyBubble, replyText);
               Threads.addBubbleChrome(replyBubble, MD.stripThink(replyText), now, modelSelect.value || '', currentThread.messages.length - 1);
               Threads.maybeRetitle(currentThread);
