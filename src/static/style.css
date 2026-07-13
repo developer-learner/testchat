@@ -466,6 +466,13 @@
       margin-left: 0;
     }
 
+    /* focus mode: chat and input only */
+    body.zen .sidebar,
+    body.zen .top-bar,
+    body.zen .status-strip {
+      display: none;
+    }
+
     .modal-overlay {
       position: fixed;
       inset: 0;

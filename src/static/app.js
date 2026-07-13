@@ -35,6 +35,31 @@
 
       try { applyTheme(localStorage.getItem('testchat-theme') || 'light'); } catch (e) { applyTheme('light'); }
 
+      // Focus mode: the zen class (chrome hidden) never depends on the
+      // Fullscreen API succeeding — requestFullscreen needs a real user
+      // gesture and can be denied outright in embedded contexts. Browser
+      // fullscreen is best-effort on top; fullscreenchange keeps the two
+      // in sync when Escape exits fullscreen natively.
+      var fullscreenToggle = document.getElementById('fullscreen-toggle');
+
+      function exitZen() {
+        document.body.classList.remove('zen');
+        if (document.fullscreenElement && document.exitFullscreen) {
+          document.exitFullscreen().catch(function () {});
+        }
+      }
+
+      fullscreenToggle.addEventListener('click', function () {
+        document.body.classList.add('zen');
+        if (document.documentElement.requestFullscreen) {
+          document.documentElement.requestFullscreen().catch(function () {});
+        }
+      });
+
+      document.addEventListener('fullscreenchange', function () {
+        if (!document.fullscreenElement) document.body.classList.remove('zen');
+      });
+
       var showThinking = false;
       var replyText = '';
 
@@ -579,7 +604,12 @@
         if (e.target === settingsModal) closeSettings();
       });
       document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' && !settingsModal.hidden) closeSettings();
+        if (e.key !== 'Escape') return;
+        if (!settingsModal.hidden) {
+          closeSettings();
+        } else if (document.body.classList.contains('zen')) {
+          exitZen();
+        }
       });
 
       sendBtn.addEventListener('click', function () {
