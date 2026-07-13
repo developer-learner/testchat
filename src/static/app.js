@@ -73,11 +73,13 @@
       // retry chain can never work — and mutating the DOM (hiding the
       // clicked button) before the call can void the activation in WebKit.
       fullscreenToggle.addEventListener('click', function () {
-        var root = document.documentElement;
-        var fn = root.requestFullscreen || root.webkitRequestFullscreen;
+        // target <body>, not <html>: WebKit rejects fullscreen on the
+        // root element (Firefox/Chrome accept either)
+        var el = document.body;
+        var fn = el.requestFullscreen || el.webkitRequestFullscreen;
         if (fn) {
           try {
-            var p = fn.call(root);
+            var p = fn.call(el);
             if (p && p.catch) p.catch(fsDiag);
           } catch (err) {
             fsDiag(err);
