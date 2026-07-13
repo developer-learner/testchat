@@ -56,13 +56,15 @@
         }
       }
 
-      function fsDiag(lastErr) {
+      function fsDiag(lastErr, method) {
         var d = document;
+        var activation = 'n/a';
+        if (navigator.userActivation) activation = String(navigator.userActivation.isActive);
         var msg = lastErr && lastErr.message ? lastErr.message : String(lastErr || 'unknown');
         var info = msg +
-          ' | requestFullscreen: ' + typeof d.documentElement.requestFullscreen +
-          ', webkitRequestFullscreen: ' + typeof d.documentElement.webkitRequestFullscreen +
-          ', fullscreenEnabled: ' + (d.fullscreenEnabled !== undefined ? d.fullscreenEnabled : d.webkitFullscreenEnabled);
+          ' | via: ' + (method || '?') +
+          ', gestureActive: ' + activation +
+          ', fullscreenEnabled: ' + (d.fullscreenEnabled !== undefined ? d.fullscreenEnabled : String(d.webkitFullscreenEnabled));
         try { console.warn('fullscreen failed:', info); } catch (e) {}
         if (statusTps) statusTps.textContent = 'fullscreen: ' + msg;
         appendBubble('Browser fullscreen failed — ' + info, 'error');
@@ -74,18 +76,27 @@
       // clicked button) before the call can void the activation in WebKit.
       fullscreenToggle.addEventListener('click', function () {
         // target <body>, not <html>: WebKit rejects fullscreen on the
-        // root element (Firefox/Chrome accept either)
+        // root element. Prefer the webkit-prefixed method when present:
+        // some Safari builds gate the unprefixed one behind a flag while
+        // the prefixed call works (Chrome aliases it, Firefox lacks it).
         var el = document.body;
-        var fn = el.requestFullscreen || el.webkitRequestFullscreen;
-        if (fn) {
+        var usedMethod = el.webkitRequestFullscreen ? 'webkitRequestFullscreen' : (el.requestFullscreen ? 'requestFullscreen' : null);
+        if (usedMethod) {
           try {
-            var p = fn.call(el);
-            if (p && p.catch) p.catch(fsDiag);
+            var p = el[usedMethod]();
+            if (p && p.catch) {
+              p.catch(function (err) { fsDiag(err, usedMethod); });
+            } else {
+              // prefixed calls return undefined; report a silent failure
+              setTimeout(function () {
+                if (!fullscreenEl()) fsDiag('request returned without entering fullscreen', usedMethod);
+              }, 400);
+            }
           } catch (err) {
-            fsDiag(err);
+            fsDiag(err, usedMethod);
           }
         } else {
-          fsDiag('no Fullscreen API method on element');
+          fsDiag('no Fullscreen API method on element', 'none');
         }
         document.body.classList.add('zen');
       });
