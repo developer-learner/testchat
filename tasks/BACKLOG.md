@@ -7,27 +7,28 @@
 
 ## Up Next
 
-### M9 close-out — CEO demo acceptance (D-44)
-**Priority:** P1
-**Why:** All three M9 items landed, [success] spec v19; only the CEO gate remains
-**Rough size:** Demo session
+### M13 — app.js module split (spec backfill)
+**Priority:** P2
+**Why:** Split already landed as live-fix (markdown.js, threads.js, app.js);
+needs TPM spec coverage if pipeline work resumes
+**Rough size:** Spec-only (code done)
 
 ---
 
 ## Later
 
-- Nemotron unload macOS crash dialog — deferred from M9 by frozen PRD v19;
-  needs live diagnosis with the real model + CEO (SIGINT fix `1d7defd` was
-  the intended fix; verify it live).
-- ~M10: split app.js by feature when growth warrants (chat/threads-ui/persistence)
+- Mobile/responsive layout (sidebar needs touch treatment)
+- Export/import conversations
+- Search across threads
+- Multi-model comparison (side-by-side responses)
 
 ---
 
 ## Icebox (someday/maybe)
 
-- Multiple chat sessions with persistence
-- Model selection dropdown
-- System prompt customization
+- Image/file upload support
+- Voice input
+- Conversation branching / forking
 
 ---
 
@@ -36,11 +37,14 @@
 | Task | Completed | Notes |
 |------|-----------|-------|
 | M1 — Echo Chat | 2026-07-03 | Canned responses, full stack wired |
-| M2 — Live LLM Proxy | 2026-07-04 | Real HTTP call to local LLM endpoint, env-based config, error fallback |
-| M3 — Streaming (SSE) | (see git) | Token-by-token SSE with token/think/done/error events |
+| M2 — Live LLM Proxy | 2026-07-04 | Real HTTP call to local LLM endpoint |
+| M3 — Streaming (SSE) | (see git) | Token-by-token SSE |
 | M4 — Conversation History | (see git) | Full context sent to LLM |
 | M5 — Nemotron mgmt/routing | (see git) | Load/unload + endpoint routing |
-| M6 — Multichat threads | (see git) | In-memory threads, spec v9 [success] |
-| M7 — (spec v14) | 2026-07-09 | `2391c38` [success], 67/67 incl. UI tests |
-| M8 — Persistence (spec v17) | 2026-07-10 | `a7f00a7` [success], CEO-accepted 2026-07-10 |
-D-59 candidate: validator auto-maps attributed node-ids (D-57 part 2) — needs CEO sign-off (Rule 3)
+| M6 — Multichat threads | (see git) | In-memory threads, spec v9 |
+| M7 — UI tests + fixes | 2026-07-09 | spec v14, 67/67 |
+| M8 — Persistence | 2026-07-10 | spec v17, CEO-accepted |
+| M9 — Polish Sweep | 2026-07-12 | spec v19, CEO-accepted (crash fix, formatting) |
+| M10-M11 — Live-fix features | 2026-07-12 | Markdown, 10 themes, thread mgmt, stop, status, system prompt, focus mode, bubble chrome, cursor, column, throttle |
+| M12 — Ratify the Sprint | 2026-07-12 | spec v26, 101/101 green |
+| app.js split | 2026-07-12 | markdown.js + threads.js + app.js (live-fix) |
