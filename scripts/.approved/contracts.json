@@ -1,7 +1,9 @@
 {
- "erd_version": 26,
+ "erd_version": 27,
  "files": [
   "src/static/style.css",
+  "src/static/markdown.js",
+  "src/static/threads.js",
   "src/static/app.js"
  ],
  "entry_points": [
@@ -301,6 +303,8 @@
   }
  ],
  "smoke_checks": {
-  "src/static/style.css": "grep -q 'data-theme=\"graphite-forest\"' src/static/style.css && grep -q 'data-theme=\"neon\"' src/static/style.css"
+  "src/static/style.css": "grep -q 'data-theme=\"graphite-forest\"' src/static/style.css && grep -q 'data-theme=\"neon\"' src/static/style.css",
+  "src/static/markdown.js": "grep -q 'window.MD' src/static/markdown.js && grep -q 'renderThink' src/static/markdown.js",
+  "src/static/threads.js": "grep -q 'window.TC' src/static/threads.js && grep -q 'window.Threads' src/static/threads.js"
  }
 }

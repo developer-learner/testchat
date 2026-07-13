@@ -1,26 +1,20 @@
-ERD — testchat M12: Ratify the Sprint (erd_version 26)
+ERD — testchat M13: Module Split (erd_version 27)
 
-What changes v25 -> v26
+What changes v26 -> v27
 
-Spec-only update. No file inventory changes — both files (style.css, app.js)
-already contain all ratified features. The sole code change is the frozen
-test (AC-53/55: 5 to 10 theme cycle).
+File inventory updated: two new files (markdown.js, threads.js) added to
+contracts. Smoke_checks added for both. No code changes — files already exist.
 
-File inventory (M12 build) — DAG order
+File inventory (M13 build) — DAG order
 
-1. src/static/style.css — NO EDIT NEEDED (already contains all 10 theme
-   blocks including neon, crisp, ember, graphite-amber, graphite-forest).
-2. src/static/app.js — NO EDIT NEEDED (THEMES array already has 10 entries,
-   all UI features already implemented).
+1. src/static/style.css — NO EDIT NEEDED
+2. src/static/markdown.js — NO EDIT NEEDED (already exists, exports window.MD)
+3. src/static/threads.js — NO EDIT NEEDED (already exists, exports window.TC + window.Threads)
+4. src/static/app.js — NO EDIT NEEDED (already uses MD/Threads/TC)
 
-The pipeline tasks for this milestone are no-ops — the code is already
-correct. The only artifact that changes is the test suite.
+Contract ids per task: contracts = [] for all (frontend files).
 
-Contract ids per task: contracts = [] for both (frontend files).
-
-Oracle Mapping
-
-- ALL browser node-ids (tests/test_ui.py::*) map to src/static/app.js task.
-- The amended cycle test (ten themes) rides the same node-ids.
+Oracle Mapping: all browser node-ids map to src/static/app.js (final in DAG).
+Smoke_checks cover the two new files.
 
 Test dependencies: none new.
