@@ -68,33 +68,24 @@
         appendBubble('Browser fullscreen failed — ' + info, 'error');
       }
 
-      // Safari quirk: fullscreening <html> can fail where <body> works;
-      // try both, prefixed and unprefixed. Old WebKit returns undefined
-      // instead of a promise, so silent failures are re-checked after a
-      // beat. Exhausting the chain posts a diagnostic error bubble.
-      function requestAppFullscreen(i, lastErr) {
-        var targets = [document.documentElement, document.body];
-        if (i >= targets.length) { fsDiag(lastErr); return; }
-        var el = targets[i];
-        var fn = el.requestFullscreen || el.webkitRequestFullscreen;
-        if (!fn) { requestAppFullscreen(i + 1, lastErr || 'no Fullscreen API method on element'); return; }
-        try {
-          var p = fn.call(el);
-          if (p && p.catch) {
-            p.catch(function (err) { requestAppFullscreen(i + 1, err); });
-          } else {
-            setTimeout(function () {
-              if (!fullscreenEl()) requestAppFullscreen(i + 1, lastErr || 'request returned without entering fullscreen');
-            }, 300);
-          }
-        } catch (err) {
-          requestAppFullscreen(i + 1, err);
-        }
-      }
-
+      // ONE fullscreen request per click, made FIRST: requestFullscreen
+      // consumes the click's transient activation even on failure, so a
+      // retry chain can never work — and mutating the DOM (hiding the
+      // clicked button) before the call can void the activation in WebKit.
       fullscreenToggle.addEventListener('click', function () {
+        var root = document.documentElement;
+        var fn = root.requestFullscreen || root.webkitRequestFullscreen;
+        if (fn) {
+          try {
+            var p = fn.call(root);
+            if (p && p.catch) p.catch(fsDiag);
+          } catch (err) {
+            fsDiag(err);
+          }
+        } else {
+          fsDiag('no Fullscreen API method on element');
+        }
         document.body.classList.add('zen');
-        requestAppFullscreen(0);
       });
 
       function onFullscreenChange() {
