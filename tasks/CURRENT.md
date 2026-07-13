@@ -236,3 +236,7 @@ Full frozen TPM suite green against spec v25. Feature built and validated.
   webkit-prefixed method preferred; target is the .app-wrapper DIV
   (Safari silently refuses <html>/<body>); zen class independent of the
   API; diagnostics post an error bubble with reason/method/gesture state.
+- CONFIRMED by CEO: a Safari extension was the blocker — unchecking it
+  enables fullscreen in the normal window (YouTube unaffected because
+  such extensions typically exempt major video sites). Suggested fix:
+  per-site disable for localhost rather than removing the extension.
