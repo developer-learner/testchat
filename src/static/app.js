@@ -42,23 +42,36 @@
       // in sync when Escape exits fullscreen natively.
       var fullscreenToggle = document.getElementById('fullscreen-toggle');
 
+      function fullscreenEl() {
+        return document.fullscreenElement || document.webkitFullscreenElement || null;
+      }
+
       function exitZen() {
         document.body.classList.remove('zen');
-        if (document.fullscreenElement && document.exitFullscreen) {
+        if (!fullscreenEl()) return;
+        if (document.exitFullscreen) {
           document.exitFullscreen().catch(function () {});
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen();
         }
       }
 
       fullscreenToggle.addEventListener('click', function () {
         document.body.classList.add('zen');
-        if (document.documentElement.requestFullscreen) {
-          document.documentElement.requestFullscreen().catch(function () {});
+        var root = document.documentElement;
+        if (root.requestFullscreen) {
+          root.requestFullscreen().catch(function () {});
+        } else if (root.webkitRequestFullscreen) {
+          root.webkitRequestFullscreen();
         }
       });
 
-      document.addEventListener('fullscreenchange', function () {
-        if (!document.fullscreenElement) document.body.classList.remove('zen');
-      });
+      function onFullscreenChange() {
+        if (!fullscreenEl()) document.body.classList.remove('zen');
+      }
+
+      document.addEventListener('fullscreenchange', onFullscreenChange);
+      document.addEventListener('webkitfullscreenchange', onFullscreenChange);
 
       var showThinking = false;
       var replyText = '';
