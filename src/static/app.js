@@ -64,7 +64,7 @@
         var info = msg +
           ' | via: ' + (method || '?') +
           ', gestureActive: ' + activation +
-          ', fullscreenEnabled: ' + (d.fullscreenEnabled !== undefined ? d.fullscreenEnabled : String(d.webkitFullscreenEnabled));
+          ', fullscreenEnabled: ' + (d.fullscreenEnabled !== undefined ? d.fullscreenEnabled : (d.webkitFullscreenEnabled !== undefined ? d.webkitFullscreenEnabled : 'unknown'));
         try { console.warn('fullscreen failed:', info); } catch (e) {}
         if (statusTps) statusTps.textContent = 'fullscreen: ' + msg;
         appendBubble('Browser fullscreen failed — ' + info, 'error');
