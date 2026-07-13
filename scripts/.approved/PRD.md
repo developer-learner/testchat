@@ -1,27 +1,54 @@
-PRD — testchat M10: Ratify the Sprint (freeze coverage for the live-fix features)
+PRD — testchat M12: Ratify the Sprint
 
 Milestone
 
-M11b adds a fifth theme, "midnight" — designed for a dark room lit only by
-the laptop: maximal readability with zero theater. Very dark neutral grey
-(not pure black — avoids halation), warm off-white text (not pure white —
-avoids glare), hierarchy by lightness steps, muted amber for interactive
-elements, desaturated cyan-slate as the secondary accent, hairline chrome,
-and explicitly NO glow, scanlines, or rain. Existing themes untouched.
+M12 ratifies all features that landed in CEO-directed live sessions between
+M9 (v19) and this freeze. No new code is written — the implementation
+already exists. This milestone updates the frozen spec to match reality so
+the oracle is honest and the suite is green.
 
-All v24 criteria remain in force, with one amendment: the theme cycle now
-contains FIVE themes (the AC-53 test updates accordingly).
+Features ratified (all CEO-accepted in live sessions):
 
-AC-55: WHEN the user cycles the theme toggle, THE SYSTEM SHALL reach a
-"midnight" theme, and a full five-click cycle SHALL return to the start.
+1. Block-level markdown renderer: fenced code blocks with copy button,
+   headings (h1-h4), nested ordered/unordered lists with source numbering,
+   blockquotes, horizontal rules, inline bold/italic/code/links.
+2. Ten themes: light, dark, matrix, phosphor, midnight, neon, crisp, ember,
+   graphite-amber, graphite-forest. Theme toggle cycles all ten.
+3. Thread rename (inline edit + Enter to confirm, persisted via PUT /threads)
+   and thread delete (with confirm dialog, persisted).
+4. Auto-retitle: generic thread titles ("New Chat", "hi") replaced by first
+   assistant reply content.
+5. Send/Stop toggle: AbortController cancels the stream; partial reply and
+   user message are retained.
+6. Status strip: model indicator, RAM usage, nemotron RSS, live + average
+   tokens/second.
+7. System prompt: settings modal (gear button), textarea, Save/Cancel.
+   Environment variable LLM_SYSTEM_PROMPT is authoritative when present.
+8. Focus/fullscreen mode: toggle hides sidebar/top-bar/status-strip;
+   browser Fullscreen API on .app-wrapper div with webkit prefix support.
+9. Per-bubble hover chrome: copy and delete action buttons, timestamp and
+   model metadata via data-attributes.
+10. Blinking stream cursor during active streaming.
+11. Centered 52rem reading column with symmetric gutters.
+12. 30ms render throttle with streamEnded guard.
 
-manual-only waivers (D-58): midnight's colors, contrast feel, and
-readability-in-the-dark are design — verified by the CEO in an actual dark
-room, which no headless browser can simulate.
+Acceptance Criteria
 
-Out of Scope: layout changes (the phosphor terminal-window treatment is
-M11c); any behavior change.
+All v25 criteria remain in force. Amendments:
 
-CEO Demo Script: lights off. Cycle to midnight — screen goes quiet: dark
-grey, soft warm text, amber only where you can click. Read a long reply —
-no glare, no smear. Reload — still midnight.
+AC-53 (amended): WHEN the user clicks the theme toggle ten times, THE SYSTEM
+SHALL cycle through all ten themes and return to the starting theme.
+
+AC-55 (amended): WHEN the user cycles the theme toggle, THE SYSTEM SHALL
+reach every theme including "neon", "crisp", "ember", "graphite-amber", and
+"graphite-forest", and a full ten-click cycle SHALL return to the start.
+
+manual-only waivers (D-58): all theme aesthetics (colors, contrast, glow
+effects), markdown rendering appearance, bubble chrome layout, stream cursor
+animation, column centering, and focus mode visual behavior are design —
+verified by the CEO in live sessions, not automatable in headless browsers.
+
+Out of Scope: app.js split (M13), new features.
+
+CEO Demo Script: Already accepted — the CEO used every feature in live
+sessions on 2026-07-11 and 2026-07-12. This milestone is paperwork.

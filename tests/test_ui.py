@@ -249,17 +249,17 @@ def test_saved_system_prompt_reaches_requests(
     assert first["content"] == "You are a test harness. Be terse."
 
 
-# AC-53/AC-55 [M11a+M11b — the cycle holds phosphor AND midnight, wraps at five]
+# AC-53/AC-55 [M12 ratify — the cycle holds all ten themes, wraps at ten]
 def test_theme_cycle_reaches_phosphor_and_wraps(page: Page, app_url: str) -> None:
     page.goto(app_url)
     start = page.evaluate("document.documentElement.getAttribute('data-theme')")
     seen = []
-    for _ in range(5):
+    for _ in range(10):
         page.get_by_test_id("theme-toggle").click()
         seen.append(page.evaluate("document.documentElement.getAttribute('data-theme')"))
     assert "phosphor" in seen, f"cycle never reached phosphor: {seen}"
     assert "midnight" in seen, f"cycle never reached midnight: {seen}"
-    assert seen[-1] == start, f"five clicks must wrap to the start: {start} -> {seen}"
+    assert seen[-1] == start, f"ten clicks must wrap to the start: {start} -> {seen}"
 
 
 # AC-54 [M11a — rain backdrop only while phosphor is active]

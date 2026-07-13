@@ -1,5 +1,5 @@
 {
- "erd_version": 25,
+ "erd_version": 26,
  "files": [
   "src/static/style.css",
   "src/static/app.js"
@@ -301,6 +301,6 @@
   }
  ],
  "smoke_checks": {
-  "src/static/style.css": "grep -q 'data-theme=\"midnight\"' src/static/style.css"
+  "src/static/style.css": "grep -q 'data-theme=\"graphite-forest\"' src/static/style.css && grep -q 'data-theme=\"neon\"' src/static/style.css"
  }
 }
