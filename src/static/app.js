@@ -13,8 +13,8 @@
       var threadListEl = document.getElementById('thread-list');
       var themeToggle = document.getElementById('theme-toggle');
 
-      var THEMES = ['light', 'dark', 'matrix', 'phosphor', 'midnight'];
-      var THEME_ICONS = { light: '☀️', dark: '🌙', matrix: '💊', phosphor: '>_ ', midnight: '\u{1F319}' };
+      var THEMES = ['light', 'dark', 'matrix', 'phosphor', 'midnight', 'neon', 'crisp', 'ember', 'graphite-amber', 'graphite-forest'];
+      var THEME_ICONS = { light: '☀️', dark: '🌙', matrix: '💊', phosphor: '>_ ', midnight: '🌃', neon: '⚡', crisp: '🌤', ember: '🔥', 'graphite-amber': '🔶', 'graphite-forest': '🌲' };
 
       function applyTheme(theme) {
         if (THEMES.indexOf(theme) === -1) theme = 'light';

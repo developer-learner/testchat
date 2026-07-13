@@ -991,38 +991,318 @@
       border-color: var(--accent);
     }
 
+    /* high-contrast dark-room theme — near-black backgrounds, vibrant
+       saturated amber accent (roughly 2× the chroma of the previous
+       palette for matrix-like punch), system font. */
     :root[data-theme="midnight"] {
-      --font: inherit;
-      --bg: oklch(0.18 0 0);
-      --panel: oklch(0.22 0.003 90);
-      --text: oklch(0.92 0.01 90);
-      --border: oklch(0.92 0.01 90 / 0.08);
-      --sidebar-bg: oklch(0.16 0 0);
-      --sidebar-text: oklch(0.85 0.01 90);
-      --sidebar-border: oklch(0.85 0.01 90 / 0.08);
-      --sidebar-hover: oklch(0.22 0 0);
-      --sidebar-active: oklch(0.26 0.003 90);
-      --sidebar-active-bar: oklch(0.75 0.12 75);
-      --accent-primary: oklch(0.75 0.12 75);
-      --accent-secondary: oklch(0.72 0.06 220);
-      --accent-error: oklch(0.55 0.12 25);
-      --bubble-user: oklch(0.78 0.06 220);
+      --bg: oklch(0.10 0.01 55);
+      --panel: oklch(0.14 0.015 55);
+      --border: oklch(0.88 0.08 65 / 0.07);
+      --text: oklch(0.88 0.08 65);
+      --sidebar-bg: oklch(0.08 0.01 55);
+      --sidebar-text: oklch(0.80 0.06 65);
+      --sidebar-border: oklch(0.80 0.06 65 / 0.06);
+      --sidebar-hover: oklch(0.16 0.015 55);
+      --sidebar-active: oklch(0.20 0.02 55);
+      --sidebar-active-bar: oklch(0.78 0.22 55);
+      --accent: oklch(0.78 0.22 55);
+      --accent-hover: oklch(0.84 0.22 55);
+      --accent-disabled: oklch(0.32 0.08 55);
+      --accent-contrast: oklch(0.10 0.02 0);
+      --danger: oklch(0.55 0.18 25);
+      --danger-hover: oklch(0.62 0.20 25);
+      --danger-disabled: oklch(0.28 0.08 25);
+      --bubble-user-bg: oklch(0.30 0.10 220);
+      --bubble-user-text: oklch(0.88 0.06 220);
+      --bubble-reply-bg: oklch(0.14 0.015 55);
+      --bubble-reply-text: oklch(0.88 0.08 65);
+      --bubble-reply-border: oklch(0.88 0.08 65 / 0.07);
+      --bubble-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 3px 12px rgba(0, 0, 0, 0.35);
+      --error-bg: oklch(0.18 0.06 25);
+      --error-text: oklch(0.65 0.16 25);
+      --error-border: oklch(0.30 0.10 25);
+      --think-color: oklch(0.60 0.10 65);
+      --input-border: oklch(0.88 0.08 65 / 0.10);
+      --input-bg: oklch(0.12 0.01 55);
+      --input-text: oklch(0.88 0.08 65);
+      --muted-bg: oklch(0.18 0.015 55);
+      --muted-text: oklch(0.55 0.04 65);
+      --toggle-on-bg: oklch(0.78 0.22 55 / 0.15);
+      --focus-ring: oklch(0.78 0.22 55 / 0.20);
+      --scrollbar-thumb: oklch(0.22 0.02 55);
+      --glow: none;
     }
 
     :root[data-theme="midnight"] * {
       text-shadow: none;
     }
 
-    /* CEO dark-room feedback 2026-07-13: readability wants contrast anchors —
-       emphasis in warm amber, code in cool slate, headings amber. Muted
-       saturation preserved; only *marked* text gets color. */
     :root[data-theme="midnight"] .chat-bubble strong,
     :root[data-theme="midnight"] .chat-bubble b,
     :root[data-theme="midnight"] .chat-bubble h1,
     :root[data-theme="midnight"] .chat-bubble h2,
     :root[data-theme="midnight"] .chat-bubble h3 {
-      color: oklch(0.78 0.13 70);
+      color: oklch(0.82 0.18 55);
     }
     :root[data-theme="midnight"] .chat-bubble code {
-      color: oklch(0.80 0.07 220);
+      color: oklch(0.80 0.10 220);
+    }
+
+    /* stark neon green on pure black — no glow, no scanlines, no frills.
+       Bold text and interactive elements use a lime-yellow accent for
+       emphasis against the sea of green. */
+    :root[data-theme="neon"] {
+      --bg: oklch(0 0 0);
+      --panel: oklch(0.03 0.005 145);
+      --border: oklch(0.85 0.27 145 / 0.10);
+      --text: oklch(0.85 0.27 145);
+      --sidebar-bg: oklch(0 0 0);
+      --sidebar-text: oklch(0.75 0.23 145);
+      --sidebar-border: oklch(0.85 0.27 145 / 0.08);
+      --sidebar-hover: oklch(0.08 0.02 145);
+      --sidebar-active: oklch(0.12 0.03 145);
+      --sidebar-active-bar: oklch(0.78 0.20 60);
+      --accent: oklch(0.78 0.20 60);
+      --accent-hover: oklch(0.84 0.20 60);
+      --accent-disabled: oklch(0.30 0.08 60);
+      --accent-contrast: oklch(0.05 0.02 0);
+      --danger: oklch(0.60 0.20 25);
+      --danger-hover: oklch(0.68 0.22 25);
+      --danger-disabled: oklch(0.25 0.08 25);
+      --bubble-user-bg: oklch(0.10 0.05 145);
+      --bubble-user-text: oklch(0.85 0.27 145);
+      --bubble-reply-bg: oklch(0.03 0.005 145);
+      --bubble-reply-text: oklch(0.85 0.27 145);
+      --bubble-reply-border: oklch(0.85 0.27 145 / 0.10);
+      --bubble-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+      --error-bg: oklch(0.10 0.04 25);
+      --error-text: oklch(0.65 0.18 25);
+      --error-border: oklch(0.25 0.08 25);
+      --think-color: oklch(0.55 0.12 145);
+      --input-border: oklch(0.85 0.27 145 / 0.12);
+      --input-bg: oklch(0.02 0.003 145);
+      --input-text: oklch(0.85 0.27 145);
+      --muted-bg: oklch(0.06 0.01 145);
+      --muted-text: oklch(0.55 0.12 145);
+      --toggle-on-bg: oklch(0.78 0.20 60 / 0.12);
+      --focus-ring: oklch(0.78 0.20 60 / 0.18);
+      --scrollbar-thumb: oklch(0.12 0.04 145);
+      --glow: none;
+    }
+
+    :root[data-theme="neon"] * {
+      text-shadow: none;
+    }
+
+    :root[data-theme="neon"] .chat-bubble strong,
+    :root[data-theme="neon"] .chat-bubble b,
+    :root[data-theme="neon"] .chat-bubble h1,
+    :root[data-theme="neon"] .chat-bubble h2,
+    :root[data-theme="neon"] .chat-bubble h3 {
+      color: oklch(0.82 0.20 60);
+    }
+    :root[data-theme="neon"] .chat-bubble code {
+      color: oklch(0.80 0.15 180);
+    }
+
+    /* crisp — daylight indoor: warm-white bg, navy sidebar, vivid blue
+       accent. Reads clean and professional in ambient light. */
+    :root[data-theme="crisp"] {
+      --bg: oklch(0.94 0.008 75);
+      --panel: oklch(0.98 0.005 75);
+      --border: oklch(0.15 0.01 80 / 0.12);
+      --text: oklch(0.15 0.01 80);
+      --sidebar-bg: oklch(0.20 0.02 240);
+      --sidebar-text: oklch(0.88 0.02 240);
+      --sidebar-border: oklch(0.88 0.02 240 / 0.10);
+      --sidebar-hover: oklch(0.26 0.03 240);
+      --sidebar-active: oklch(0.30 0.04 240);
+      --sidebar-active-bar: oklch(0.60 0.22 240);
+      --accent: oklch(0.50 0.22 240);
+      --accent-hover: oklch(0.55 0.24 240);
+      --accent-disabled: oklch(0.30 0.10 240);
+      --accent-contrast: oklch(0.95 0.01 240);
+      --danger: oklch(0.50 0.20 25);
+      --danger-hover: oklch(0.55 0.22 25);
+      --danger-disabled: oklch(0.30 0.10 25);
+      --bubble-user-bg: linear-gradient(135deg, oklch(0.50 0.22 240), oklch(0.45 0.20 240));
+      --bubble-user-text: oklch(0.95 0.01 240);
+      --bubble-reply-bg: oklch(0.98 0.005 75);
+      --bubble-reply-text: oklch(0.15 0.01 80);
+      --bubble-reply-border: oklch(0.15 0.01 80 / 0.10);
+      --bubble-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 2px 8px rgba(0, 0, 0, 0.03);
+      --error-bg: oklch(0.92 0.04 25);
+      --error-text: oklch(0.50 0.18 25);
+      --error-border: oklch(0.75 0.08 25);
+      --think-color: oklch(0.50 0.04 80);
+      --input-border: oklch(0.15 0.01 80 / 0.15);
+      --input-bg: oklch(0.98 0.005 75);
+      --input-text: oklch(0.15 0.01 80);
+      --muted-bg: oklch(0.90 0.006 75);
+      --muted-text: oklch(0.50 0.02 80);
+      --toggle-on-bg: oklch(0.50 0.22 240 / 0.10);
+      --focus-ring: oklch(0.50 0.22 240 / 0.18);
+      --scrollbar-thumb: oklch(0.78 0.01 80);
+      --glow: none;
+    }
+
+    :root[data-theme="crisp"] .chat-bubble code {
+      color: oklch(0.45 0.06 240);
+    }
+
+    /* ember — zero-ambient-light dark room: warm brown-black bg, amber
+       accent, zero blue light. Contrast capped at ~10:1 to prevent text
+       bloom on OLED screens in complete darkness. */
+    :root[data-theme="ember"] {
+      --bg: oklch(0.10 0.015 45);
+      --panel: oklch(0.13 0.02 45);
+      --border: oklch(0.78 0.05 55 / 0.08);
+      --text: oklch(0.78 0.05 55);
+      --sidebar-bg: oklch(0.08 0.015 45);
+      --sidebar-text: oklch(0.70 0.04 55);
+      --sidebar-border: oklch(0.70 0.04 55 / 0.06);
+      --sidebar-hover: oklch(0.15 0.02 45);
+      --sidebar-active: oklch(0.18 0.025 45);
+      --sidebar-active-bar: oklch(0.72 0.20 55);
+      --accent: oklch(0.72 0.20 55);
+      --accent-hover: oklch(0.78 0.20 55);
+      --accent-disabled: oklch(0.30 0.08 55);
+      --accent-contrast: oklch(0.08 0.01 0);
+      --danger: oklch(0.52 0.16 25);
+      --danger-hover: oklch(0.58 0.18 25);
+      --danger-disabled: oklch(0.25 0.08 25);
+      --bubble-user-bg: oklch(0.20 0.04 240 / 0.35);
+      --bubble-user-text: oklch(0.78 0.05 55);
+      --bubble-reply-bg: oklch(0.13 0.02 45);
+      --bubble-reply-text: oklch(0.78 0.05 55);
+      --bubble-reply-border: oklch(0.78 0.05 55 / 0.06);
+      --bubble-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+      --error-bg: oklch(0.17 0.04 25);
+      --error-text: oklch(0.58 0.14 25);
+      --error-border: oklch(0.30 0.08 25);
+      --think-color: oklch(0.55 0.06 55);
+      --input-border: oklch(0.78 0.05 55 / 0.08);
+      --input-bg: oklch(0.11 0.015 45);
+      --input-text: oklch(0.78 0.05 55);
+      --muted-bg: oklch(0.16 0.02 45);
+      --muted-text: oklch(0.55 0.04 55);
+      --toggle-on-bg: oklch(0.72 0.20 55 / 0.12);
+      --focus-ring: oklch(0.72 0.20 55 / 0.15);
+      --scrollbar-thumb: oklch(0.22 0.02 45);
+      --glow: none;
+    }
+
+    :root[data-theme="ember"] * {
+      text-shadow: none;
+    }
+
+    :root[data-theme="ember"] .chat-bubble strong,
+    :root[data-theme="ember"] .chat-bubble b,
+    :root[data-theme="ember"] .chat-bubble h1,
+    :root[data-theme="ember"] .chat-bubble h2,
+    :root[data-theme="ember"] .chat-bubble h3 {
+      color: oklch(0.78 0.18 55);
+    }
+    :root[data-theme="ember"] .chat-bubble code {
+      color: oklch(0.72 0.06 220 / 0.7);
+    }
+
+    /* graphite-amber — cool grey with warm amber accent */
+    :root[data-theme="graphite-amber"] {
+      --bg: oklch(0.16 0.005 260);
+      --panel: oklch(0.19 0.006 260);
+      --border: oklch(0.90 0.01 70 / 0.10);
+      --text: oklch(0.90 0.01 70);
+      --sidebar-bg: oklch(0.13 0.005 260);
+      --sidebar-text: oklch(0.84 0.01 70);
+      --sidebar-border: oklch(0.84 0.01 70 / 0.10);
+      --sidebar-hover: oklch(0.21 0.008 260);
+      --sidebar-active: oklch(0.24 0.01 260);
+      --sidebar-active-bar: oklch(0.72 0.16 55);
+      --accent: oklch(0.72 0.16 55);
+      --accent-hover: oklch(0.78 0.16 55);
+      --accent-disabled: oklch(0.30 0.06 55);
+      --accent-contrast: oklch(0.10 0.02 0);
+      --danger: oklch(0.55 0.16 25);
+      --danger-hover: oklch(0.62 0.18 25);
+      --danger-disabled: oklch(0.26 0.08 25);
+      --bubble-user-bg: linear-gradient(135deg, oklch(0.62 0.14 55), oklch(0.52 0.12 55));
+      --bubble-user-text: oklch(0.95 0.01 70);
+      --bubble-reply-bg: oklch(0.19 0.006 260);
+      --bubble-reply-text: oklch(0.90 0.01 70);
+      --bubble-reply-border: oklch(0.90 0.01 70 / 0.08);
+      --bubble-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 3px 10px rgba(0, 0, 0, 0.25);
+      --error-bg: oklch(0.18 0.04 25);
+      --error-text: oklch(0.62 0.14 25);
+      --error-border: oklch(0.30 0.08 25);
+      --think-color: oklch(0.60 0.02 260);
+      --input-border: oklch(0.90 0.01 70 / 0.12);
+      --input-bg: oklch(0.18 0.005 260);
+      --input-text: oklch(0.90 0.01 70);
+      --muted-bg: oklch(0.22 0.006 260);
+      --muted-text: oklch(0.60 0.02 70);
+      --toggle-on-bg: oklch(0.72 0.16 55 / 0.12);
+      --focus-ring: oklch(0.72 0.16 55 / 0.18);
+      --scrollbar-thumb: oklch(0.28 0.008 260);
+      --glow: none;
+    }
+    :root[data-theme="graphite-amber"] .chat-bubble strong,
+    :root[data-theme="graphite-amber"] .chat-bubble b,
+    :root[data-theme="graphite-amber"] .chat-bubble h1,
+    :root[data-theme="graphite-amber"] .chat-bubble h2,
+    :root[data-theme="graphite-amber"] .chat-bubble h3 {
+      color: oklch(0.78 0.16 55);
+    }
+    :root[data-theme="graphite-amber"] .chat-bubble code {
+      color: oklch(0.70 0.06 200);
+    }
+
+    /* graphite-forest — cool grey with green accent */
+    :root[data-theme="graphite-forest"] {
+      --bg: oklch(0.16 0.005 260);
+      --panel: oklch(0.19 0.006 260);
+      --border: oklch(0.90 0.01 70 / 0.10);
+      --text: oklch(0.90 0.01 70);
+      --sidebar-bg: oklch(0.13 0.005 260);
+      --sidebar-text: oklch(0.84 0.01 70);
+      --sidebar-border: oklch(0.84 0.01 70 / 0.10);
+      --sidebar-hover: oklch(0.21 0.008 260);
+      --sidebar-active: oklch(0.24 0.01 260);
+      --sidebar-active-bar: oklch(0.68 0.14 140);
+      --accent: oklch(0.68 0.14 140);
+      --accent-hover: oklch(0.74 0.14 140);
+      --accent-disabled: oklch(0.28 0.06 140);
+      --accent-contrast: oklch(0.10 0.02 0);
+      --danger: oklch(0.55 0.16 25);
+      --danger-hover: oklch(0.62 0.18 25);
+      --danger-disabled: oklch(0.26 0.08 25);
+      --bubble-user-bg: linear-gradient(135deg, oklch(0.58 0.12 140), oklch(0.48 0.10 140));
+      --bubble-user-text: oklch(0.95 0.01 70);
+      --bubble-reply-bg: oklch(0.19 0.006 260);
+      --bubble-reply-text: oklch(0.90 0.01 70);
+      --bubble-reply-border: oklch(0.90 0.01 70 / 0.08);
+      --bubble-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 3px 10px rgba(0, 0, 0, 0.25);
+      --error-bg: oklch(0.18 0.04 25);
+      --error-text: oklch(0.62 0.14 25);
+      --error-border: oklch(0.30 0.08 25);
+      --think-color: oklch(0.60 0.02 260);
+      --input-border: oklch(0.90 0.01 70 / 0.12);
+      --input-bg: oklch(0.18 0.005 260);
+      --input-text: oklch(0.90 0.01 70);
+      --muted-bg: oklch(0.22 0.006 260);
+      --muted-text: oklch(0.60 0.02 70);
+      --toggle-on-bg: oklch(0.68 0.14 140 / 0.12);
+      --focus-ring: oklch(0.68 0.14 140 / 0.18);
+      --scrollbar-thumb: oklch(0.28 0.008 260);
+      --glow: none;
+    }
+    :root[data-theme="graphite-forest"] .chat-bubble strong,
+    :root[data-theme="graphite-forest"] .chat-bubble b,
+    :root[data-theme="graphite-forest"] .chat-bubble h1,
+    :root[data-theme="graphite-forest"] .chat-bubble h2,
+    :root[data-theme="graphite-forest"] .chat-bubble h3 {
+      color: oklch(0.74 0.14 140);
+    }
+    :root[data-theme="graphite-forest"] .chat-bubble code {
+      color: oklch(0.70 0.06 200);
     }
