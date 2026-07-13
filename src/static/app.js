@@ -56,14 +56,34 @@
         }
       }
 
+      function fsFail(err) {
+        var msg = err && err.message ? err.message : String(err || 'denied');
+        try { console.warn('fullscreen request failed:', msg); } catch (e) {}
+        if (statusTps) statusTps.textContent = 'fullscreen: ' + msg;
+      }
+
+      // Safari quirk: fullscreening <html> can fail where <body> works;
+      // try both, prefixed and unprefixed, and surface the real rejection
+      function requestAppFullscreen(i) {
+        var targets = [document.documentElement, document.body];
+        if (i >= targets.length) return;
+        var el = targets[i];
+        var fn = el.requestFullscreen || el.webkitRequestFullscreen;
+        if (!fn) { fsFail('no Fullscreen API'); return; }
+        try {
+          var p = fn.call(el);
+          if (p && p.catch) {
+            p.catch(function (err) { fsFail(err); requestAppFullscreen(i + 1); });
+          }
+        } catch (err) {
+          fsFail(err);
+          requestAppFullscreen(i + 1);
+        }
+      }
+
       fullscreenToggle.addEventListener('click', function () {
         document.body.classList.add('zen');
-        var root = document.documentElement;
-        if (root.requestFullscreen) {
-          root.requestFullscreen().catch(function () {});
-        } else if (root.webkitRequestFullscreen) {
-          root.webkitRequestFullscreen();
-        }
+        requestAppFullscreen(0);
       });
 
       function onFullscreenChange() {
