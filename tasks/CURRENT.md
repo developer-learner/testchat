@@ -224,3 +224,15 @@ Full frozen TPM suite green against spec v24. Feature built and validated.
 ## Results
 
 Full frozen TPM suite green against spec v25. Feature built and validated.
+
+## 2026-07-12 (eve) — Fullscreen saga RESOLVED: code correct, Safari profile was the blocker
+- Focus mode (⛶ zen + browser fullscreen) works in Firefox and in Safari
+  PRIVATE windows; the CEO's normal Safari window strips user activation
+  from real clicks (gestureAtClick:false at handler entry) — an extension
+  or stuck site permission, since private mode disables extensions.
+- Final shape (after real fixes along the way, 1b8bea8..388c571): one
+  request per click, made before any DOM mutation (requestFullscreen
+  consumes activation even on rejection — retry chains can never work);
+  webkit-prefixed method preferred; target is the .app-wrapper DIV
+  (Safari silently refuses <html>/<body>); zen class independent of the
+  API; diagnostics post an error bubble with reason/method/gesture state.
