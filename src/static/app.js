@@ -56,28 +56,39 @@
         }
       }
 
-      function fsFail(err) {
-        var msg = err && err.message ? err.message : String(err || 'denied');
-        try { console.warn('fullscreen request failed:', msg); } catch (e) {}
+      function fsDiag(lastErr) {
+        var d = document;
+        var msg = lastErr && lastErr.message ? lastErr.message : String(lastErr || 'unknown');
+        var info = msg +
+          ' | requestFullscreen: ' + typeof d.documentElement.requestFullscreen +
+          ', webkitRequestFullscreen: ' + typeof d.documentElement.webkitRequestFullscreen +
+          ', fullscreenEnabled: ' + (d.fullscreenEnabled !== undefined ? d.fullscreenEnabled : d.webkitFullscreenEnabled);
+        try { console.warn('fullscreen failed:', info); } catch (e) {}
         if (statusTps) statusTps.textContent = 'fullscreen: ' + msg;
+        appendBubble('Browser fullscreen failed — ' + info, 'error');
       }
 
       // Safari quirk: fullscreening <html> can fail where <body> works;
-      // try both, prefixed and unprefixed, and surface the real rejection
-      function requestAppFullscreen(i) {
+      // try both, prefixed and unprefixed. Old WebKit returns undefined
+      // instead of a promise, so silent failures are re-checked after a
+      // beat. Exhausting the chain posts a diagnostic error bubble.
+      function requestAppFullscreen(i, lastErr) {
         var targets = [document.documentElement, document.body];
-        if (i >= targets.length) return;
+        if (i >= targets.length) { fsDiag(lastErr); return; }
         var el = targets[i];
         var fn = el.requestFullscreen || el.webkitRequestFullscreen;
-        if (!fn) { fsFail('no Fullscreen API'); return; }
+        if (!fn) { requestAppFullscreen(i + 1, lastErr || 'no Fullscreen API method on element'); return; }
         try {
           var p = fn.call(el);
           if (p && p.catch) {
-            p.catch(function (err) { fsFail(err); requestAppFullscreen(i + 1); });
+            p.catch(function (err) { requestAppFullscreen(i + 1, err); });
+          } else {
+            setTimeout(function () {
+              if (!fullscreenEl()) requestAppFullscreen(i + 1, lastErr || 'request returned without entering fullscreen');
+            }, 300);
           }
         } catch (err) {
-          fsFail(err);
-          requestAppFullscreen(i + 1);
+          requestAppFullscreen(i + 1, err);
         }
       }
 
