@@ -1,4 +1,4 @@
-ERD — testchat M20: Search-Hit Count and Navigation (erd_version 36)
+ERD — testchat M20: Search-Hit Count and Navigation (erd_version 37)
 
 What changes v35 -> v36
 
@@ -34,7 +34,9 @@ File inventory (M20 build) — DAG order
       elements inside chat-container into the array (document order),
       set index 0, then call a new function updateHitNav().
       highlightSearchHits() must also handle the empty-query case by
-      clearing the array before returning. Its existing scroll-to-first
+      clearing the array AND THEN calling updateHitNav() before returning
+      (so the nav hides when the box is emptied — returning without that
+      call leaves a stale visible counter). Its existing scroll-to-first
       behavior is replaced by updateHitNav()'s scrolling.
    c) New function updateHitNav(): finds the .search-hit-nav element
       (guard null). If the query is empty, set its hidden attribute and
