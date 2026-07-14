@@ -1,14 +1,14 @@
 {
-  "version": 1,
-  "erd_version": 38,
-  "tasks": [
-    {
-      "id": "T1",
-      "file": "src/static/style.css",
-      "depends_on": [],
-      "brief": "Implementation constraints: Edit src/static/style.css. Replace the bodies of exactly two existing CSS rule groups. No other edits to this file. No JavaScript, no async, no external libraries. The selectors must remain exactly as they are; only their declarations change.\n\nBehavioral specification: Replace the declarations of the two search-hit rules as follows:\n\n1. mark.search-hit: background var(--toggle-on-bg), color inherit, border-radius 3px, padding 0 2px.\n2. mark.search-hit.current: background var(--accent), color var(--accent-contrast), border-radius 3px, padding 0 2px, outline 2px solid var(--accent-hover).\n\nAcceptance condition: src/static/style.css contains the two rules with the exact selectors and declarations specified above.",
-      "contracts": [],
-      "tests": []
-    }
-  ]
+ "version": 1,
+ "erd_version": 38,
+ "tasks": [
+  {
+   "id": "T1",
+   "file": "src/static/style.css",
+   "depends_on": [],
+   "brief": "Edit src/static/style.css. The tail of the file was corrupted by a previous botched edit (stray conflict markers and duplicated rules). Produce EXACTLY ONE edit block whose SEARCH section is the corrupted tail below, copied character-for-character, and whose REPLACE section is the clean version below. No other blocks, no other changes.\n\nSEARCH section (the corrupted tail, verbatim):\n    mark.search-hit {\n=======\n<<<<<<< SEARCH\n    mark.search-hit {\n      background: var(--accent);\n      color: var(--accent-contrast);\n      border-radius: 3px;\n      padding: 0 2px;\n    }\n=======\n    mark.search-hit {\n      background: var(--accent);\n      color: var(--accent-contrast);\n      border-radius: 3px;\n      padding: 0 2px;\n    }\n\n    .hit-nav-btn {\n      background: transparent;\n      border: 1px solid var(--sidebar-border);\n      color: var(--sidebar-text);\n      border-radius: 4px;\n      cursor: pointer;\n      padding: 0 0.35rem;\n      font-size: 0.7rem;\n    }\n    mark.search-hit.current {\n      background: var(--accent-hover);\n      outline: 2px solid var(--accent);\n    }\n      background: var(--accent);\n      color: var(--accent-contrast);\n      border-radius: 3px;\n      padding: 0 2px;\n    }\n\nREPLACE section (the clean tail):\n    mark.search-hit {\n      background: var(--toggle-on-bg);\n      color: inherit;\n      border-radius: 3px;\n      padding: 0 2px;\n    }\n\n    .hit-nav-btn {\n      background: transparent;\n      border: 1px solid var(--sidebar-border);\n      color: var(--sidebar-text);\n      border-radius: 4px;\n      cursor: pointer;\n      padding: 0 0.35rem;\n      font-size: 0.7rem;\n    }\n\n    mark.search-hit.current {\n      background: var(--accent);\n      color: var(--accent-contrast);\n      border-radius: 3px;\n      padding: 0 2px;\n      outline: 2px solid var(--accent-hover);\n    }\n\nAcceptance: the file ends with the three clean rules above; no '<<<<<<<' or '=======' or '>>>>>>>' lines remain anywhere in the file.",
+   "contracts": [],
+   "tests": []
+  }
+ ]
 }
