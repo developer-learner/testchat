@@ -1,9 +1,7 @@
 {
- "erd_version": 37,
+ "erd_version": 38,
  "files": [
-  "src/static/index.html",
-  "src/static/style.css",
-  "src/static/threads.js"
+  "src/static/style.css"
  ],
  "entry_points": [
   "src.main:app",
@@ -332,9 +330,7 @@
   }
  ],
  "smoke_checks": {
-  "src/static/index.html": "grep -q 'data-testid=\"search-hit-count\"' src/static/index.html && grep -q 'data-testid=\"search-next-btn\"' src/static/index.html",
-  "src/static/style.css": "grep -q 'search-hit-nav' src/static/style.css",
-  "src/static/threads.js": "grep -q 'search-hit-count' src/static/threads.js && grep -q 'window.Threads' src/static/threads.js"
+  "src/static/style.css": "grep -q 'search-hit.current' src/static/style.css"
  },
  "no_edit_files": []
 }

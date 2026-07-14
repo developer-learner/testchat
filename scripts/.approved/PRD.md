@@ -1,35 +1,28 @@
-PRD — testchat M20: Search-Hit Count and Navigation
+PRD — testchat M21: Distinct Current-Hit Emphasis
 
 Milestone
 
-M19 highlights matches and jumps to the first, but gives no sense of HOW
-MANY matches exist or a way to visit the rest — the CEO can't tell whether
-to keep looking. M20 adds a hit counter ("2/7") and previous/next arrows
-under the search box: the arrows cycle through the highlighted hits
-(wrapping at the ends), scrolling each into view and marking the current
-one distinctly.
+CEO demo of M20 failed AC-72's intent: the "current" search hit is styled
+almost identically to every other hit (two sibling shades of the accent
+color), so arrow navigation reads as aimless scrolling — you cannot see
+WHICH match the pointer is on. M21 fixes the emphasis: ordinary hits get a
+subtle tint; the current hit gets a loud, high-contrast one. Appearance
+only — no behavior change.
 
 Acceptance Criteria
 
-- AC-69: WHEN a thread is open WHILE a search is active, a counter (locked
-  testid: search-hit-count) SHALL show the current hit position and total
-  as "K/N" (1-based); with no hits it SHALL show "0/0".
-- AC-70: WHEN the next control (search-next-btn) is activated, the current
-  selection SHALL advance to the following hit, wrapping from the last hit
-  to the first; the previous control (search-prev-btn) SHALL do the same
-  in reverse. The counter SHALL update accordingly.
-- AC-71: WHEN the search box is emptied, the counter and controls SHALL be
-  hidden.
-- AC-72 (manual-only: scrolling and visual emphasis are appearance, D-58):
-  the current hit SHALL be scrolled into view and visually distinct from
-  the other hits. Verified in the CEO demo.
+- AC-73 (manual-only: relative visual emphasis is appearance, D-58): WHILE
+  navigating hits, ordinary hits SHALL read as a subtle tint and the
+  current hit SHALL be unmistakably distinct in every theme. Verified in
+  the CEO demo.
+- All existing ACs unchanged; the existing frozen tests are the regression
+  oracle (mark.search-hit and the nav still exist and function).
 
-Out of Scope: cross-thread total counts in the sidebar, keyboard shortcuts
-(Enter to cycle), match counts inside sidebar titles.
+Out of Scope: behavior changes, markup changes, new testids.
 
 CEO Demo Script
 
-1. Search a word with several occurrences; open a matching thread.
-2. Under the search box: "1/N". Click ▼ — view jumps hit to hit, counter
-   climbs, wraps back to 1 after N. ▲ goes backward.
-3. Clear the search — counter and arrows disappear.
+1. Search a word with 3+ hits; open the thread.
+2. All hits show a faint highlight; exactly one is boldly marked.
+3. Click ▼ repeatedly — the bold mark hops match to match as the counter
+   climbs; you always know where the loop is.
