@@ -21,7 +21,7 @@
       function applyTheme(theme) {
         if (THEMES.indexOf(theme) === -1) theme = 'light';
         document.documentElement.setAttribute('data-theme', theme);
-        if (theme === 'matrix' || theme === 'phosphor') {
+        if (theme === 'matrix') {
           if (typeof window.MatrixRain !== 'undefined') { window.MatrixRain.start(); }
         } else {
           if (typeof window.MatrixRain !== 'undefined') { window.MatrixRain.stop(); }

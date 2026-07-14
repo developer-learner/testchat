@@ -6,8 +6,10 @@
   var ctx = null;
   var rafId = null;
   var drops = [];
-  var fontSize = 16;
+  var fontSize = 17;
   var prefersReducedMotion = false;
+  var lastTime = 0;
+  var colWidth = 0;
 
   function initCanvas() {
     canvas = document.createElement('canvas');
@@ -35,12 +37,16 @@
     canvas.style.height = h + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    var cols = Math.floor(w / fontSize);
+    ctx.font = 'bold ' + fontSize + 'px "JetBrains Mono", "SF Mono", "Menlo", "Fira Code", monospace';
+    colWidth = ctx.measureText('A').width;
+
+    var cols = Math.floor(w / colWidth);
     while (drops.length < cols) {
       drops.push({
         y: Math.random() < 0.6 ? Math.random() * -100 : Math.random() * h / fontSize,
         alpha: 0.3 + Math.random() * 0.7,
         fading: false,
+        speed: 0.08 + Math.random() * 0.1,
       });
     }
     if (drops.length > cols) {
@@ -48,18 +54,19 @@
     }
   }
 
-  function draw() {
+  function draw(ts) {
     if (!ctx || !canvas) return;
 
-    ctx.fillStyle = 'rgba(5, 16, 10, 0.04)';
-    ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+    var dt = lastTime ? (ts - lastTime) / 16.67 : 1;
+    lastTime = ts;
 
-    ctx.font = fontSize + 'px "JetBrains Mono", "SF Mono", "Menlo", "Fira Code", monospace';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.025)';
+    ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
 
     for (var i = 0; i < drops.length; i++) {
       var d = drops[i];
       var text = CHARS[Math.floor(Math.random() * CHARS.length)];
-      var x = i * fontSize;
+      var x = i * colWidth;
       var y = d.y * fontSize;
 
       if (!d.fading && Math.random() > 0.995) {
@@ -67,7 +74,7 @@
       }
 
       if (d.fading) {
-        d.alpha -= 0.015 + Math.random() * 0.015;
+        d.alpha -= (0.015 + Math.random() * 0.015) * dt;
         if (d.alpha < 0) d.alpha = 0;
       }
 
@@ -75,22 +82,25 @@
         d.y = Math.random() < 0.6 ? Math.random() * -100 : Math.random() * (window.innerHeight / fontSize);
         d.alpha = 0.3 + Math.random() * 0.7;
         d.fading = false;
+        d.speed = 0.08 + Math.random() * 0.1;
         continue;
       }
 
       var isHead = Math.random() > 0.975;
       var baseAlpha = isHead ? 0.95 : 0.55;
-      ctx.fillStyle = isHead
+      var color = isHead
         ? 'rgba(190, 255, 200, ' + (baseAlpha * d.alpha).toFixed(3) + ')'
         : 'rgba(40, 220, 120, ' + (baseAlpha * d.alpha).toFixed(3) + ')';
+      ctx.fillStyle = color;
       ctx.fillText(text, x, y);
+      ctx.fillText(text, x, y - fontSize);
 
-      d.y += 0.25;
+      d.y += d.speed * dt;
     }
   }
 
-  function loop() {
-    draw();
+  function loop(ts) {
+    draw(ts);
     if (!prefersReducedMotion) {
       rafId = requestAnimationFrame(loop);
     }

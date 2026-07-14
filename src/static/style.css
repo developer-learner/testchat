@@ -175,13 +175,15 @@
       position: absolute;
       inset: 0;
       pointer-events: none;
-      background: repeating-linear-gradient(
+      background: rgba(0, 0, 0, 0.015);
+      background-image: linear-gradient(
         to bottom,
         transparent 0px,
         transparent 2px,
         oklch(0.82 0.24 148 / 0.03) 2px,
-        transparent 4px
+        oklch(0.82 0.24 148 / 0.03) 4px
       );
+      background-size: 100% 4px;
       z-index: 0;
     }
 
