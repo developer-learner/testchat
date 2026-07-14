@@ -11,6 +11,11 @@
     <aside class="sidebar">
       <button type="button" class="new-thread-btn" id="new-thread-btn" data-testid="new-thread-btn">+ New Chat</button>
       <input type="text" id="thread-search" class="thread-search" data-testid="thread-search-input" placeholder="Search threads...">
+      <div class="search-hit-nav" hidden>
+        <button type="button" class="hit-nav-btn" data-testid="search-prev-btn">▲</button>
+        <span data-testid="search-hit-count"></span>
+        <button type="button" class="hit-nav-btn" data-testid="search-next-btn">▼</button>
+      </div>
       <div class="thread-list" id="thread-list"></div>
     </aside>
     <main class="chat-panel">
