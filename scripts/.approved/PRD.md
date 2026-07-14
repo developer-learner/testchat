@@ -1,23 +1,27 @@
-PRD — testchat M13: Module Split (ratify file inventory)
+PRD — testchat M14: Rain Relocation (ratify)
 
 Milestone
 
-M13 ratifies the app.js module split that landed as a CEO-directed live-fix.
-The 995-line IIFE was split into three files sharing state via window.TC:
-- markdown.js (window.MD): pure text-to-HTML transforms
-- threads.js (window.Threads): thread CRUD, sidebar, bubble chrome
-- app.js: init, streaming, settings, status, themes, fullscreen, models
+M14 ratifies a CEO-directed live-fix (commits 33e93b0, 470ad0f): the digital
+rain backdrop was rewritten (delta-time animation, DPR support, Vercel-style
+overlay, measured column spacing) and relocated from the phosphor theme to
+the matrix theme. Phosphor keeps its scanlines, glow, and monospace look but
+no longer shows rain; matrix is now the sole animated theme.
 
-No behavior change. The frozen test suite exercises all functionality through
-the browser; the module boundaries are internal. This milestone adds the new
-files to the contracts file inventory with smoke_checks.
+The code is already correct and CEO-accepted live — every implementation
+file needs NO EDIT. This milestone updates the oracle to match.
 
 Acceptance Criteria
 
-All v26 criteria remain in force. No new ACs — the split is structural, not
-behavioral.
+- AC-54 (revised): WHEN the matrix theme is active, the system SHALL display
+  the full-screen digital-rain canvas backdrop; WHEN any other theme is
+  active, the backdrop SHALL be hidden.
 
-Out of Scope: new features, test changes.
+All other v27 criteria remain in force unchanged.
 
-CEO Demo Script: Already accepted — CEO verified the split in-browser on
-2026-07-12. This milestone is paperwork.
+Out of Scope: theme merging, new themes, phosphor terminal-window layout
+(queued as M11c), any behavior change.
+
+CEO Demo Script: Already accepted in live sessions on 2026-07-13 — CEO
+directed the relocation and verified rain-in-matrix / no-rain-in-phosphor
+in-browser. This milestone is paperwork.

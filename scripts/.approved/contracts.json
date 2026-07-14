@@ -1,5 +1,5 @@
 {
- "erd_version": 27,
+ "erd_version": 28,
  "files": [
   "src/static/style.css",
   "src/static/markdown.js",
@@ -299,7 +299,7 @@
   {
    "id": "ui:matrix-rain",
    "testid": "matrix-rain",
-   "description": "full-screen digital-rain canvas backdrop; present and visible ONLY while the phosphor theme is active"
+   "description": "full-screen digital-rain canvas backdrop; present and visible ONLY while the matrix theme is active"
   }
  ],
  "smoke_checks": {

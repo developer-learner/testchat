@@ -262,14 +262,14 @@ def test_theme_cycle_reaches_phosphor_and_wraps(page: Page, app_url: str) -> Non
     assert seen[-1] == start, f"ten clicks must wrap to the start: {start} -> {seen}"
 
 
-# AC-54 [M11a — rain backdrop only while phosphor is active]
-def test_rain_backdrop_only_in_phosphor(page: Page, app_url: str) -> None:
+# AC-54 [M14 ratify — rain backdrop only while matrix is active]
+def test_rain_backdrop_only_in_matrix(page: Page, app_url: str) -> None:
     page.goto(app_url)
     for _ in range(4):
-        if page.evaluate("document.documentElement.getAttribute('data-theme')") == "phosphor":
+        if page.evaluate("document.documentElement.getAttribute('data-theme')") == "matrix":
             break
         page.get_by_test_id("theme-toggle").click()
-    assert page.evaluate("document.documentElement.getAttribute('data-theme')") == "phosphor"
+    assert page.evaluate("document.documentElement.getAttribute('data-theme')") == "matrix"
     expect(page.get_by_test_id("matrix-rain")).to_be_visible()
     page.get_by_test_id("theme-toggle").click()
     expect(page.get_by_test_id("matrix-rain")).to_be_hidden()
