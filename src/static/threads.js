@@ -7,6 +7,8 @@ window.TC = {
   showThinking: false
 };
 
+let threadSearchQuery = '';
+
 window.Threads = (function () {
   var TC = window.TC;
 
@@ -110,6 +112,14 @@ window.Threads = (function () {
     threadListEl.innerHTML = '';
     for (var i = TC.threads.length - 1; i >= 0; i--) {
       (function (thread) {
+        if (threadSearchQuery) {
+          var titleMatch = thread.title.toLowerCase().includes(threadSearchQuery);
+          var msgMatch = false;
+          for (var m = 0; m < thread.messages.length; m++) {
+            if (thread.messages[m].content.toLowerCase().includes(threadSearchQuery)) { msgMatch = true; break; }
+          }
+          if (!titleMatch && !msgMatch) return;
+        }
         var item = document.createElement('div');
         item.className = 'thread-item' + (thread.id === TC.activeThreadId ? ' active' : '');
         item.setAttribute('data-testid', 'thread-item');
@@ -252,6 +262,13 @@ window.Threads = (function () {
       restoreThreadModelState(thread);
     }
     renderSidebar();
+  }
+
+  if (document.getElementById('thread-search')) {
+    document.getElementById('thread-search').addEventListener('input', function (e) {
+      threadSearchQuery = e.target.value.toLowerCase().trim();
+      renderSidebar();
+    });
   }
 
   return {
