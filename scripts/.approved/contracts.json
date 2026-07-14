@@ -1,5 +1,5 @@
 {
- "erd_version": 38,
+ "erd_version": 39,
  "files": [
   "src/static/style.css"
  ],
@@ -332,5 +332,7 @@
  "smoke_checks": {
   "src/static/style.css": "grep -q 'search-hit.current' src/static/style.css"
  },
- "no_edit_files": []
+ "no_edit_files": [
+  "src/static/style.css"
+ ]
 }

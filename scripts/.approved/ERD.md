@@ -1,4 +1,4 @@
-ERD — testchat M21: Distinct Current-Hit Emphasis (erd_version 38)
+ERD — testchat M21: Distinct Current-Hit Emphasis (erd_version 39)
 
 What changes v37 -> v38
 
@@ -7,7 +7,7 @@ contrast; nothing else moves.
 
 File inventory (M21 build) — DAG order
 
-1. src/static/style.css — EDIT. Replace the bodies of the two existing
+1. src/static/style.css — NO EDIT NEEDED (declared in contracts.no_edit_files, D-65): the repair and the contrast rules below already landed as a CEO-session live-fix after three coder strikes; this freeze ratifies them. Original edit spec, now describing the existing state: Replace the bodies of the two existing
    search-hit rules:
    a) mark.search-hit: background var(--toggle-on-bg), color inherit,
       border-radius 3px, padding 0 2px.
