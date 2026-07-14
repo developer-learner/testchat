@@ -1,72 +1,29 @@
 {
- "version": 1,
- "erd_version": 31,
- "tasks": [
-  {
-   "id": "T1",
-   "file": "src/static/index.html",
-   "depends_on": [],
-   "brief": "Implementation constraints: Edit src/static/index.html. Locate the <main class=\"chat-panel\"> element. Insert exactly one div as its FIRST child. Do not modify any other elements or attributes in the file. No JavaScript changes.\n\nBehavioral specification: Insert the following HTML block as the first child of <main class=\"chat-panel\">:\n<div data-testid=\"terminal-titlebar\">\n  <span class=\"tl-dot\"></span>\n  <span class=\"tl-dot\"></span>\n  <span class=\"tl-dot\"></span>\n  <span class=\"tl-title\">testchat \t local session</span>\n</div>\n\nAcceptance condition: The file contains a div with data-testid=\"terminal-titlebar\" as the immediate first child of <main class=\"chat-panel\">, containing three spans with class \"tl-dot\" followed by a span with class \"tl-title\" containing the exact text \"testchat \t local session\".",
-   "contracts": [],
-   "tests": []
-  },
-  {
-   "id": "T2",
-   "file": "src/static/style.css",
-   "depends_on": [],
-   "brief": "Implementation constraints: Edit src/static/style.css. Add CSS rules inside the existing theme area. Do not modify any existing rules. No JavaScript changes.\n\nBehavioral specification: 1. Add a base rule: .terminal-titlebar { display: none; }\n2. Under the existing :root[data-theme=\"phosphor\"] scope, add the following rules:\n   - .terminal-titlebar { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.9rem; background: oklch(0.12 0.02 155); border-bottom: 1px solid var(--border); }\n   - .tl-dot { width: 12px; height: 12px; border-radius: 50%; }\n   - .tl-dot:nth-child(1) { background: oklch(0.65 0.2 25); }\n   - .tl-dot:nth-child(2) { background: oklch(0.8 0.16 85); }\n   - .tl-dot:nth-child(3) { background: oklch(0.75 0.2 145); }\n   - .tl-title { font-size: 0.75rem; font-family: monospace; color: var(--muted-text); letter-spacing: 0.05em; }\n   - .chat-panel { margin: 1.25rem; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; box-shadow: 0 0 24px oklch(0.82 0.24 148 / 0.10); }\n\nAcceptance condition: The file contains the base .terminal-titlebar rule with display: none, and the phosphor-specific rules for .terminal-titlebar, .tl-dot, .tl-title, and .chat-panel as specified, nested under :root[data-theme=\"phosphor\"].",
-   "contracts": [],
-   "tests": []
-  },
-  {
-   "id": "T3",
-   "file": "src/static/markdown.js",
-   "depends_on": [],
-   "brief": "Implementation constraints: Edit src/static/markdown.js. No new files. No JavaScript changes to other files.\n\nBehavioral specification: No changes required for this milestone. The file is carried forward as-is.\n\nAcceptance condition: The file remains unchanged from the previous milestone.",
-   "contracts": [],
-   "tests": []
-  },
-  {
-   "id": "T4",
-   "file": "src/static/threads.js",
-   "depends_on": [],
-   "brief": "Implementation constraints: Edit src/static/threads.js. No new files. No JavaScript changes to other files.\n\nBehavioral specification: In renderSidebar(), iterate TC.threads from the last index down to 0 (instead of 0 up), so items append newest-first. Change nothing else: the per-item construction (title, actions, rename, delete, click-to-switch handlers) stays identical.\n\nAcceptance condition: The file contains a loop in renderSidebar() that iterates TC.threads in reverse order (last element first), so the newest thread appears at the top of the sidebar.",
-   "contracts": [],
-   "tests": []
-  },
-  {
-   "id": "T5",
-   "file": "src/static/app.js",
-   "depends_on": [
-    "T1",
-    "T2",
-    "T3",
-    "T4"
-   ],
-   "brief": "Implementation constraints: Edit src/static/app.js. No new files. No JavaScript changes to other files.\n\nBehavioral specification: No changes required for this milestone. The file is carried forward as-is.\n\nAcceptance condition: The file remains unchanged from the previous milestone.",
-   "contracts": [],
-   "tests": [
-    "tests/test_ui.py::test_think_toggle_reveals_and_hides_thinking",
-    "tests/test_ui.py::test_model_lock_is_per_thread",
-    "tests/test_ui.py::test_thread_switch_restores_history",
-    "tests/test_ui.py::test_history_sent_to_backend_has_no_think_markup",
-    "tests/test_ui.py::test_model_selection_survives_models_refresh",
-    "tests/test_ui.py::test_new_chat_creates_unlocked_empty_thread",
-    "tests/test_ui.py::test_thread_title_set_from_first_message",
-    "tests/test_ui.py::test_threads_survive_reload",
-    "tests/test_ui.py::test_failed_reply_keeps_user_message",
-    "tests/test_ui.py::test_thinking_placeholder_shows_then_clears",
-    "tests/test_ui.py::test_markdown_renders_readably",
-    "tests/test_ui.py::test_theme_switch_persists_across_reload",
-    "tests/test_ui.py::test_thread_rename_via_sidebar_control",
-    "tests/test_ui.py::test_thread_delete_removes_thread",
-    "tests/test_ui.py::test_stop_button_keeps_partial_reply",
-    "tests/test_ui.py::test_saved_system_prompt_reaches_requests",
-    "tests/test_ui.py::test_theme_cycle_reaches_phosphor_and_wraps",
-    "tests/test_ui.py::test_rain_backdrop_only_in_matrix",
-    "tests/test_ui.py::test_terminal_titlebar_only_in_phosphor",
-    "tests/test_ui.py::test_sidebar_lists_newest_thread_first"
-   ]
-  }
- ]
+  "version": 1,
+  "erd_version": 33,
+  "tasks": [
+    {
+      "id": "T1",
+      "file": "src/api/status.py",
+      "depends_on": [],
+      "brief": "Implementation constraints: Edit src/api/status.py. Add a new private function _loadable_gb() -> float. Use the existing subprocess patterns (subprocess.run with capture_output=True, check=False) already present in the file. Do not add new imports beyond what is already there. Do not modify any other functions or logic.\n\nBehavioral specification: Implement _loadable_gb() as follows:\n1. Run `vm_stat` via subprocess. Parse the output for lines starting with \"Free pages:\", \"Speculative pages:\", \"Purgeable pages:\", \"File-backed pages:\", and \"Wired down:\". Extract the integer page counts. If any line is missing or parsing fails, return 0.0.\n2. Calculate reclaimable_gb = (free + speculative + purgeable + file-backed) * 4096 / 1024**3.\n3. Run `sysctl -n iogpu.wired_limit_mb` via subprocess. If it returns a positive integer, cap_gb = value / 1024; otherwise cap_gb = 0.75 * total_gb (where total_gb is read from the existing hw.memsize read in the file).\n4. Calculate gpu_headroom_gb = cap_gb - wired_gb (where wired_gb is the value from the sysctl call, or 0 if the call failed).\n5. Result: max(0.0, min(reclaimable_gb, gpu_headroom_gb) - 4.0).\n6. Every failure path (subprocess error, parsing error, negative result) must return 0.0 and log via logger.exception, matching the file's existing error style.\n7. Modify get_status() to include \"loadable_gb\": round(_loadable_gb(), 1) in the returned dictionary. All existing fields remain unchanged.\n\nAcceptance condition: The file contains the _loadable_gb() function implementing the specified logic, and get_status() returns a dictionary containing the \"loadable_gb\" key with the rounded float value.",
+      "contracts": [],
+      "tests": [
+        "tests/test_status_api.py::test_status_returns_json_object",
+        "tests/test_status_api.py::test_status_is_repeatable",
+        "tests/test_status_api.py::test_status_reports_loadable_gb",
+        "tests/test_status_api.py::test_status_existing_fields_survive"
+      ]
+    },
+    {
+      "id": "T2",
+      "file": "src/static/app.js",
+      "depends_on": [
+        "T1"
+      ],
+      "brief": "Implementation constraints: Edit src/static/app.js. Locate the status-strip poll handler (the code that builds the 'RAM X/Y GB' string around the statusRam element). Do not modify any other code in the file.\n\nBehavioral specification: When d.loadable_gb is a number, append \" · ~\" + d.loadable_gb + \" GB loadable\" to the existing text string being built for the status strip. Nothing else in the file changes.\n\nAcceptance condition: The file contains logic that, when d.loadable_gb is a number, appends \" · ~\" + d.loadable_gb + \" GB loadable\" to the status strip text.",
+      "contracts": [],
+      "tests": []
+    }
+  ]
 }
