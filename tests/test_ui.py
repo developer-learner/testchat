@@ -336,3 +336,26 @@ def test_search_hits_highlighted_in_open_thread(page: Page, app_url: str) -> Non
     expect(hits.first).to_contain_text("wombat")
     box.fill("")
     expect(page.get_by_test_id("search-hit")).to_have_count(0)
+
+
+# AC-69/AC-70/AC-71 [M20 — search-hit counter and prev/next cycling]
+def test_search_hit_count_and_navigation(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    _send(page, "quokka alpha then quokka beta then quokka gamma")
+    _await_reply(page)
+    page.get_by_test_id("thread-search-input").fill("quokka")
+    items = page.get_by_test_id("thread-item")
+    expect(items).to_have_count(1)
+    items.first.click()
+    counter = page.get_by_test_id("search-hit-count")
+    expect(counter).to_be_visible()
+    expect(counter).to_have_text("1/3")
+    page.get_by_test_id("search-next-btn").click()
+    expect(counter).to_have_text("2/3")
+    page.get_by_test_id("search-next-btn").click()
+    page.get_by_test_id("search-next-btn").click()
+    expect(counter).to_have_text("1/3")
+    page.get_by_test_id("search-prev-btn").click()
+    expect(counter).to_have_text("3/3")
+    page.get_by_test_id("thread-search-input").fill("")
+    expect(counter).to_be_hidden()

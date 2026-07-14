@@ -1,6 +1,7 @@
 {
- "erd_version": 35,
+ "erd_version": 36,
  "files": [
+  "src/static/index.html",
   "src/static/style.css",
   "src/static/threads.js"
  ],
@@ -313,11 +314,27 @@
    "id": "ui:search-hit",
    "testid": "search-hit",
    "description": "highlight wrapper around each occurrence of the active sidebar search text inside an opened thread's messages; present ONLY while a search is active"
+  },
+  {
+   "id": "ui:search-hit-count",
+   "testid": "search-hit-count",
+   "description": "current-position/total counter for search hits in the open thread (e.g. '2/7'); visible only while a search is active"
+  },
+  {
+   "id": "ui:search-prev-btn",
+   "testid": "search-prev-btn",
+   "description": "moves the current-search-hit selection to the previous hit, wrapping from the first to the last"
+  },
+  {
+   "id": "ui:search-next-btn",
+   "testid": "search-next-btn",
+   "description": "moves the current-search-hit selection to the next hit, wrapping from the last back to the first"
   }
  ],
  "smoke_checks": {
-  "src/static/style.css": "grep -q 'search-hit' src/static/style.css",
-  "src/static/threads.js": "grep -q 'search-hit' src/static/threads.js && grep -q 'window.Threads' src/static/threads.js"
+  "src/static/index.html": "grep -q 'data-testid=\"search-hit-count\"' src/static/index.html && grep -q 'data-testid=\"search-next-btn\"' src/static/index.html",
+  "src/static/style.css": "grep -q 'search-hit-nav' src/static/style.css",
+  "src/static/threads.js": "grep -q 'search-hit-count' src/static/threads.js && grep -q 'window.Threads' src/static/threads.js"
  },
  "no_edit_files": []
 }

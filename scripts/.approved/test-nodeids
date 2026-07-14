@@ -105,3 +105,4 @@ tests/test_ui.py::test_terminal_titlebar_only_in_phosphor
 tests/test_ui.py::test_sidebar_lists_newest_thread_first
 tests/test_ui.py::test_sidebar_search_filters_threads
 tests/test_ui.py::test_search_hits_highlighted_in_open_thread
+tests/test_ui.py::test_search_hit_count_and_navigation
