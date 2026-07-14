@@ -1,6 +1,7 @@
 {
- "erd_version": 28,
+ "erd_version": 29,
  "files": [
+  "src/static/index.html",
   "src/static/style.css",
   "src/static/markdown.js",
   "src/static/threads.js",
@@ -300,11 +301,17 @@
    "id": "ui:matrix-rain",
    "testid": "matrix-rain",
    "description": "full-screen digital-rain canvas backdrop; present and visible ONLY while the matrix theme is active"
+  },
+  {
+   "id": "ui:terminal-titlebar",
+   "testid": "terminal-titlebar",
+   "description": "terminal window title bar (three window-control dots + session title) at the top of the chat panel; visible ONLY while the phosphor theme is active"
   }
  ],
  "smoke_checks": {
-  "src/static/style.css": "grep -q 'data-theme=\"graphite-forest\"' src/static/style.css && grep -q 'data-theme=\"neon\"' src/static/style.css",
+  "src/static/style.css": "grep -q 'data-theme=\"graphite-forest\"' src/static/style.css && grep -q 'data-theme=\"neon\"' src/static/style.css && grep -q 'terminal-titlebar' src/static/style.css",
   "src/static/markdown.js": "grep -q 'window.MD' src/static/markdown.js && grep -q 'renderThink' src/static/markdown.js",
-  "src/static/threads.js": "grep -q 'window.TC' src/static/threads.js && grep -q 'window.Threads' src/static/threads.js"
+  "src/static/threads.js": "grep -q 'window.TC' src/static/threads.js && grep -q 'window.Threads' src/static/threads.js",
+  "src/static/index.html": "grep -q 'data-testid=\"terminal-titlebar\"' src/static/index.html && grep -q 'tl-dot' src/static/index.html"
  }
 }

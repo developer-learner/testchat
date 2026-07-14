@@ -1,27 +1,36 @@
-PRD — testchat M14: Rain Relocation (ratify)
+PRD — testchat M15: Phosphor Terminal Window
 
 Milestone
 
-M14 ratifies a CEO-directed live-fix (commits 33e93b0, 470ad0f): the digital
-rain backdrop was rewritten (delta-time animation, DPR support, Vercel-style
-overlay, measured column spacing) and relocated from the phosphor theme to
-the matrix theme. Phosphor keeps its scanlines, glow, and monospace look but
-no longer shows rain; matrix is now the sole animated theme.
-
-The code is already correct and CEO-accepted live — every implementation
-file needs NO EDIT. This milestone updates the oracle to match.
+M15 gives the phosphor theme the CEO's reference look (Vercel terminal-chat
+screenshot): the chat panel reads as a floating terminal window — a title
+bar with three window-control dots and a session title, a bordered, softly
+glowing window frame, visually separated from the page behind it. Phosphor
+already carries the scanlines, glow, and monospace type (M11a); this adds
+the window chrome. All other themes are untouched — the chrome exists in
+the DOM permanently but is visible only under phosphor.
 
 Acceptance Criteria
 
-- AC-54 (revised): WHEN the matrix theme is active, the system SHALL display
-  the full-screen digital-rain canvas backdrop; WHEN any other theme is
-  active, the backdrop SHALL be hidden.
+- AC-56: WHEN the phosphor theme is active, the chat panel SHALL display a
+  terminal title bar (locked testid: terminal-titlebar) containing three
+  window-control dots and a static session title.
+- AC-57: WHEN any theme other than phosphor is active, the terminal title
+  bar SHALL be hidden.
+- AC-58 (manual-only: window framing is appearance, not DOM state — the
+  D-58 browser oracle cannot judge "looks like a floating terminal"): WHILE
+  phosphor is active, the chat panel SHALL appear as a bordered, rounded,
+  glow-shadowed window inset from the viewport edges. Verified in the CEO
+  demo.
 
-All other v27 criteria remain in force unchanged.
+Out of Scope: rain (matrix-only since v28), sidebar restyling, new themes,
+any behavior change to chat, threads, settings, or streaming.
 
-Out of Scope: theme merging, new themes, phosphor terminal-window layout
-(queued as M11c), any behavior change.
+CEO Demo Script
 
-CEO Demo Script: Already accepted in live sessions on 2026-07-13 — CEO
-directed the relocation and verified rain-in-matrix / no-rain-in-phosphor
-in-browser. This milestone is paperwork.
+1. Cycle themes to phosphor (>_ icon).
+2. Observe: chat panel is now a framed terminal window — title bar with
+   three dots top-left, title text, rounded corners, green glow edge,
+   visibly inset from the page background.
+3. Send a message; confirm chat behaves exactly as before inside the frame.
+4. Cycle to any other theme: chrome disappears, layout returns to full-bleed.

@@ -273,3 +273,16 @@ def test_rain_backdrop_only_in_matrix(page: Page, app_url: str) -> None:
     expect(page.get_by_test_id("matrix-rain")).to_be_visible()
     page.get_by_test_id("theme-toggle").click()
     expect(page.get_by_test_id("matrix-rain")).to_be_hidden()
+
+
+# AC-56/AC-57 [M15 — terminal title bar only while phosphor is active]
+def test_terminal_titlebar_only_in_phosphor(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    for _ in range(4):
+        if page.evaluate("document.documentElement.getAttribute('data-theme')") == "phosphor":
+            break
+        page.get_by_test_id("theme-toggle").click()
+    assert page.evaluate("document.documentElement.getAttribute('data-theme')") == "phosphor"
+    expect(page.get_by_test_id("terminal-titlebar")).to_be_visible()
+    page.get_by_test_id("theme-toggle").click()
+    expect(page.get_by_test_id("terminal-titlebar")).to_be_hidden()
