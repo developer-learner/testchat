@@ -1,43 +1,51 @@
-ERD — testchat M17: Loadable-Memory Counter (erd_version 33)
+ERD — testchat M18: Thread Search (erd_version 34)
 
-What changes v31 -> v32
+What changes v33 -> v34
 
-Two edits: status.py computes and returns loadable_gb; app.js renders it in
-the status strip. Additive — every existing field and behavior stays.
+Three edits, all frontend: index.html gains the search input; threads.js
+filters renderSidebar() by the query; style.css styles the box. No backend
+change, no new routes, no persistence change.
 
-File inventory (M17 build) — DAG order
+File inventory (M18 build) — DAG order
 
-1. src/api/status.py — EDIT. Add one helper and one payload field:
-   - New function _loadable_gb() -> float. Design (the formula IS the
-     spec, AC-61): parse the existing vm_stat output for these page
-     counts: "free", "speculative", "purgeable", "File-backed pages",
-     "wired down". reclaimable_gb = (free + speculative + purgeable +
-     file-backed) * page_size / 1024**3. Read the GPU wired cap via
-     `sysctl -n iogpu.wired_limit_mb` (2s timeout, same subprocess style
-     as the existing helpers): if it yields a positive integer, cap_gb =
-     that value / 1024; otherwise cap_gb = 0.75 * total_gb. gpu_headroom_gb
-     = cap_gb - wired_gb. Result: max(0.0, min(reclaimable_gb,
-     gpu_headroom_gb) - 4.0) — the 4 GB is a safety margin. Every failure
-     path returns 0.0 and logs via logger.exception, matching the file's
-     existing error style.
-   - get_status() gains "loadable_gb": round(<the helper>, 1). All
-     existing fields unchanged.
-   - Reuse the existing vm_stat/sysctl subprocess patterns already in this
-     file; total_gb comes from the existing hw.memsize read.
+1. src/static/index.html — EDIT. Inside the sidebar <aside>, directly ABOVE
+   the thread-list div, add one input element: type "text", id
+   "thread-search", class "thread-search", attribute
+   data-testid="thread-search-input", placeholder "Search threads...".
+   Nothing else changes.
 
-2. src/static/app.js — EDIT. In the status-strip poll handler (the code
-   that builds the 'RAM X/Y GB' string around the statusRam element):
-   when d.loadable_gb is a number, append " · ~" + d.loadable_gb +
-   " GB loadable" to the existing text. Nothing else in the file changes.
+2. src/static/style.css — EDIT. Style .thread-search using ONLY existing
+   theme variables so every theme works: display block, width calc(100% -
+   1.5rem), margin 0.4rem 0.75rem, padding 0.45rem 0.6rem, background
+   var(--input-bg), color var(--input-text), border 1px solid
+   var(--input-border), border-radius 6px, font inherit, font-size
+   0.85rem. Add a :focus rule: outline none, border-color var(--accent).
+   Nothing else changes.
 
-Contract ids per task: contracts = [] — an EMPTY list, for BOTH tasks.
+3. src/static/threads.js — EDIT (two tightly-related changes):
+   a) A module-level variable holding the current query, initialized to
+      the empty string, plus one statement wiring it: an 'input' event
+      listener on the element with id "thread-search" that lowercases and
+      trims the field's value into that variable and then calls
+      renderSidebar(). Guard the wiring so a missing element does not
+      throw (if the element is null, skip attaching).
+   b) In renderSidebar(), where it loops over TC.threads: when the query
+      variable is non-empty, skip any thread that does not match. A thread
+      matches when its title lowercased contains the query, OR any of its
+      messages' content lowercased contains the query. The existing
+      iteration order (newest first) and all per-item construction stay
+      exactly as they are.
+
+Contract ids per task: contracts = [] — an EMPTY list, for ALL tasks.
 NEVER invent module-style ids.
 
-Task dependencies: the src/static/app.js task MUST list the status.py task
-in its depends_on (final task).
+Task dependencies: the src/static/threads.js task MUST list both other
+tasks in its depends_on (it is the DAG's final task).
 
-Oracle Mapping: the new/updated API node-ids in tests/test_status_api.py
-map to the src/api/status.py task. ALL browser node-ids are carried
-forward — do NOT map them (the shell auto-assigns regression; D-57/D-64).
+Oracle Mapping: the new browser node-id
+tests/test_ui.py::test_sidebar_search_filters_threads maps to the
+src/static/threads.js task (final in DAG, D-64 — its dependency closure
+must contain the whole plan). All other browser node-ids are carried
+forward — do NOT map them (the shell auto-assigns regression, D-57).
 
 Test dependencies: none new.

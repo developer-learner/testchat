@@ -103,3 +103,4 @@ tests/test_ui.py::test_theme_cycle_reaches_phosphor_and_wraps
 tests/test_ui.py::test_rain_backdrop_only_in_matrix
 tests/test_ui.py::test_terminal_titlebar_only_in_phosphor
 tests/test_ui.py::test_sidebar_lists_newest_thread_first
+tests/test_ui.py::test_sidebar_search_filters_threads

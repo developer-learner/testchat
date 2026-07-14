@@ -1,41 +1,31 @@
-PRD — testchat M17: Loadable-Memory Counter
+PRD — testchat M18: Thread Search
 
 Milestone
 
-The status strip's RAM readout answers the wrong question. It shows a
-used/total figure that matches neither Activity Monitor nor the decision
-the CEO actually makes with it: "can I load another LLM without bringing
-the machine down?" macOS has no single 'used RAM' truth — file cache is
-reclaimable, and model weights are wired against a separate GPU limit — so
-M17 adds the number that answers the real question: an estimate of how many
-GB a NEW model load can safely claim, accounting for both reclaimable
-system memory and the Apple Silicon GPU wired-memory cap.
+The sidebar has grown past easy scanning. M18 adds a search box above the
+thread list: type text and the list filters, live, to threads whose title
+or message content contains it; clear the box and the full list returns.
+Plain case-insensitive text matching, entirely in the browser — no AI, no
+external service, no backend change.
 
 Acceptance Criteria
 
-- AC-60: WHEN /api/v1/status is requested, the payload SHALL include
-  loadable_gb: a non-negative number, no greater than ram_total_gb,
-  estimating how many GB a new model load can safely claim.
-- AC-61: WHERE loadable capacity is computed, the estimate SHALL be the
-  MINIMUM of (a) reclaimable system memory (free + speculative + purgeable
-  + file-backed pages) and (b) remaining GPU wired-memory headroom (the
-  iogpu wired limit, or 75% of total RAM when unset, minus pages already
-  wired), less a 4 GB safety margin, floored at zero.
-- AC-62: WHEN the status strip renders, it SHALL display the loadable
-  estimate (e.g. "~58 GB loadable") alongside the existing RAM figures.
-- Existing fields (ram_used_gb, ram_total_gb, nemotron_rss_gb,
-  nemotron_loaded) remain unchanged — additive change only.
+- AC-63: WHEN text is entered in the sidebar search box, the thread list
+  SHALL show only threads whose title or any message content contains that
+  text, case-insensitively.
+- AC-64: WHEN the search box is emptied, the thread list SHALL show all
+  threads again, in the existing newest-first order.
+- AC-65: WHILE a filter is active, thread ordering among matches SHALL
+  remain newest-first, and clicking a match SHALL open it exactly as an
+  unfiltered click does.
 
-Out of Scope: changing the ram_used_gb formula, per-model breakdowns,
-warnings/alerts, polling cadence changes.
+Out of Scope: semantic/AI search, result highlighting, ranking, backend
+search endpoints, searching across deleted threads.
 
 CEO Demo Script
 
-1. Open the app — status strip now reads like:
-   "RAM 64/128 GB · ~52 GB loadable".
-2. Sanity-check against reality: with the two qwens resident (~67 GB
-   wired), the loadable figure should be roughly the GPU headroom — small
-   enough to warn you off a 50 GB Nemotron load while they're resident.
-3. Unload a qwen in LM Studio, wait a poll (~5s) — loadable rises by
-   roughly that model's size.
-4. The old used/total figure still shows; nothing else moved.
+1. Open the app — a search box sits above the thread list.
+2. Type a word you remember from an old chat — the list shrinks to the
+   threads containing it, as you type.
+3. Click a result — the thread opens normally.
+4. Clear the box — the full list is back, newest on top.

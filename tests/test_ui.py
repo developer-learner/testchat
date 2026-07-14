@@ -300,3 +300,22 @@ def test_sidebar_lists_newest_thread_first(page: Page, app_url: str) -> None:
     expect(items).to_have_count(2)
     expect(items.nth(0)).to_contain_text("newer thread anchor")
     expect(items.nth(1)).to_contain_text("older thread anchor")
+
+
+# AC-63/AC-64/AC-65 [M18 — sidebar search filters the thread list]
+def test_sidebar_search_filters_threads(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    _send(page, "koala first thread anchor")
+    _await_reply(page)
+    page.get_by_test_id("new-thread-btn").click()
+    _send(page, "zebra second thread anchor")
+    _await_reply(page)
+    items = page.get_by_test_id("thread-item")
+    expect(items).to_have_count(2)
+    box = page.get_by_test_id("thread-search-input")
+    box.fill("koala")
+    expect(items).to_have_count(1)
+    expect(items.first).to_contain_text("koala first thread")
+    box.fill("")
+    expect(items).to_have_count(2)
+    expect(items.nth(0)).to_contain_text("zebra second thread")

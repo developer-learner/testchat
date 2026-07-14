@@ -1,8 +1,9 @@
 {
- "erd_version": 33,
+ "erd_version": 34,
  "files": [
-  "src/api/status.py",
-  "src/static/app.js"
+  "src/static/index.html",
+  "src/static/style.css",
+  "src/static/threads.js"
  ],
  "entry_points": [
   "src.main:app",
@@ -303,11 +304,17 @@
    "id": "ui:terminal-titlebar",
    "testid": "terminal-titlebar",
    "description": "terminal window title bar (three window-control dots + session title) at the top of the chat panel; visible ONLY while the phosphor theme is active"
+  },
+  {
+   "id": "ui:thread-search-input",
+   "testid": "thread-search-input",
+   "description": "sidebar search box; typing filters the thread list to threads whose title or message content contains the text (case-insensitive); empty restores the full list"
   }
  ],
  "smoke_checks": {
-  "src/static/app.js": "grep -q 'loadable' src/static/app.js && grep -q 'applyTheme' src/static/app.js",
-  "src/api/status.py": "grep -q 'loadable_gb' src/api/status.py && grep -q 'iogpu' src/api/status.py"
+  "src/static/index.html": "grep -q 'data-testid=\"thread-search-input\"' src/static/index.html",
+  "src/static/style.css": "grep -q 'thread-search' src/static/style.css",
+  "src/static/threads.js": "grep -q 'toLowerCase' src/static/threads.js && grep -q 'window.Threads' src/static/threads.js"
  },
  "no_edit_files": []
 }
