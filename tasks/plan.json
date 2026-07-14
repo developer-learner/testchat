@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "erd_version": 39,
+  "erd_version": 40,
   "tasks": [
     {
       "id": "T1",
-      "file": "src/static/style.css",
+      "file": "src/static/threads.js",
       "depends_on": [],
-      "brief": "Edit src/static/style.css. The tail of the file was corrupted by a previous botched edit (stray conflict markers and duplicated rules). Produce EXACTLY ONE edit block whose SEARCH section is the corrupted tail below, copied character-for-character, and whose REPLACE section is the clean version below. No other blocks, no other changes.\n\nSEARCH section (the corrupted tail, verbatim):\n    mark.search-hit {\n=======\n<<<<<<< SEARCH\n    mark.search-hit {\n      background: var(--accent);\n      color: var(--accent-contrast);\n      border-radius: 3px;\n      padding: 0 2px;\n    }\n=======\n    mark.search-hit {\n      background: var(--accent);\n      color: var(--accent-contrast);\n      border-radius: 3px;\n      padding: 0 2px;\n    }\n\n    .hit-nav-btn {\n      background: transparent;\n      border: 1px solid var(--sidebar-border);\n      color: var(--sidebar-text);\n      border-radius: 4px;\n      cursor: pointer;\n      padding: 0 0.35rem;\n      font-size: 0.7rem;\n    }\n    mark.search-hit.current {\n      background: var(--accent-hover);\n      outline: 2px solid var(--accent);\n    }\n      background: var(--accent);\n      color: var(--accent-contrast);\n      border-radius: 3px;\n      padding: 0 2px;\n    }\n\nREPLACE section (the clean tail):\n    mark.search-hit {\n      background: var(--toggle-on-bg);\n      color: inherit;\n      border-radius: 3px;\n      padding: 0 2px;\n    }\n\n    .hit-nav-btn {\n      background: transparent;\n      border: 1px solid var(--sidebar-border);\n      color: var(--sidebar-text);\n      border-radius: 4px;\n      cursor: pointer;\n      padding: 0 0.35rem;\n      font-size: 0.7rem;\n    }\n\n    mark.search-hit.current {\n      background: var(--accent);\n      color: var(--accent-contrast);\n      border-radius: 3px;\n      padding: 0 2px;\n      outline: 2px solid var(--accent-hover);\n    }\n\nAcceptance: the file ends with the three clean rules above; no '<<<<<<<' or '=======' or '>>>>>>>' lines remain anywhere in the file.",
+      "brief": "Implementation constraints: synchronous DOM manipulation, no async/await, no external libraries. Edit exactly one line in highlightSearchHits().\n\nBehavioral specification: In src/static/threads.js, locate the highlightSearchHits() function. Find the exact line:\n`hitElements = document.querySelectorAll('mark.search-hit');`\nReplace it with:\n`hitElements = Array.prototype.filter.call(document.querySelectorAll('mark.search-hit'), function (m) { return m.getClientRects().length > 0; });`\nNothing else in the file changes. hitElements is already used only via .length and index access, which arrays support.\n\nAcceptance: grep -q 'getClientRects' src/static/threads.js && grep -q 'window.Threads' src/static/threads.js",
       "contracts": [],
       "tests": []
     }
