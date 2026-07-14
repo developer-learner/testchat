@@ -1,30 +1,41 @@
-PRD — testchat M16: Newest Thread First
+PRD — testchat M17: Loadable-Memory Counter
 
 Milestone
 
-M16 flips the sidebar thread list to newest-first. Today the list renders in
-creation order, so the newest chat lands at the bottom — the CEO has to
-scroll past every old thread to find the conversation just started. Standard
-chat UX puts the newest thread on top; this milestone makes the sidebar do
-that. Storage order and persistence are untouched — only the rendered order
-changes.
+The status strip's RAM readout answers the wrong question. It shows a
+used/total figure that matches neither Activity Monitor nor the decision
+the CEO actually makes with it: "can I load another LLM without bringing
+the machine down?" macOS has no single 'used RAM' truth — file cache is
+reclaimable, and model weights are wired against a separate GPU limit — so
+M17 adds the number that answers the real question: an estimate of how many
+GB a NEW model load can safely claim, accounting for both reclaimable
+system memory and the Apple Silicon GPU wired-memory cap.
 
 Acceptance Criteria
 
-- AC-59: WHEN the sidebar renders, threads SHALL be listed newest-first
-  (reverse creation order); a newly created thread SHALL appear at the top.
-- Prior ACs touching sidebar positions (AC-29, AC-31, AC-41) are amended in
-  their tests to address the original thread at its new position; their
-  behavior claims (history restore, model lock, message retention) are
-  unchanged.
+- AC-60: WHEN /api/v1/status is requested, the payload SHALL include
+  loadable_gb: a non-negative number, no greater than ram_total_gb,
+  estimating how many GB a new model load can safely claim.
+- AC-61: WHERE loadable capacity is computed, the estimate SHALL be the
+  MINIMUM of (a) reclaimable system memory (free + speculative + purgeable
+  + file-backed pages) and (b) remaining GPU wired-memory headroom (the
+  iogpu wired limit, or 75% of total RAM when unset, minus pages already
+  wired), less a 4 GB safety margin, floored at zero.
+- AC-62: WHEN the status strip renders, it SHALL display the loadable
+  estimate (e.g. "~58 GB loadable") alongside the existing RAM figures.
+- Existing fields (ram_used_gb, ram_total_gb, nemotron_rss_gb,
+  nemotron_loaded) remain unchanged — additive change only.
 
-Out of Scope: sorting by last activity (creation order only, reversed),
-drag-to-reorder, pinning, any storage/persistence change.
+Out of Scope: changing the ram_used_gb formula, per-model breakdowns,
+warnings/alerts, polling cadence changes.
 
 CEO Demo Script
 
-1. Open the app — existing threads now list newest on top.
-2. Click "+ New Chat", send a message — the new thread sits at the TOP of
-   the sidebar, titled from your message.
-3. Click an older thread lower down — history loads exactly as before.
-4. Reload — order survives, newest still on top.
+1. Open the app — status strip now reads like:
+   "RAM 64/128 GB · ~52 GB loadable".
+2. Sanity-check against reality: with the two qwens resident (~67 GB
+   wired), the loadable figure should be roughly the GPU headroom — small
+   enough to warn you off a 50 GB Nemotron load while they're resident.
+3. Unload a qwen in LM Studio, wait a poll (~5s) — loadable rises by
+   roughly that model's size.
+4. The old used/total figure still shows; nothing else moved.

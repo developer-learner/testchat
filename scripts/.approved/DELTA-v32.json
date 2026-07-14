@@ -1,0 +1,10 @@
+{
+  "changed_contract_ids": [],
+  "changed_tests": [
+    "tests/test_status_api.py::test_status_existing_fields_survive",
+    "tests/test_status_api.py::test_status_is_repeatable",
+    "tests/test_status_api.py::test_status_reports_loadable_gb",
+    "tests/test_status_api.py::test_status_returns_json_object"
+  ],
+  "changed_files": []
+}

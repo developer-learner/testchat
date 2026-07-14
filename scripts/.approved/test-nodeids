@@ -70,6 +70,8 @@ tests/test_settings_api.py::test_env_var_precedence_empty_still_wins
 tests/test_settings_api.py::test_env_var_unset_falls_back_to_saved
 tests/test_status_api.py::test_status_returns_json_object
 tests/test_status_api.py::test_status_is_repeatable
+tests/test_status_api.py::test_status_reports_loadable_gb
+tests/test_status_api.py::test_status_existing_fields_survive
 tests/test_storage_service.py::test_roundtrip_preserves_snapshot
 tests/test_storage_service.py::test_missing_file_loads_empty
 tests/test_storage_service.py::test_corrupt_file_loads_empty
