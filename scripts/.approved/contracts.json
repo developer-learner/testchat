@@ -1,7 +1,7 @@
 {
- "erd_version": 39,
+ "erd_version": 40,
  "files": [
-  "src/static/style.css"
+  "src/static/threads.js"
  ],
  "entry_points": [
   "src.main:app",
@@ -330,9 +330,7 @@
   }
  ],
  "smoke_checks": {
-  "src/static/style.css": "grep -q 'search-hit.current' src/static/style.css"
+  "src/static/threads.js": "grep -q 'getClientRects' src/static/threads.js && grep -q 'window.Threads' src/static/threads.js"
  },
- "no_edit_files": [
-  "src/static/style.css"
- ]
+ "no_edit_files": []
 }

@@ -1,26 +1,25 @@
-ERD — testchat M21: Distinct Current-Hit Emphasis (erd_version 39)
+ERD — testchat M22: Count Only Visible Search Hits (erd_version 40)
 
-What changes v37 -> v38
+What changes v39 -> v40
 
-One file: style.css. The two search-hit rules are re-specified for
-contrast; nothing else moves.
+One file, one edit: threads.js filters the collected hit list to visible
+elements.
 
-File inventory (M21 build) — DAG order
+File inventory (M22 build) — DAG order
 
-1. src/static/style.css — NO EDIT NEEDED (declared in contracts.no_edit_files, D-65): the repair and the contrast rules below already landed as a CEO-session live-fix after three coder strikes; this freeze ratifies them. Original edit spec, now describing the existing state: Replace the bodies of the two existing
-   search-hit rules:
-   a) mark.search-hit: background var(--toggle-on-bg), color inherit,
-      border-radius 3px, padding 0 2px.
-   b) mark.search-hit.current: background var(--accent), color
-      var(--accent-contrast), border-radius 3px, padding 0 2px,
-      outline 2px solid var(--accent-hover).
-   The selectors stay exactly as they are; only their declarations change.
-   Nothing else in the file changes.
+1. src/static/threads.js — EDIT. In highlightSearchHits(), the collection
+   statement currently reads exactly:
+   `hitElements = document.querySelectorAll('mark.search-hit');`
+   Replace ONLY that statement with one that keeps just the visible marks:
+   `hitElements = Array.prototype.filter.call(document.querySelectorAll('mark.search-hit'), function (m) { return m.getClientRects().length > 0; });`
+   (An element hidden inside a collapsed thinking section has no client
+   rects.) Nothing else in the file changes — hitElements is already used
+   only via .length and index access, which arrays support.
 
 Contract ids per task: contracts = [] — an EMPTY list. NEVER invent
 module-style ids.
 
-Oracle Mapping: no new node-ids. ALL browser node-ids are carried
-forward — do NOT map them (the shell auto-assigns regression, D-57).
+Oracle Mapping: no new node-ids. ALL browser node-ids are carried forward —
+do NOT map them (the shell auto-assigns regression, D-57).
 
 Test dependencies: none new.

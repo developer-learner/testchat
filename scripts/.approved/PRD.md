@@ -1,28 +1,29 @@
-PRD — testchat M21: Distinct Current-Hit Emphasis
+PRD — testchat M22: Count Only Visible Search Hits
 
 Milestone
 
-CEO demo of M20 failed AC-72's intent: the "current" search hit is styled
-almost identically to every other hit (two sibling shades of the accent
-color), so arrow navigation reads as aimless scrolling — you cannot see
-WHICH match the pointer is on. M21 fixes the emphasis: ordinary hits get a
-subtle tint; the current hit gets a loud, high-contrast one. Appearance
-only — no behavior change.
+CEO demo found the search-hit navigation useless in real threads: matches
+inside the COLLAPSED thinking section of assistant replies are hidden text,
+but M19's highlighter counts them — in a real thread 75 of 82 hits were
+invisible, so the counter over-reports and the arrows mostly point at
+matches the CEO cannot see. M22: only visible matches participate in the
+count and navigation.
 
 Acceptance Criteria
 
-- AC-73 (manual-only: relative visual emphasis is appearance, D-58): WHILE
-  navigating hits, ordinary hits SHALL read as a subtle tint and the
-  current hit SHALL be unmistakably distinct in every theme. Verified in
-  the CEO demo.
-- All existing ACs unchanged; the existing frozen tests are the regression
-  oracle (mark.search-hit and the nav still exist and function).
+- AC-74: WHEN search hits are collected for the counter and navigation,
+  hits with no rendered geometry (hidden content, e.g. collapsed thinking
+  sections) SHALL be excluded; the counter total SHALL equal the number of
+  visible highlights, and the arrows SHALL cycle only through those.
+- All prior ACs unchanged.
 
-Out of Scope: behavior changes, markup changes, new testids.
+Out of Scope: re-counting when the thinking toggle changes visibility
+mid-thread (re-rendering already refreshes hits on the next search/thread
+action), highlighting behavior inside hidden regions (harmless).
 
 CEO Demo Script
 
-1. Search a word with 3+ hits; open the thread.
-2. All hits show a faint highlight; exactly one is boldly marked.
-3. Click ▼ repeatedly — the bold mark hops match to match as the counter
-   climbs; you always know where the loop is.
+1. Search a common word ("the"); open a thread whose reply has a thinking
+   section.
+2. The counter now shows a small, honest number (only what you can see).
+3. ▼ hops the bold mark visibly match to match — every click moves it.
