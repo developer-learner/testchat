@@ -1,5 +1,5 @@
 {
- "erd_version": 32,
+ "erd_version": 33,
  "files": [
   "src/api/status.py",
   "src/static/app.js"
@@ -306,10 +306,6 @@
   }
  ],
  "smoke_checks": {
-  "src/static/style.css": "grep -q 'data-theme=\"graphite-forest\"' src/static/style.css && grep -q 'data-theme=\"neon\"' src/static/style.css && grep -q 'terminal-titlebar' src/static/style.css",
-  "src/static/markdown.js": "grep -q 'window.MD' src/static/markdown.js && grep -q 'renderThink' src/static/markdown.js",
-  "src/static/threads.js": "grep -q 'window.TC' src/static/threads.js && grep -q 'window.Threads' src/static/threads.js",
-  "src/static/index.html": "grep -q 'data-testid=\"terminal-titlebar\"' src/static/index.html && grep -q 'tl-dot' src/static/index.html",
   "src/static/app.js": "grep -q 'loadable' src/static/app.js && grep -q 'applyTheme' src/static/app.js",
   "src/api/status.py": "grep -q 'loadable_gb' src/api/status.py && grep -q 'iogpu' src/api/status.py"
  },

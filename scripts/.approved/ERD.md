@@ -1,4 +1,4 @@
-ERD — testchat M17: Loadable-Memory Counter (erd_version 32)
+ERD — testchat M17: Loadable-Memory Counter (erd_version 33)
 
 What changes v31 -> v32
 
