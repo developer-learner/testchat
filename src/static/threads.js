@@ -9,6 +9,9 @@ window.TC = {
 
 let threadSearchQuery = '';
 
+let hitElements = [];
+let hitIndex = 0;
+
 window.Threads = (function () {
   var TC = window.TC;
 
@@ -87,7 +90,7 @@ window.Threads = (function () {
 
   function highlightSearchHits() {
     var container = el('chat-container');
-    if (!threadSearchQuery) return;
+    if (!threadSearchQuery) { hitElements = []; return; }
     var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
     var textNodes = [];
     var node;
@@ -130,9 +133,29 @@ window.Threads = (function () {
       }
       tn.parentNode.replaceChild(fragment, tn);
     }
-    if (firstMark) {
-      firstMark.scrollIntoView({ block: 'center' });
+    hitElements = document.querySelectorAll('mark.search-hit');
+    hitIndex = 0;
+    updateHitNav();
+  }
+
+  function updateHitNav() {
+    var nav = document.querySelector('.search-hit-nav');
+    if (!nav) return;
+    if (hitElements.length === 0) { nav.hidden = true; return; }
+    nav.hidden = false;
+    var countSpan = document.querySelector('[data-testid="search-hit-count"]');
+    if (countSpan) countSpan.textContent = hitElements.length ? (hitIndex + 1) + '/' + hitElements.length : '0/0';
+    hitElements.forEach(el => el.classList.remove('current'));
+    if (hitElements.length > 0) {
+      hitElements[hitIndex].classList.add('current');
+      hitElements[hitIndex].scrollIntoView({ block: 'center' });
     }
+  }
+
+  function gotoHit(delta) {
+    if (hitElements.length === 0) return;
+    hitIndex = (hitIndex + delta % hitElements.length + hitElements.length) % hitElements.length;
+    updateHitNav();
   }
 
   function pairSpan(thread, idx) {
@@ -329,6 +352,11 @@ window.Threads = (function () {
       highlightSearchHits();
     });
   }
+
+  var prevBtn = document.querySelector('[data-testid="search-prev-btn"]');
+  var nextBtn = document.querySelector('[data-testid="search-next-btn"]');
+  if (prevBtn) prevBtn.addEventListener('click', function () { gotoHit(-1); });
+  if (nextBtn) nextBtn.addEventListener('click', function () { gotoHit(1); });
 
   return {
     persistThreads: persistThreads,
