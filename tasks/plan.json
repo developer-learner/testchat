@@ -1,25 +1,34 @@
 {
   "version": 1,
-  "erd_version": 35,
+  "erd_version": 36,
   "tasks": [
     {
       "id": "T1",
-      "file": "src/static/style.css",
+      "file": "src/static/index.html",
       "depends_on": [],
-      "brief": "Implementation constraints: Edit src/static/style.css. Add exactly one CSS rule for the selector `mark.search-hit`. No other edits to this file. No JavaScript, no async, no external libraries.\n\nBehavioral specification: Add the following CSS rule exactly:\n\nmark.search-hit {\n  background: var(--accent);\n  color: var(--accent-contrast);\n  border-radius: 3px;\n  padding: 0 2px;\n}\n\nAcceptance condition: src/static/style.css contains the `mark.search-hit` rule with the exact properties listed above.",
+      "brief": "Implementation constraints: Edit src/static/index.html. Add exactly one div element directly BELOW the existing thread-search input. No other edits to this file. No JavaScript, no async, no external libraries.\n\nBehavioral specification: Insert the following HTML block exactly as shown, preserving indentation:\n\n<div class=\"search-hit-nav\" hidden>\n  <button type=\"button\" class=\"hit-nav-btn\" data-testid=\"search-prev-btn\">▲</button>\n  <span data-testid=\"search-hit-count\"></span>\n  <button type=\"button\" class=\"hit-nav-btn\" data-testid=\"search-next-btn\">▼</button>\n</div>\n\nAcceptance condition: src/static/index.html contains the div with class \"search-hit-nav\" and the three child elements with the exact data-testid attributes and text content specified.",
       "contracts": [],
       "tests": []
     },
     {
       "id": "T2",
+      "file": "src/static/style.css",
+      "depends_on": [],
+      "brief": "Implementation constraints: Edit src/static/style.css. Add exactly two CSS rule groups. No other edits to this file. No JavaScript, no async, no external libraries.\n\nBehavioral specification: Add the following CSS rules exactly:\n\n.search-hit-nav {\n  display: flex;\n  align-items: center;\n  gap: 0.4rem;\n  margin: 0.15rem 0.75rem 0.4rem;\n  color: var(--sidebar-text);\n  font-size: 0.75rem;\n}\n.search-hit-nav[hidden] {\n  display: none;\n}\n.hit-nav-btn {\n  background: transparent;\n  border: 1px solid var(--sidebar-border);\n  color: var(--sidebar-text);\n  border-radius: 4px;\n  cursor: pointer;\n  padding: 0 0.35rem;\n  font-size: 0.7rem;\n}\nmark.search-hit.current {\n  background: var(--accent-hover);\n  outline: 2px solid var(--accent);\n}\n\nAcceptance condition: src/static/style.css contains all four CSS rules with the exact selectors and properties listed above.",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T3",
       "file": "src/static/threads.js",
       "depends_on": [
-        "T1"
+        "T1",
+        "T2"
       ],
-      "brief": "Implementation constraints: Edit src/static/threads.js. Add a new module-level function `highlightSearchHits()`. Call it at the end of `switchThread()` (after `renderThreadMessages` and `restoreThreadModelState`). In the existing 'input' listener on the thread-search element, after the existing `renderSidebar()` call, re-render the open thread's messages exactly the way `deleteMessage()` does it (clear chat-container innerHTML, toggle show-thinking class, call `renderThreadMessages` on the active thread if one exists), then call `highlightSearchHits()`. No other edits to this file. No async, no external libraries.\n\nBehavioral specification: 1) New function `highlightSearchHits()`: operates on element with id \"chat-container\". If `threadSearchQuery` is empty, return immediately. Otherwise, walk ALL TEXT NODES under the container using `document.createTreeWalker` with `NodeFilter.SHOW_TEXT`. For each text node whose text contains `threadSearchQuery` case-insensitively, replace that text node with a sequence of nodes where every matched substring is wrapped in `<mark class=\"search-hit\" data-testid=\"search-hit\">` (preserve original casing; non-matching segments stay plain text nodes). Skip text nodes inside existing `<mark>` elements. After wrapping, if at least one mark was created, call `scrollIntoView` on the first one (block 'center'). 2) Call `highlightSearchHits()` at the end of `switchThread()`. 3) In the existing 'input' listener on the thread-search element, after `renderSidebar()`, re-render the open thread's messages (clear chat-container innerHTML, toggle show-thinking class, call `renderThreadMessages` on the active thread if one exists), then call `highlightSearchHits()`.\n\nAcceptance condition: Typing in the search input highlights matching text in the open thread's messages; empty input removes highlights.",
+      "brief": "Implementation constraints: Edit src/static/threads.js. Add two module-level variables (hitElements array init [], hitIndex number init 0). Modify highlightSearchHits() to clear hitElements on empty query, collect mark.search-hit elements into hitElements at end, set hitIndex to 0, call updateHitNav(). Remove existing scroll-to-first behavior. Add new functions updateHitNav() and gotoHit(delta). Add click listeners for search-prev-btn and search-next-btn. No other edits. No async, no external libraries.\n\nBehavioral specification: 1) Module-level: let hitElements = []; let hitIndex = 0; 2) In highlightSearchHits(): if query is empty, hitElements = []; return; at end, hitElements = document.querySelectorAll('mark.search-hit'); hitIndex = 0; updateHitNav(); remove existing scrollIntoView call. 3) updateHitNav(): const nav = document.querySelector('.search-hit-nav'); if (!nav) return; if (hitElements.length === 0) { nav.hidden = true; return; } nav.hidden = false; const countSpan = document.querySelector('[data-testid=\"search-hit-count\"]'); if (countSpan) countSpan.textContent = hitElements.length ? (hitIndex + 1) + '/' + hitElements.length : '0/0'; hitElements.forEach(el => el.classList.remove('current')); if (hitElements.length > 0) { hitElements[hitIndex].classList.add('current'); hitElements[hitIndex].scrollIntoView({ block: 'center' }); } 4) gotoHit(delta): if (hitElements.length === 0) return; hitIndex = (hitIndex + delta % hitElements.length + hitElements.length) % hitElements.length; updateHitNav(); 5) Wiring: next to existing thread-search listener, add: const prevBtn = document.querySelector('[data-testid=\"search-prev-btn\"]'); const nextBtn = document.querySelector('[data-testid=\"search-next-btn\"]'); if (prevBtn) prevBtn.addEventListener('click', () => gotoHit(-1)); if (nextBtn) nextBtn.addEventListener('click', () => gotoHit(1));\n\nAcceptance condition: Typing in search highlights hits; prev/next buttons cycle through hits with wrapping; count span shows current/total; current hit is highlighted with CSS class.",
       "contracts": [],
       "tests": [
-        "tests/test_ui.py::test_search_hits_highlighted_in_open_thread"
+        "tests/test_ui.py::test_search_hit_count_and_navigation"
       ]
     }
   ]
