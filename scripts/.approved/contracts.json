@@ -1,5 +1,5 @@
 {
- "erd_version": 30,
+ "erd_version": 31,
  "files": [
   "src/static/index.html",
   "src/static/style.css",
@@ -210,7 +210,7 @@
   {
    "id": "ui:thread-item",
    "testid": "thread-item",
-   "description": "each thread entry in the sidebar list (one per thread, sidebar order = creation order)"
+   "description": "each thread entry in the sidebar list (one per thread, newest thread first \u2014 reverse creation order)"
   },
   {
    "id": "ui:message-input",

@@ -1,36 +1,30 @@
-PRD — testchat M15: Phosphor Terminal Window
+PRD — testchat M16: Newest Thread First
 
 Milestone
 
-M15 gives the phosphor theme the CEO's reference look (Vercel terminal-chat
-screenshot): the chat panel reads as a floating terminal window — a title
-bar with three window-control dots and a session title, a bordered, softly
-glowing window frame, visually separated from the page behind it. Phosphor
-already carries the scanlines, glow, and monospace type (M11a); this adds
-the window chrome. All other themes are untouched — the chrome exists in
-the DOM permanently but is visible only under phosphor.
+M16 flips the sidebar thread list to newest-first. Today the list renders in
+creation order, so the newest chat lands at the bottom — the CEO has to
+scroll past every old thread to find the conversation just started. Standard
+chat UX puts the newest thread on top; this milestone makes the sidebar do
+that. Storage order and persistence are untouched — only the rendered order
+changes.
 
 Acceptance Criteria
 
-- AC-56: WHEN the phosphor theme is active, the chat panel SHALL display a
-  terminal title bar (locked testid: terminal-titlebar) containing three
-  window-control dots and a static session title.
-- AC-57: WHEN any theme other than phosphor is active, the terminal title
-  bar SHALL be hidden.
-- AC-58 (manual-only: window framing is appearance, not DOM state — the
-  D-58 browser oracle cannot judge "looks like a floating terminal"): WHILE
-  phosphor is active, the chat panel SHALL appear as a bordered, rounded,
-  glow-shadowed window inset from the viewport edges. Verified in the CEO
-  demo.
+- AC-59: WHEN the sidebar renders, threads SHALL be listed newest-first
+  (reverse creation order); a newly created thread SHALL appear at the top.
+- Prior ACs touching sidebar positions (AC-29, AC-31, AC-41) are amended in
+  their tests to address the original thread at its new position; their
+  behavior claims (history restore, model lock, message retention) are
+  unchanged.
 
-Out of Scope: rain (matrix-only since v28), sidebar restyling, new themes,
-any behavior change to chat, threads, settings, or streaming.
+Out of Scope: sorting by last activity (creation order only, reversed),
+drag-to-reorder, pinning, any storage/persistence change.
 
 CEO Demo Script
 
-1. Cycle themes to phosphor (>_ icon).
-2. Observe: chat panel is now a framed terminal window — title bar with
-   three dots top-left, title text, rounded corners, green glow edge,
-   visibly inset from the page background.
-3. Send a message; confirm chat behaves exactly as before inside the frame.
-4. Cycle to any other theme: chrome disappears, layout returns to full-bleed.
+1. Open the app — existing threads now list newest on top.
+2. Click "+ New Chat", send a message — the new thread sits at the TOP of
+   the sidebar, titled from your message.
+3. Click an older thread lower down — history loads exactly as before.
+4. Reload — order survives, newest still on top.

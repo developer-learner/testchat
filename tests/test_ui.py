@@ -44,7 +44,7 @@ def test_model_lock_is_per_thread(page: Page, app_url: str) -> None:
     _await_reply(page)
     page.get_by_test_id("new-thread-btn").click()
     expect(select).to_be_enabled()
-    page.get_by_test_id("thread-item").nth(0).click()
+    page.get_by_test_id("thread-item").nth(1).click()
     expect(select).to_be_disabled()
 
 
@@ -57,7 +57,7 @@ def test_thread_switch_restores_history(page: Page, app_url: str) -> None:
     expect(page.get_by_test_id("msg-user")).to_have_count(0)
     _send(page, "second thread message")
     _await_reply(page)
-    page.get_by_test_id("thread-item").nth(0).click()
+    page.get_by_test_id("thread-item").nth(1).click()
     users = page.get_by_test_id("msg-user")
     expect(users).to_have_count(1)
     expect(users.first).to_contain_text("first thread message")
@@ -144,7 +144,7 @@ def test_failed_reply_keeps_user_message(page: Page, app_url: str) -> None:
     expect(users.first).to_contain_text("this must not vanish")
     # and it survives a thread switch (i.e. it entered stored history)
     page.get_by_test_id("new-thread-btn").click()
-    page.get_by_test_id("thread-item").nth(0).click()
+    page.get_by_test_id("thread-item").nth(1).click()
     expect(page.get_by_test_id("msg-user")).to_have_count(1)
     expect(page.get_by_test_id("msg-user").first).to_contain_text("this must not vanish")
 
@@ -286,3 +286,17 @@ def test_terminal_titlebar_only_in_phosphor(page: Page, app_url: str) -> None:
     expect(page.get_by_test_id("terminal-titlebar")).to_be_visible()
     page.get_by_test_id("theme-toggle").click()
     expect(page.get_by_test_id("terminal-titlebar")).to_be_hidden()
+
+
+# AC-59 [M16 — newest thread on top]
+def test_sidebar_lists_newest_thread_first(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    _send(page, "older thread anchor")
+    _await_reply(page)
+    page.get_by_test_id("new-thread-btn").click()
+    _send(page, "newer thread anchor")
+    _await_reply(page)
+    items = page.get_by_test_id("thread-item")
+    expect(items).to_have_count(2)
+    expect(items.nth(0)).to_contain_text("newer thread anchor")
+    expect(items.nth(1)).to_contain_text("older thread anchor")
