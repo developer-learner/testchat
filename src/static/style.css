@@ -1391,7 +1391,48 @@
       border-color: var(--accent);
     }
 
+    .search-hit-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin: 0.15rem 0.75rem 0.4rem;
+      color: var(--sidebar-text);
+      font-size: 0.75rem;
+    }
+    .search-hit-nav[hidden] {
+      display: none;
+    }
+
     mark.search-hit {
+=======
+<<<<<<< SEARCH
+    mark.search-hit {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      border-radius: 3px;
+      padding: 0 2px;
+    }
+=======
+    mark.search-hit {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      border-radius: 3px;
+      padding: 0 2px;
+    }
+
+    .hit-nav-btn {
+      background: transparent;
+      border: 1px solid var(--sidebar-border);
+      color: var(--sidebar-text);
+      border-radius: 4px;
+      cursor: pointer;
+      padding: 0 0.35rem;
+      font-size: 0.7rem;
+    }
+    mark.search-hit.current {
+      background: var(--accent-hover);
+      outline: 2px solid var(--accent);
+    }
       background: var(--accent);
       color: var(--accent-contrast);
       border-radius: 3px;
