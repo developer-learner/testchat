@@ -1,12 +1,12 @@
 {
  "version": 1,
- "erd_version": 30,
+ "erd_version": 31,
  "tasks": [
   {
    "id": "T1",
    "file": "src/static/index.html",
    "depends_on": [],
-   "brief": "Implementation constraints: Edit src/static/index.html. Locate the <main class=\"chat-panel\"> element. Insert exactly one div as its FIRST child. Do not modify any other elements or attributes in the file. No JavaScript changes.\n\nBehavioral specification: Insert the following HTML block as the first child of <main class=\"chat-panel\">:\n<div data-testid=\"terminal-titlebar\">\n  <span class=\"tl-dot\"></span>\n  <span class=\"tl-dot\"></span>\n  <span class=\"tl-dot\"></span>\n  <span class=\"tl-title\">testchat \u2014 local session</span>\n</div>\n\nAcceptance condition: The file contains a div with data-testid=\"terminal-titlebar\" as the immediate first child of <main class=\"chat-panel\">, containing three spans with class \"tl-dot\" followed by a span with class \"tl-title\" containing the exact text \"testchat \u2014 local session\".",
+   "brief": "Implementation constraints: Edit src/static/index.html. Locate the <main class=\"chat-panel\"> element. Insert exactly one div as its FIRST child. Do not modify any other elements or attributes in the file. No JavaScript changes.\n\nBehavioral specification: Insert the following HTML block as the first child of <main class=\"chat-panel\">:\n<div data-testid=\"terminal-titlebar\">\n  <span class=\"tl-dot\"></span>\n  <span class=\"tl-dot\"></span>\n  <span class=\"tl-dot\"></span>\n  <span class=\"tl-title\">testchat \t local session</span>\n</div>\n\nAcceptance condition: The file contains a div with data-testid=\"terminal-titlebar\" as the immediate first child of <main class=\"chat-panel\">, containing three spans with class \"tl-dot\" followed by a span with class \"tl-title\" containing the exact text \"testchat \t local session\".",
    "contracts": [],
    "tests": []
   },
@@ -30,18 +30,42 @@
    "id": "T4",
    "file": "src/static/threads.js",
    "depends_on": [],
-   "brief": "Implementation constraints: Edit src/static/threads.js. No new files. No JavaScript changes to other files.\n\nBehavioral specification: No changes required for this milestone. The file is carried forward as-is.\n\nAcceptance condition: The file remains unchanged from the previous milestone.",
+   "brief": "Implementation constraints: Edit src/static/threads.js. No new files. No JavaScript changes to other files.\n\nBehavioral specification: In renderSidebar(), iterate TC.threads from the last index down to 0 (instead of 0 up), so items append newest-first. Change nothing else: the per-item construction (title, actions, rename, delete, click-to-switch handlers) stays identical.\n\nAcceptance condition: The file contains a loop in renderSidebar() that iterates TC.threads in reverse order (last element first), so the newest thread appears at the top of the sidebar.",
    "contracts": [],
    "tests": []
   },
   {
    "id": "T5",
    "file": "src/static/app.js",
-   "depends_on": [],
+   "depends_on": [
+    "T1",
+    "T2",
+    "T3",
+    "T4"
+   ],
    "brief": "Implementation constraints: Edit src/static/app.js. No new files. No JavaScript changes to other files.\n\nBehavioral specification: No changes required for this milestone. The file is carried forward as-is.\n\nAcceptance condition: The file remains unchanged from the previous milestone.",
    "contracts": [],
    "tests": [
-    "tests/test_ui.py::test_terminal_titlebar_only_in_phosphor"
+    "tests/test_ui.py::test_think_toggle_reveals_and_hides_thinking",
+    "tests/test_ui.py::test_model_lock_is_per_thread",
+    "tests/test_ui.py::test_thread_switch_restores_history",
+    "tests/test_ui.py::test_history_sent_to_backend_has_no_think_markup",
+    "tests/test_ui.py::test_model_selection_survives_models_refresh",
+    "tests/test_ui.py::test_new_chat_creates_unlocked_empty_thread",
+    "tests/test_ui.py::test_thread_title_set_from_first_message",
+    "tests/test_ui.py::test_threads_survive_reload",
+    "tests/test_ui.py::test_failed_reply_keeps_user_message",
+    "tests/test_ui.py::test_thinking_placeholder_shows_then_clears",
+    "tests/test_ui.py::test_markdown_renders_readably",
+    "tests/test_ui.py::test_theme_switch_persists_across_reload",
+    "tests/test_ui.py::test_thread_rename_via_sidebar_control",
+    "tests/test_ui.py::test_thread_delete_removes_thread",
+    "tests/test_ui.py::test_stop_button_keeps_partial_reply",
+    "tests/test_ui.py::test_saved_system_prompt_reaches_requests",
+    "tests/test_ui.py::test_theme_cycle_reaches_phosphor_and_wraps",
+    "tests/test_ui.py::test_rain_backdrop_only_in_matrix",
+    "tests/test_ui.py::test_terminal_titlebar_only_in_phosphor",
+    "tests/test_ui.py::test_sidebar_lists_newest_thread_first"
    ]
   }
  ]
