@@ -99,3 +99,7 @@ Full frozen TPM suite green against spec v30. Feature built and validated.
 ## Results
 
 Full frozen TPM suite green against spec v31. Feature built and validated.
+
+## Results
+
+Full frozen TPM suite green against spec v33. Feature built and validated.
