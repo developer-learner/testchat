@@ -95,3 +95,7 @@ Then: branch merged to main; entry moved to `BACKLOG.md` completed table
 ## Results
 
 Full frozen TPM suite green against spec v30. Feature built and validated.
+
+## Results
+
+Full frozen TPM suite green against spec v31. Feature built and validated.
