@@ -72,6 +72,10 @@ def _nemotron_rss_gb() -> float:
         return 0.0
 
 
+def _loadable_gb() -> float:
+    ...
+
+
 @router.get("/api/v1/status")
 def get_status() -> dict:
     used_gb, total_gb = _ram_totals()
@@ -81,4 +85,5 @@ def get_status() -> dict:
         "nemotron_rss_gb": round(_nemotron_rss_gb(), 1) if nemotron_loaded else 0.0,
         "ram_used_gb": round(used_gb, 1),
         "ram_total_gb": round(total_gb, 1),
+        "loadable_gb": round(_loadable_gb(), 1),
     }
