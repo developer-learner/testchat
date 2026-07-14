@@ -133,7 +133,7 @@ window.Threads = (function () {
       }
       tn.parentNode.replaceChild(fragment, tn);
     }
-    hitElements = document.querySelectorAll('mark.search-hit');
+    hitElements = Array.prototype.filter.call(document.querySelectorAll('mark.search-hit'), function (m) { return m.getClientRects().length > 0; });
     hitIndex = 0;
     updateHitNav();
   }
