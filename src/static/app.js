@@ -121,6 +121,9 @@
             if (d.nemotron_loaded && d.nemotron_rss_gb) {
               ram += ' · nemotron ' + d.nemotron_rss_gb + ' GB';
             }
+            if (typeof d.loadable_gb === 'number') {
+              ram += ' · ~' + d.loadable_gb + ' GB loadable';
+            }
             statusRam.textContent = ram;
           })
           .catch(function () { statusRam.textContent = ''; });
