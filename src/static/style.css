@@ -1372,3 +1372,21 @@
     :root[data-theme="graphite-forest"] .chat-bubble code {
       color: oklch(0.70 0.06 200);
     }
+
+    .thread-search {
+      display: block;
+      width: calc(100% - 1.5rem);
+      margin: 0.4rem 0.75rem;
+      padding: 0.45rem 0.6rem;
+      background: var(--input-bg);
+      color: var(--input-text);
+      border: 1px solid var(--input-border);
+      border-radius: 6px;
+      font: inherit;
+      font-size: 0.85rem;
+    }
+
+    .thread-search:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
