@@ -1390,3 +1390,10 @@
       outline: none;
       border-color: var(--accent);
     }
+
+    mark.search-hit {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      border-radius: 3px;
+      padding: 0 2px;
+    }
