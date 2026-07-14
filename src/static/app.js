@@ -26,6 +26,10 @@
         } else {
           if (typeof window.MatrixRain !== 'undefined') { window.MatrixRain.stop(); }
         }
+        var titlebar = document.querySelector('[data-testid="terminal-titlebar"]');
+        if (titlebar) {
+          titlebar.style.display = theme === 'phosphor' ? 'flex' : 'none';
+        }
         themeToggle.textContent = THEME_ICONS[theme];
         try { localStorage.setItem('testchat-theme', theme); } catch (e) { /* private mode */ }
       }
