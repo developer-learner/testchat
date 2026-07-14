@@ -1,35 +1,35 @@
 {
-  "version": 1,
-  "erd_version": 37,
-  "tasks": [
-    {
-      "id": "T1",
-      "file": "src/static/index.html",
-      "depends_on": [],
-      "brief": "Implementation constraints: Edit src/static/index.html. Add exactly one div element directly BELOW the existing thread-search input. No other edits to this file. No JavaScript, no async, no external libraries.\n\nBehavioral specification: Insert the following HTML block exactly as shown, preserving indentation:\n\n<div class=\"search-hit-nav\" hidden>\n  <button type=\"button\" class=\"hit-nav-btn\" data-testid=\"search-prev-btn\">▲</button>\n  <span data-testid=\"search-hit-count\"></span>\n  <button type=\"button\" class=\"hit-nav-btn\" data-testid=\"search-next-btn\">▼</button>\n</div>\n\nAcceptance condition: src/static/index.html contains the div with class \"search-hit-nav\" and the three child elements with the exact data-testid attributes and text content specified.",
-      "contracts": [],
-      "tests": []
-    },
-    {
-      "id": "T2",
-      "file": "src/static/style.css",
-      "depends_on": [],
-      "brief": "Implementation constraints: Edit src/static/style.css. Add exactly two CSS rule groups. No other edits to this file. No JavaScript, no async, no external libraries.\n\nBehavioral specification: Add the following CSS rules exactly:\n\n.search-hit-nav {\n  display: flex;\n  align-items: center;\n  gap: 0.4rem;\n  margin: 0.15rem 0.75rem 0.4rem;\n  color: var(--sidebar-text);\n  font-size: 0.75rem;\n}\n.search-hit-nav[hidden] {\n  display: none;\n}\n.hit-nav-btn {\n  background: transparent;\n  border: 1px solid var(--sidebar-border);\n  color: var(--sidebar-text);\n  border-radius: 4px;\n  cursor: pointer;\n  padding: 0 0.35rem;\n  font-size: 0.7rem;\n}\nmark.search-hit.current {\n  background: var(--accent-hover);\n  outline: 2px solid var(--accent);\n}\n\nAcceptance condition: src/static/style.css contains all four CSS rules with the exact selectors and properties listed above.",
-      "contracts": [],
-      "tests": []
-    },
-    {
-      "id": "T3",
-      "file": "src/static/threads.js",
-      "depends_on": [
-        "T1",
-        "T2"
-      ],
-      "brief": "Implementation constraints: Edit src/static/threads.js. Add two module-level variables (hitElements array init [], hitIndex number init 0). Modify highlightSearchHits() to clear hitElements on empty query, collect mark.search-hit elements into hitElements at end, set hitIndex to 0, call updateHitNav(). Remove existing scroll-to-first behavior. Add new functions updateHitNav() and gotoHit(delta). Add click listeners for search-prev-btn and search-next-btn. No other edits. No async, no external libraries.\n\nBehavioral specification: 1) Module-level: let hitElements = []; let hitIndex = 0; 2) In highlightSearchHits(): if query is empty, hitElements = []; return; at end, hitElements = document.querySelectorAll('mark.search-hit'); hitIndex = 0; updateHitNav(); remove existing scrollIntoView call. 3) updateHitNav(): const nav = document.querySelector('.search-hit-nav'); if (!nav) return; if (hitElements.length === 0) { nav.hidden = true; return; } nav.hidden = false; const countSpan = document.querySelector('[data-testid=\"search-hit-count\"]'); if (countSpan) countSpan.textContent = hitElements.length ? (hitIndex + 1) + '/' + hitElements.length : '0/0'; hitElements.forEach(el => el.classList.remove('current')); if (hitElements.length > 0) { hitElements[hitIndex].classList.add('current'); hitElements[hitIndex].scrollIntoView({ block: 'center' }); } 4) gotoHit(delta): if (hitElements.length === 0) return; hitIndex = (hitIndex + delta % hitElements.length + hitElements.length) % hitElements.length; updateHitNav(); 5) Wiring: next to existing thread-search listener, add: const prevBtn = document.querySelector('[data-testid=\"search-prev-btn\"]'); const nextBtn = document.querySelector('[data-testid=\"search-next-btn\"]'); if (prevBtn) prevBtn.addEventListener('click', () => gotoHit(-1)); if (nextBtn) nextBtn.addEventListener('click', () => gotoHit(1));\n\nAcceptance condition: Typing in search highlights hits; prev/next buttons cycle through hits with wrapping; count span shows current/total; current hit is highlighted with CSS class.",
-      "contracts": [],
-      "tests": [
-        "tests/test_ui.py::test_search_hit_count_and_navigation"
-      ]
-    }
-  ]
+ "version": 1,
+ "erd_version": 37,
+ "tasks": [
+  {
+   "id": "T1",
+   "file": "src/static/index.html",
+   "depends_on": [],
+   "brief": "Implementation constraints: Edit src/static/index.html. Add exactly one div element directly BELOW the existing thread-search input. No other edits to this file. No JavaScript, no async, no external libraries.\n\nBehavioral specification: Insert the following HTML block exactly as shown, preserving indentation:\n\n<div class=\"search-hit-nav\" hidden>\n  <button type=\"button\" class=\"hit-nav-btn\" data-testid=\"search-prev-btn\">\u25b2</button>\n  <span data-testid=\"search-hit-count\"></span>\n  <button type=\"button\" class=\"hit-nav-btn\" data-testid=\"search-next-btn\">\u25bc</button>\n</div>\n\nAcceptance condition: src/static/index.html contains the div with class \"search-hit-nav\" and the three child elements with the exact data-testid attributes and text content specified.",
+   "contracts": [],
+   "tests": []
+  },
+  {
+   "id": "T2",
+   "file": "src/static/style.css",
+   "depends_on": [],
+   "brief": "Implementation constraints: Edit src/static/style.css. Add exactly two CSS rule groups. No other edits to this file. No JavaScript, no async, no external libraries.\n\nBehavioral specification: Add the following CSS rules exactly:\n\n.search-hit-nav {\n  display: flex;\n  align-items: center;\n  gap: 0.4rem;\n  margin: 0.15rem 0.75rem 0.4rem;\n  color: var(--sidebar-text);\n  font-size: 0.75rem;\n}\n.search-hit-nav[hidden] {\n  display: none;\n}\n.hit-nav-btn {\n  background: transparent;\n  border: 1px solid var(--sidebar-border);\n  color: var(--sidebar-text);\n  border-radius: 4px;\n  cursor: pointer;\n  padding: 0 0.35rem;\n  font-size: 0.7rem;\n}\nmark.search-hit.current {\n  background: var(--accent-hover);\n  outline: 2px solid var(--accent);\n}\n\nAcceptance condition: src/static/style.css contains all four CSS rules with the exact selectors and properties listed above.",
+   "contracts": [],
+   "tests": []
+  },
+  {
+   "id": "T3",
+   "file": "src/static/threads.js",
+   "depends_on": [
+    "T1",
+    "T2"
+   ],
+   "brief": "Edit src/static/threads.js. The file already implements search-hit navigation and needs exactly ONE small change in highlightSearchHits(): the empty-query early-return currently reads\n`if (!threadSearchQuery) { hitElements = []; return; }`\nand must ALSO call updateHitNav() before returning, so the hit-nav row hides when the search box is emptied. Change it to\n`if (!threadSearchQuery) { hitElements = []; updateHitNav(); return; }`\nMake no other change anywhere in the file.\nAcceptance: emptying the search box hides the .search-hit-nav row (updateHitNav sets nav.hidden = true when hitElements is empty).",
+   "contracts": [],
+   "tests": [
+    "tests/test_ui.py::test_search_hit_count_and_navigation"
+   ]
+  }
+ ]
 }
