@@ -85,6 +85,56 @@ window.Threads = (function () {
     container.scrollTop = container.scrollHeight;
   }
 
+  function highlightSearchHits() {
+    var container = el('chat-container');
+    if (!threadSearchQuery) return;
+    var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+    var textNodes = [];
+    var node;
+    while ((node = walker.nextNode())) {
+      textNodes.push(node);
+    }
+    var firstMark = null;
+    for (var i = 0; i < textNodes.length; i++) {
+      var tn = textNodes[i];
+      if (!tn.parentNode) continue;
+      var p = tn.parentNode;
+      var insideMark = false;
+      while (p && p !== container) {
+        if (p.tagName === 'MARK') { insideMark = true; break; }
+        p = p.parentNode;
+      }
+      if (insideMark) continue;
+      var text = tn.textContent;
+      var lowerText = text.toLowerCase();
+      var query = threadSearchQuery;
+      var idx = lowerText.indexOf(query);
+      if (idx === -1) continue;
+      var fragment = document.createDocumentFragment();
+      var lastIndex = 0;
+      while (idx !== -1) {
+        if (idx > lastIndex) {
+          fragment.appendChild(document.createTextNode(text.substring(lastIndex, idx)));
+        }
+        var mark = document.createElement('mark');
+        mark.className = 'search-hit';
+        mark.setAttribute('data-testid', 'search-hit');
+        mark.textContent = text.substring(idx, idx + query.length);
+        fragment.appendChild(mark);
+        if (!firstMark) firstMark = mark;
+        lastIndex = idx + query.length;
+        idx = lowerText.indexOf(query, lastIndex);
+      }
+      if (lastIndex < text.length) {
+        fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
+      }
+      tn.parentNode.replaceChild(fragment, tn);
+    }
+    if (firstMark) {
+      firstMark.scrollIntoView({ block: 'center' });
+    }
+  }
+
   function pairSpan(thread, idx) {
     var msg = thread.messages[idx];
     if (msg.role === 'user' && idx + 1 < thread.messages.length && thread.messages[idx + 1].role === 'assistant') return 2;
@@ -260,6 +310,7 @@ window.Threads = (function () {
     if (thread) {
       renderThreadMessages(thread);
       restoreThreadModelState(thread);
+      highlightSearchHits();
     }
     renderSidebar();
   }
@@ -268,6 +319,14 @@ window.Threads = (function () {
     document.getElementById('thread-search').addEventListener('input', function (e) {
       threadSearchQuery = e.target.value.toLowerCase().trim();
       renderSidebar();
+      var container = el('chat-container');
+      container.innerHTML = '';
+      container.classList.toggle('show-thinking', TC.showThinking);
+      var thread = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
+      if (thread) {
+        renderThreadMessages(thread);
+      }
+      highlightSearchHits();
     });
   }
 
