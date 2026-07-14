@@ -3,4 +3,4 @@
 # scripts/update-template.sh --stamp retrofits a child created without it.
 # In the template repository itself, ref stays UNSTAMPED and drift checks skip.
 repo=developer-learner/sw-dev-blueprint
-ref=54a3260a40601c3498eae1429219a2ae0908bad3
+ref=794731b7e6f963e20bbb2fa73e6d4d99eb154695
