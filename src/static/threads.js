@@ -90,7 +90,7 @@ window.Threads = (function () {
 
   function highlightSearchHits() {
     var container = el('chat-container');
-    if (!threadSearchQuery) { hitElements = []; return; }
+    if (!threadSearchQuery) { hitElements = []; updateHitNav(); return; }
     var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
     var textNodes = [];
     var node;
