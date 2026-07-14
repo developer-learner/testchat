@@ -1,51 +1,56 @@
-ERD — testchat M18: Thread Search (erd_version 34)
+ERD — testchat M19: Search-Hit Highlighting (erd_version 35)
 
-What changes v33 -> v34
+What changes v34 -> v35
 
-Three edits, all frontend: index.html gains the search input; threads.js
-filters renderSidebar() by the query; style.css styles the box. No backend
-change, no new routes, no persistence change.
+Two edits: threads.js applies/removes the highlights; style.css styles
+them. No markup change (the highlight elements are created at render time),
+no backend change.
 
-File inventory (M18 build) — DAG order
+File inventory (M19 build) — DAG order
 
-1. src/static/index.html — EDIT. Inside the sidebar <aside>, directly ABOVE
-   the thread-list div, add one input element: type "text", id
-   "thread-search", class "thread-search", attribute
-   data-testid="thread-search-input", placeholder "Search threads...".
-   Nothing else changes.
+1. src/static/style.css — EDIT. Add a rule for mark.search-hit: background
+   var(--accent), color var(--accent-contrast), border-radius 3px, padding
+   0 2px. Nothing else changes.
 
-2. src/static/style.css — EDIT. Style .thread-search using ONLY existing
-   theme variables so every theme works: display block, width calc(100% -
-   1.5rem), margin 0.4rem 0.75rem, padding 0.45rem 0.6rem, background
-   var(--input-bg), color var(--input-text), border 1px solid
-   var(--input-border), border-radius 6px, font inherit, font-size
-   0.85rem. Add a :focus rule: outline none, border-color var(--accent).
-   Nothing else changes.
+2. src/static/threads.js — EDIT (one concern: highlight application).
+   a) New module-level function highlightSearchHits(). Behavior: it
+      operates on the element with id "chat-container". First it does
+      nothing further if threadSearchQuery is empty. Otherwise it walks
+      ALL TEXT NODES under the container (document.createTreeWalker with
+      NodeFilter.SHOW_TEXT), and for each text node whose text contains
+      threadSearchQuery case-insensitively, it replaces that text node
+      with a sequence of nodes where every matched substring is wrapped
+      in an element: <mark> with class "search-hit" and attribute
+      data-testid="search-hit" (preserve the original character casing of
+      the matched substring; non-matching segments stay plain text nodes).
+      Never touch element attributes or HTML source strings — only text
+      nodes, so existing markdown-rendered markup cannot be corrupted.
+      Skip text nodes inside <mark> elements to stay idempotent. After
+      wrapping, if at least one mark was created, call scrollIntoView
+      on the first one (block 'center').
+   b) Call highlightSearchHits() at the end of switchThread() (after
+      renderThreadMessages and restoreThreadModelState run for a found
+      thread).
+   c) In the existing 'input' listener on the thread-search element:
+      after the existing renderSidebar() call, re-render the open
+      thread's messages exactly the way deleteMessage() does it (clear
+      chat-container innerHTML, toggle show-thinking class, call
+      renderThreadMessages on the active thread if one exists), then
+      call highlightSearchHits(). This both applies highlights live
+      while typing and removes them when the box is emptied (the
+      re-render rebuilds clean content; with an empty query the
+      function adds nothing back).
+   Everything else in the file stays exactly as it is.
 
-3. src/static/threads.js — EDIT (two tightly-related changes):
-   a) A module-level variable holding the current query, initialized to
-      the empty string, plus one statement wiring it: an 'input' event
-      listener on the element with id "thread-search" that lowercases and
-      trims the field's value into that variable and then calls
-      renderSidebar(). Guard the wiring so a missing element does not
-      throw (if the element is null, skip attaching).
-   b) In renderSidebar(), where it loops over TC.threads: when the query
-      variable is non-empty, skip any thread that does not match. A thread
-      matches when its title lowercased contains the query, OR any of its
-      messages' content lowercased contains the query. The existing
-      iteration order (newest first) and all per-item construction stay
-      exactly as they are.
-
-Contract ids per task: contracts = [] — an EMPTY list, for ALL tasks.
+Contract ids per task: contracts = [] — an EMPTY list, for BOTH tasks.
 NEVER invent module-style ids.
 
-Task dependencies: the src/static/threads.js task MUST list both other
-tasks in its depends_on (it is the DAG's final task).
+Task dependencies: the src/static/threads.js task MUST list the style.css
+task in its depends_on (it is the DAG's final task).
 
 Oracle Mapping: the new browser node-id
-tests/test_ui.py::test_sidebar_search_filters_threads maps to the
-src/static/threads.js task (final in DAG, D-64 — its dependency closure
-must contain the whole plan). All other browser node-ids are carried
-forward — do NOT map them (the shell auto-assigns regression, D-57).
+tests/test_ui.py::test_search_hits_highlighted_in_open_thread maps to the
+src/static/threads.js task (final in DAG, D-64). All other browser
+node-ids are carried forward — do NOT map them (D-57).
 
 Test dependencies: none new.

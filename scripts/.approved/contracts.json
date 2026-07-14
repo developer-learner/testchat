@@ -1,7 +1,6 @@
 {
- "erd_version": 34,
+ "erd_version": 35,
  "files": [
-  "src/static/index.html",
   "src/static/style.css",
   "src/static/threads.js"
  ],
@@ -309,12 +308,16 @@
    "id": "ui:thread-search-input",
    "testid": "thread-search-input",
    "description": "sidebar search box; typing filters the thread list to threads whose title or message content contains the text (case-insensitive); empty restores the full list"
+  },
+  {
+   "id": "ui:search-hit",
+   "testid": "search-hit",
+   "description": "highlight wrapper around each occurrence of the active sidebar search text inside an opened thread's messages; present ONLY while a search is active"
   }
  ],
  "smoke_checks": {
-  "src/static/index.html": "grep -q 'data-testid=\"thread-search-input\"' src/static/index.html",
-  "src/static/style.css": "grep -q 'thread-search' src/static/style.css",
-  "src/static/threads.js": "grep -q 'toLowerCase' src/static/threads.js && grep -q 'window.Threads' src/static/threads.js"
+  "src/static/style.css": "grep -q 'search-hit' src/static/style.css",
+  "src/static/threads.js": "grep -q 'search-hit' src/static/threads.js && grep -q 'window.Threads' src/static/threads.js"
  },
  "no_edit_files": []
 }

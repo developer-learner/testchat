@@ -1,0 +1,28 @@
+{
+  "changed_contract_ids": [],
+  "changed_tests": [
+    "tests/test_ui.py::test_failed_reply_keeps_user_message",
+    "tests/test_ui.py::test_history_sent_to_backend_has_no_think_markup",
+    "tests/test_ui.py::test_markdown_renders_readably",
+    "tests/test_ui.py::test_model_lock_is_per_thread",
+    "tests/test_ui.py::test_model_selection_survives_models_refresh",
+    "tests/test_ui.py::test_new_chat_creates_unlocked_empty_thread",
+    "tests/test_ui.py::test_rain_backdrop_only_in_matrix",
+    "tests/test_ui.py::test_saved_system_prompt_reaches_requests",
+    "tests/test_ui.py::test_search_hits_highlighted_in_open_thread",
+    "tests/test_ui.py::test_sidebar_lists_newest_thread_first",
+    "tests/test_ui.py::test_sidebar_search_filters_threads",
+    "tests/test_ui.py::test_stop_button_keeps_partial_reply",
+    "tests/test_ui.py::test_terminal_titlebar_only_in_phosphor",
+    "tests/test_ui.py::test_theme_cycle_reaches_phosphor_and_wraps",
+    "tests/test_ui.py::test_theme_switch_persists_across_reload",
+    "tests/test_ui.py::test_think_toggle_reveals_and_hides_thinking",
+    "tests/test_ui.py::test_thinking_placeholder_shows_then_clears",
+    "tests/test_ui.py::test_thread_delete_removes_thread",
+    "tests/test_ui.py::test_thread_rename_via_sidebar_control",
+    "tests/test_ui.py::test_thread_switch_restores_history",
+    "tests/test_ui.py::test_thread_title_set_from_first_message",
+    "tests/test_ui.py::test_threads_survive_reload"
+  ],
+  "changed_files": []
+}

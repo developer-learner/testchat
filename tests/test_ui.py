@@ -319,3 +319,20 @@ def test_sidebar_search_filters_threads(page: Page, app_url: str) -> None:
     box.fill("")
     expect(items).to_have_count(2)
     expect(items.nth(0)).to_contain_text("zebra second thread")
+
+
+# AC-66/AC-67 [M19 — search hits highlighted inside the opened thread]
+def test_search_hits_highlighted_in_open_thread(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    _send(page, "wombat hidden anchor message")
+    _await_reply(page)
+    box = page.get_by_test_id("thread-search-input")
+    box.fill("wombat")
+    items = page.get_by_test_id("thread-item")
+    expect(items).to_have_count(1)
+    items.first.click()
+    hits = page.get_by_test_id("search-hit")
+    expect(hits.first).to_be_visible()
+    expect(hits.first).to_contain_text("wombat")
+    box.fill("")
+    expect(page.get_by_test_id("search-hit")).to_have_count(0)
