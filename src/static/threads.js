@@ -108,7 +108,7 @@ window.Threads = (function () {
   function renderSidebar() {
     var threadListEl = el('thread-list');
     threadListEl.innerHTML = '';
-    for (var i = 0; i < TC.threads.length; i++) {
+    for (var i = TC.threads.length - 1; i >= 0; i--) {
       (function (thread) {
         var item = document.createElement('div');
         item.className = 'thread-item' + (thread.id === TC.activeThreadId ? ' active' : '');
