@@ -1,4 +1,4 @@
-ERD — testchat M15: Phosphor Terminal Window (erd_version 29)
+ERD — testchat M15: Phosphor Terminal Window (erd_version 30)
 
 What changes v28 -> v29
 
@@ -37,9 +37,9 @@ File inventory (M15 build) — DAG order
 Contract ids per task: contracts = [] — an EMPTY list, for BOTH tasks.
 Frontend files have no module entry points; NEVER invent module-style ids.
 
-Oracle Mapping: the new browser node-id
-tests/test_ui.py::test_terminal_titlebar_only_in_phosphor maps to
-src/static/style.css (final in DAG — visibility is a CSS behavior). All
-pre-existing node-ids stay mapped as in v28.
+Oracle Mapping: ALL browser node-ids (including the new
+tests/test_ui.py::test_terminal_titlebar_only_in_phosphor) map to
+src/static/app.js (final in DAG), exactly as in every prior milestone. All
+non-browser node-ids stay mapped as in v28. Every file in the inventory carries a smoke_check as its per-task signal.
 
 Test dependencies: none new.
