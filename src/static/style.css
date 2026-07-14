@@ -1404,18 +1404,8 @@
     }
 
     mark.search-hit {
-=======
-<<<<<<< SEARCH
-    mark.search-hit {
-      background: var(--accent);
-      color: var(--accent-contrast);
-      border-radius: 3px;
-      padding: 0 2px;
-    }
-=======
-    mark.search-hit {
-      background: var(--accent);
-      color: var(--accent-contrast);
+      background: var(--toggle-on-bg);
+      color: inherit;
       border-radius: 3px;
       padding: 0 2px;
     }
@@ -1429,12 +1419,11 @@
       padding: 0 0.35rem;
       font-size: 0.7rem;
     }
+
     mark.search-hit.current {
-      background: var(--accent-hover);
-      outline: 2px solid var(--accent);
-    }
       background: var(--accent);
       color: var(--accent-contrast);
       border-radius: 3px;
       padding: 0 2px;
+      outline: 2px solid var(--accent-hover);
     }
