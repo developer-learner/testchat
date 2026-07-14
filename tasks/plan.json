@@ -1,1 +1,48 @@
-{"version":1,"erd_version":30,"tasks":[{"id":"T1","file":"src/static/index.html","depends_on":[],"brief":"Implementation constraints: Edit src/static/index.html. Locate the <main class=\"chat-panel\"> element. Insert exactly one div as its FIRST child. Do not modify any other elements or attributes in the file. No JavaScript changes.\n\nBehavioral specification: Insert the following HTML block as the first child of <main class=\"chat-panel\">:\n<div data-testid=\"terminal-titlebar\">\n  <span class=\"tl-dot\"></span>\n  <span class=\"tl-dot\"></span>\n  <span class=\"tl-dot\"></span>\n  <span class=\"tl-title\">testchat — local session</span>\n</div>\n\nAcceptance condition: The file contains a div with data-testid=\"terminal-titlebar\" as the immediate first child of <main class=\"chat-panel\">, containing three spans with class \"tl-dot\" followed by a span with class \"tl-title\" containing the exact text \"testchat — local session\".","contracts":[],"tests":["tests/test_ui.py::test_terminal_titlebar_only_in_phosphor"]},{"id":"T2","file":"src/static/style.css","depends_on":[],"brief":"Implementation constraints: Edit src/static/style.css. Add CSS rules inside the existing theme area. Do not modify any existing rules. No JavaScript changes.\n\nBehavioral specification: 1. Add a base rule: .terminal-titlebar { display: none; }\n2. Under the existing :root[data-theme=\"phosphor\"] scope, add the following rules:\n   - .terminal-titlebar { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.9rem; background: oklch(0.12 0.02 155); border-bottom: 1px solid var(--border); }\n   - .tl-dot { width: 12px; height: 12px; border-radius: 50%; }\n   - .tl-dot:nth-child(1) { background: oklch(0.65 0.2 25); }\n   - .tl-dot:nth-child(2) { background: oklch(0.8 0.16 85); }\n   - .tl-dot:nth-child(3) { background: oklch(0.75 0.2 145); }\n   - .tl-title { font-size: 0.75rem; font-family: monospace; color: var(--muted-text); letter-spacing: 0.05em; }\n   - .chat-panel { margin: 1.25rem; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; box-shadow: 0 0 24px oklch(0.82 0.24 148 / 0.10); }\n\nAcceptance condition: The file contains the base .terminal-titlebar rule with display: none, and the phosphor-specific rules for .terminal-titlebar, .tl-dot, .tl-title, and .chat-panel as specified, nested under :root[data-theme=\"phosphor\"].","contracts":[],"tests":[]},{"id":"T3","file":"src/static/markdown.js","depends_on":[],"brief":"Implementation constraints: Edit src/static/markdown.js. No new files. No JavaScript changes to other files.\n\nBehavioral specification: No changes required for this milestone. The file is carried forward as-is.\n\nAcceptance condition: The file remains unchanged from the previous milestone.","contracts":[],"tests":[]},{"id":"T4","file":"src/static/threads.js","depends_on":[],"brief":"Implementation constraints: Edit src/static/threads.js. No new files. No JavaScript changes to other files.\n\nBehavioral specification: No changes required for this milestone. The file is carried forward as-is.\n\nAcceptance condition: The file remains unchanged from the previous milestone.","contracts":[],"tests":[]},{"id":"T5","file":"src/static/app.js","depends_on":[],"brief":"Implementation constraints: Edit src/static/app.js. No new files. No JavaScript changes to other files.\n\nBehavioral specification: No changes required for this milestone. The file is carried forward as-is.\n\nAcceptance condition: The file remains unchanged from the previous milestone.","contracts":[],"tests":[]}]}
+{
+ "version": 1,
+ "erd_version": 30,
+ "tasks": [
+  {
+   "id": "T1",
+   "file": "src/static/index.html",
+   "depends_on": [],
+   "brief": "Implementation constraints: Edit src/static/index.html. Locate the <main class=\"chat-panel\"> element. Insert exactly one div as its FIRST child. Do not modify any other elements or attributes in the file. No JavaScript changes.\n\nBehavioral specification: Insert the following HTML block as the first child of <main class=\"chat-panel\">:\n<div data-testid=\"terminal-titlebar\">\n  <span class=\"tl-dot\"></span>\n  <span class=\"tl-dot\"></span>\n  <span class=\"tl-dot\"></span>\n  <span class=\"tl-title\">testchat \u2014 local session</span>\n</div>\n\nAcceptance condition: The file contains a div with data-testid=\"terminal-titlebar\" as the immediate first child of <main class=\"chat-panel\">, containing three spans with class \"tl-dot\" followed by a span with class \"tl-title\" containing the exact text \"testchat \u2014 local session\".",
+   "contracts": [],
+   "tests": []
+  },
+  {
+   "id": "T2",
+   "file": "src/static/style.css",
+   "depends_on": [],
+   "brief": "Implementation constraints: Edit src/static/style.css. Add CSS rules inside the existing theme area. Do not modify any existing rules. No JavaScript changes.\n\nBehavioral specification: 1. Add a base rule: .terminal-titlebar { display: none; }\n2. Under the existing :root[data-theme=\"phosphor\"] scope, add the following rules:\n   - .terminal-titlebar { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.9rem; background: oklch(0.12 0.02 155); border-bottom: 1px solid var(--border); }\n   - .tl-dot { width: 12px; height: 12px; border-radius: 50%; }\n   - .tl-dot:nth-child(1) { background: oklch(0.65 0.2 25); }\n   - .tl-dot:nth-child(2) { background: oklch(0.8 0.16 85); }\n   - .tl-dot:nth-child(3) { background: oklch(0.75 0.2 145); }\n   - .tl-title { font-size: 0.75rem; font-family: monospace; color: var(--muted-text); letter-spacing: 0.05em; }\n   - .chat-panel { margin: 1.25rem; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; box-shadow: 0 0 24px oklch(0.82 0.24 148 / 0.10); }\n\nAcceptance condition: The file contains the base .terminal-titlebar rule with display: none, and the phosphor-specific rules for .terminal-titlebar, .tl-dot, .tl-title, and .chat-panel as specified, nested under :root[data-theme=\"phosphor\"].",
+   "contracts": [],
+   "tests": []
+  },
+  {
+   "id": "T3",
+   "file": "src/static/markdown.js",
+   "depends_on": [],
+   "brief": "Implementation constraints: Edit src/static/markdown.js. No new files. No JavaScript changes to other files.\n\nBehavioral specification: No changes required for this milestone. The file is carried forward as-is.\n\nAcceptance condition: The file remains unchanged from the previous milestone.",
+   "contracts": [],
+   "tests": []
+  },
+  {
+   "id": "T4",
+   "file": "src/static/threads.js",
+   "depends_on": [],
+   "brief": "Implementation constraints: Edit src/static/threads.js. No new files. No JavaScript changes to other files.\n\nBehavioral specification: No changes required for this milestone. The file is carried forward as-is.\n\nAcceptance condition: The file remains unchanged from the previous milestone.",
+   "contracts": [],
+   "tests": []
+  },
+  {
+   "id": "T5",
+   "file": "src/static/app.js",
+   "depends_on": [],
+   "brief": "Implementation constraints: Edit src/static/app.js. No new files. No JavaScript changes to other files.\n\nBehavioral specification: No changes required for this milestone. The file is carried forward as-is.\n\nAcceptance condition: The file remains unchanged from the previous milestone.",
+   "contracts": [],
+   "tests": [
+    "tests/test_ui.py::test_terminal_titlebar_only_in_phosphor"
+   ]
+  }
+ ]
+}
