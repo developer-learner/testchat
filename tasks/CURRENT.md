@@ -23,8 +23,16 @@ variant was benched head-to-head: no quality difference, slightly slower,
 +5 GB — recommend unloading/deleting it. EM-seat production validation:
 1 clean run (M21 plan); call it settled after ~3.
 
+**M14–M22 CEO-ACCEPTED (2026-07-14):** all nine demoed live in the browser
+and formally accepted, no exceptions. Verification evidence: rain renders in
+matrix only and terminal titlebar in phosphor only (all 10 themes cycled);
+new chat lands at top of sidebar; RAM counter live in status strip; "pebble"
+search filtered 26 threads to the 2 containing it; hit counter/nav honest
+(thread had 11 raw matches, 6 in collapsed think-sections, counter said 5 —
+AC-74 measured in the DOM); current-hit loud vs other-hits subtle confirmed
+in one frame. Themes additionally eyeballed by the CEO directly.
+
 **Open items:**
-- CEO demo acceptances for M14–M22 (all in live use, none recorded)
 - Product roadmap (CEO's pick): mobile layout, export/import, multi-model
   comparison
 - Blueprint packaging: cheap-tier publish idea (honest README, repo
