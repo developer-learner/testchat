@@ -22,7 +22,11 @@ window.Threads = (function () {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ threads: TC.threads.map(function (t) { return { id: t.id, title: t.title, messages: t.messages, model: t.model || '', locked: !!t.locked }; }) })
-    }).catch(function () {});
+    }).then(function (res) {
+      el('status-save').textContent = res.ok ? '' : 'not saved';
+    }).catch(function () {
+      el('status-save').textContent = 'not saved';
+    });
   }
 
   function saveThreadModelState() {
