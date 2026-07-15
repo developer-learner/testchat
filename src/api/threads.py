@@ -1,3 +1,4 @@
+from typing import Literal
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -7,7 +8,7 @@ router = APIRouter()
 
 
 class HistoryEntry(BaseModel):
-    role: str
+    role: Literal["user", "assistant"]
     content: str
     ts: float = 0
     model: str = ""
