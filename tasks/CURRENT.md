@@ -72,3 +72,35 @@ before presenting; the CEO gets plain-language claims, never diffs.
 ## Results
 
 Full frozen TPM suite green against spec v44. Feature built and validated.
+
+**M23 HONEST SAVES COMPLETE: `[success] spec v44` (`d9c17cb`), 111 frozen
+tests, final subtree run 72s.** First milestone with: MTPLX serving both
+seats (host.lima.internal:8000, drift-immune), MAX_TASK_STRIKES=2, and a
+frontier conductor doubling as TPM (D-39). Browser-eyes verified live:
+"not saved" appears when the backend dies mid-session, clears on recovery;
+invalid-role PUT returns 422.
+
+**Escalation-ladder validation (the run's second purpose) — VERDICT: every
+rung fired, one EM weakness found.** Retry-with-evidence fired (T7 strike
+1→2); EM consult fired; the diagnosis came back schema-invalid
+(empty task_id) and the gate refused it — halting correctly. Data point
+for D-66: the MTPLX 27b plans cleanly (3rd plan valid) but stumbled on
+diagnosis, matching the historical mid-tier pattern. Ladder is no longer
+dead code.
+
+**Cost ledger, honest: 4 freezes (v41→v44), ALL THREE spec bugs the
+TPM's (this conductor's):** (1) no_edit_files declared without smoke
+checks — unsatisfiable EM puzzle, M8 class; (2) D-64 dependency edges
+asserted in prose but never instructed — the EM transcribes, it doesn't
+invent; (3) the new UI test miscounted replies (two sends in ONE thread
+need count=2 in _await_reply — every prior two-send test used fresh
+threads). The coder was blameless: T7 attempt 1 was character-identical
+to the ERD prescription and burned two strikes on the TPM's test bug.
+TPM lesson encoded: state DAG edges explicitly; walk helper defaults
+before freezing a test; a no-edit declaration still needs an acceptance
+signal. Gates D-65 (4 no-op tasks skipped coder), D-67 (lint gate green
+at every freeze), D-68 (clean output passed) all did production duty.
+
+Residue: two empty "New Chat" threads created during browser
+verification — CEO deletes by hand at leisure (scripted delete clicks
+no-op; real gestures work).
