@@ -68,3 +68,7 @@ from memory or summaries (this session's worst errors were stale-claim
 errors); give the CEO a time estimate before every pipeline run and report
 the first halt immediately; view user-visible milestones in a real browser
 before presenting; the CEO gets plain-language claims, never diffs.
+
+## Results
+
+Full frozen TPM suite green against spec v44. Feature built and validated.
