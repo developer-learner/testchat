@@ -1,4 +1,4 @@
-ERD — testchat M23: Honest Saves (erd_version 43)
+ERD — testchat M23: Honest Saves (erd_version 44)
 
 What changes v41 -> v42
 

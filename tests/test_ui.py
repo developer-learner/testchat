@@ -376,5 +376,5 @@ def test_save_failure_indicator_shows_then_clears(page: Page, app_url: str) -> N
     expect(indicator).to_contain_text("not saved")     # AC-75
     page.unroute("**/api/v1/threads")
     _send(page, "message after saves recover")
-    _await_reply(page)
+    _await_reply(page, count=2)  # same thread: two replies now
     expect(indicator).to_have_text("")                 # AC-76
