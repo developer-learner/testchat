@@ -60,8 +60,11 @@ refreeze.
   comparison
 - Blueprint packaging: cheap-tier publish idea (honest README, repo
   public as-is) discussed, no decision
-- Escalation-ladder validation run (template backlog, needs a milestone
-  run with MAX_TASK_STRIKES=2)
+- Escalation-ladder validation: ARMED 2026-07-15 (D-70, pulled as
+  `9dc702d`) — MAX_TASK_STRIKES now defaults to 2, so the next milestone
+  run exercises it with no special invocation. When a task strikes twice,
+  observe: schema-valid diagnosis, brief actually revised, usable TPM
+  bundle on caps-exhausted; then the CEO calls validated-or-fix.
 
 **Conduct notes for the next conductor:** verify state from the tree, not
 from memory or summaries (this session's worst errors were stale-claim
