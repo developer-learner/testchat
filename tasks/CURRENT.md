@@ -32,7 +32,30 @@ search filtered 26 threads to the 2 containing it; hit counter/nav honest
 AC-74 measured in the DOM); current-hit loud vs other-hits subtle confirmed
 in one frame. Themes additionally eyeballed by the CEO directly.
 
+**CI GREEN (2026-07-14/15) — first fully green CI in project history.**
+Chronicle: the audit round found bare `mypy src/` dying on duplicate module
+basenames before checking anything (CI had been dark for the repo's whole
+unpushed life). Fix chain: `--explicit-package-bases` → test step had never
+run either (no PYTHONPATH, no chromium, no .cache dir) → models.py:37
+arg-type live-fix (the one true mypy finding; CEO-authorized `0bbcfce`) →
+coverage bar 80→75 (CEO-approved: Linux measures 78, macOS 83 —
+status.py's RAM paths are mac-only; ratchet up at M23). Latest main
+(template-update 883bf99, D-69) passed a fresh CI run first-try.
+
+**Flake record for the next TPM cycle:** one slow CI run (32s suite vs
+usual 19s) flaked two UI tests, both green on rerun and on the next fresh
+run: `test_thinking_placeholder_shows_then_clears` (inherent observation
+race — the test must attach within the stub's ~1.2s hold window) and
+`test_sidebar_lists_newest_thread_first` (one-off count mismatch, likely a
+late persist PUT from the prior test). Zero-retry law governs the sandbox
+oracle; CI is a second, noisier environment. Harden both at the M23
+refreeze.
+
 **Open items:**
+- M23 candidate "honest saves": persist-failure indicator (threads.js:25 —
+  now flagged by the D-68 gate), tighten threads role to Literal, drop the
+  7 unused frozen-test imports, harden the two flake-record UI tests,
+  ratchet CI coverage bar back up
 - Product roadmap (CEO's pick): mobile layout, export/import, multi-model
   comparison
 - Blueprint packaging: cheap-tier publish idea (honest README, repo
