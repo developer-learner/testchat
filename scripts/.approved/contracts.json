@@ -1,5 +1,5 @@
 {
-  "erd_version": 42,
+  "erd_version": 43,
   "files": [
     "src/api/threads.py",
     "src/static/index.html",

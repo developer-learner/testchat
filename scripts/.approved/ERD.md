@@ -1,4 +1,4 @@
-ERD — testchat M23: Honest Saves (erd_version 42)
+ERD — testchat M23: Honest Saves (erd_version 43)
 
 What changes v41 -> v42
 
@@ -34,7 +34,8 @@ File inventory (M23 build) — DAG order
    `        <span id="status-save" data-testid="save-status"></span>`
    Nothing else in the file changes.
 
-3. src/static/threads.js — EDIT (depends on 1 and 2). In
+3. src/static/threads.js — EDIT — the DAG's FINAL task: depends on
+   EVERY other task (1, 2, and all four no_edit tasks). In
    persistThreads(), the fetch call currently ends with exactly:
    `    }).catch(function () {});`
    Replace ONLY that line with:
@@ -59,9 +60,11 @@ Oracle Mapping — three NEW node-ids this milestone:
 - tests/test_threads_api.py::test_put_invalid_role_rejected
   -> maps to the src/api/threads.py task.
 - tests/test_ui.py::test_save_failure_indicator_shows_then_clears
-  -> maps to the src/static/threads.js task (the ONLY task whose
-  dependency closure contains the whole plan — D-64; browser tests may
-  map nowhere else).
+  -> maps to the src/static/threads.js task, which MUST be the DAG's
+  final task: its depends_on MUST list EVERY other task id in the plan
+  (the two edit tasks AND all four no_edit tasks). D-64: a browser test
+  is accepted only downstream of the whole inventory. Transcribe these
+  edges literally; do not infer or omit any.
 ALL other node-ids are carried forward — do NOT map them (the shell
 auto-assigns regression, D-57).
 
