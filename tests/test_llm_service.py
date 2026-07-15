@@ -3,9 +3,7 @@ Surface gate (C-5 / INV-4): only src.services.llm:stream_reply is imported
 from src.  All other imports are test infrastructure.
 """
 import json
-import os
 import time
-import pytest
 from pytest_httpserver import HTTPServer
 from werkzeug.wrappers import Response
 from src.services.llm import stream_reply

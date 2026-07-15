@@ -83,6 +83,7 @@ tests/test_threads_api.py::test_put_then_get_roundtrips
 tests/test_threads_api.py::test_put_malformed_payload_is_422_and_preserves_stored
 tests/test_threads_api.py::test_delete_clears_snapshot
 tests/test_threads_api.py::test_optional_fields_default
+tests/test_threads_api.py::test_put_invalid_role_rejected
 tests/test_ui.py::test_think_toggle_reveals_and_hides_thinking
 tests/test_ui.py::test_model_lock_is_per_thread
 tests/test_ui.py::test_thread_switch_restores_history
@@ -106,3 +107,4 @@ tests/test_ui.py::test_sidebar_lists_newest_thread_first
 tests/test_ui.py::test_sidebar_search_filters_threads
 tests/test_ui.py::test_search_hits_highlighted_in_open_thread
 tests/test_ui.py::test_search_hit_count_and_navigation
+tests/test_ui.py::test_save_failure_indicator_shows_then_clears

@@ -359,3 +359,22 @@ def test_search_hit_count_and_navigation(page: Page, app_url: str) -> None:
     expect(counter).to_have_text("3/3")
     page.get_by_test_id("thread-search-input").fill("")
     expect(counter).to_be_hidden()
+
+
+# AC-75/AC-76 [M23 — persist failures are visible, recovery clears]
+def test_save_failure_indicator_shows_then_clears(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    page.route(
+        "**/api/v1/threads",
+        lambda route: route.fulfill(status=500, body="{}")
+        if route.request.method == "PUT"
+        else route.fallback(),
+    )
+    _send(page, "message while saves are broken")
+    _await_reply(page)
+    indicator = page.get_by_test_id("save-status")
+    expect(indicator).to_contain_text("not saved")     # AC-75
+    page.unroute("**/api/v1/threads")
+    _send(page, "message after saves recover")
+    _await_reply(page)
+    expect(indicator).to_have_text("")                 # AC-76

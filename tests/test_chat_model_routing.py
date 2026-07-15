@@ -3,7 +3,6 @@ Oracle for M5 AC-9 through AC-12: model-based routing on POST /api/v1/chat.
 Observes ONLY contracts.entry_points (src.main:app, src.services.llm:stream_reply,
 src.services.models:*) and contracts.routes (POST /api/v1/chat).
 """
-from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient

@@ -114,7 +114,9 @@ class _StubHandler(BaseHTTPRequestHandler):
                 chunk = {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]}
                 self.wfile.write(b"data: " + json.dumps(chunk).encode() + b"\n\n")
                 self.wfile.flush()
-            time.sleep(1.2)
+            # 3.0s (was 1.2): a slow CI runner missed the 1.2s window once
+            # (2026-07-15 flake record) — the hold must dwarf scheduler jitter.
+            time.sleep(3.0)
             for delta in [{"content": "Hello"}, {"content": " there"}]:
                 chunk = {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]}
                 self.wfile.write(b"data: " + json.dumps(chunk).encode() + b"\n\n")
@@ -192,14 +194,22 @@ def _fresh_snapshot(request):
         # the stop-test's abort->persist PUT raced this fixture and handed
         # the next test a ghost thread). Delete until the snapshot stays
         # empty across a settle window.
-        for _ in range(20):
+        empties = 0
+        for _ in range(30):
             req = urllib.request.Request(f"{base}/api/v1/threads", method="DELETE")
             with urllib.request.urlopen(req, timeout=5):
                 pass
-            time.sleep(0.05)
+            time.sleep(0.15)
             with urllib.request.urlopen(f"{base}/api/v1/threads", timeout=5) as r:
                 if json.loads(r.read()) == {"threads": []}:
-                    break
+                    # one empty read raced a late PUT on a slow CI runner
+                    # (2026-07-15): require the snapshot to STAY empty
+                    # across two consecutive settle windows.
+                    empties += 1
+                    if empties >= 2:
+                        break
+                else:
+                    empties = 0
         req = urllib.request.Request(
             f"{base}/api/v1/settings", method="PUT",
             data=json.dumps({"system_prompt": ""}).encode(),

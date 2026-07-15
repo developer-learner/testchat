@@ -3,12 +3,8 @@ Surface gate (C-5 / INV-4): only src.main:app is imported from src.
 All other imports are test infrastructure.
 """
 import json
-import os
-import time
-import pytest
 from fastapi.testclient import TestClient
 from pytest_httpserver import HTTPServer
-from werkzeug.wrappers import Response
 from src.main import app
 
 # ---------------------------------------------------------------------------

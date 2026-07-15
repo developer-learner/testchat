@@ -58,3 +58,14 @@ def test_optional_fields_default(tmp_path, monkeypatch):
     saved = client.get("/api/v1/threads").json()["threads"][0]
     assert saved["model"] == ""
     assert saved["locked"] is False
+
+
+def test_put_invalid_role_rejected(tmp_path, monkeypatch):
+    # AC-77: roles outside user/assistant are rejected and nothing persists
+    _isolate(tmp_path, monkeypatch)
+    bad = {"threads": [{"id": 1, "title": "x", "messages": [
+        {"role": "system", "content": "sneaky"}], "model": "", "locked": False}]}
+    r = client.put("/api/v1/threads", json=bad)
+    assert r.status_code == 422
+    r = client.get("/api/v1/threads")
+    assert r.json() == {"threads": []}
