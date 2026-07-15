@@ -1,6 +1,13 @@
-ERD — testchat M23: Honest Saves (erd_version 41)
+ERD — testchat M23: Honest Saves (erd_version 42)
 
-What changes v40 -> v41
+What changes v41 -> v42
+
+Spec correction only (no code-facing changes beyond v41): every
+no_edit_files entry now carries a smoke_check in contracts — a no-edit
+task still needs an acceptance signal (v41 left four tasks unsatisfiable;
+the EM halted correctly). Original v41 design below, unchanged.
+
+What changed v40 -> v41
 
 Three files change, each a small anchored edit. Four more frontend files
 enter the inventory as no_edit_files (declared unchanged, D-65). The DAG

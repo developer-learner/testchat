@@ -1,5 +1,5 @@
 {
-  "erd_version": 41,
+  "erd_version": 42,
   "files": [
     "src/api/threads.py",
     "src/static/index.html",
@@ -343,7 +343,11 @@
   "smoke_checks": {
     "src/static/threads.js": "grep -q 'getClientRects' src/static/threads.js && grep -q 'window.Threads' src/static/threads.js",
     "src/api/threads.py": "grep -q 'Literal' src/api/threads.py",
-    "src/static/index.html": "grep -q 'data-testid=\"save-status\"' src/static/index.html"
+    "src/static/index.html": "grep -q 'data-testid=\"save-status\"' src/static/index.html",
+    "src/static/app.js": "grep -q 'window.TC' src/static/app.js",
+    "src/static/markdown.js": "grep -q 'renderBlocks' src/static/markdown.js",
+    "src/static/rain.js": "grep -q 'prefers-reduced-motion' src/static/rain.js",
+    "src/static/style.css": "grep -q 'data-theme=' src/static/style.css"
   },
   "no_edit_files": [
     "src/static/app.js",
