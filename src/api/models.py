@@ -34,7 +34,7 @@ class NemotronUnloadResponse(BaseModel):
 @router.get("/models")
 async def get_models() -> ModelsListResponse:
     models = list_models()
-    return ModelsListResponse(models=models)
+    return ModelsListResponse(models=[ModelInfo(**m) for m in models])
 
 
 @router.post("/nemotron/load", response_model=NemotronLoadResponse)
