@@ -1,14 +1,73 @@
 {
+  "erd_version": 43,
   "version": 1,
-  "erd_version": 40,
   "tasks": [
     {
       "id": "T1",
-      "file": "src/static/threads.js",
+      "file": "src/api/threads.py",
       "depends_on": [],
-      "brief": "Implementation constraints: synchronous DOM manipulation, no async/await, no external libraries. Edit exactly one line in highlightSearchHits().\n\nBehavioral specification: In src/static/threads.js, locate the highlightSearchHits() function. Find the exact line:\n`hitElements = document.querySelectorAll('mark.search-hit');`\nReplace it with:\n`hitElements = Array.prototype.filter.call(document.querySelectorAll('mark.search-hit'), function (m) { return m.getClientRects().length > 0; });`\nNothing else in the file changes. hitElements is already used only via .length and index access, which arrays support.\n\nAcceptance: grep -q 'getClientRects' src/static/threads.js && grep -q 'window.Threads' src/static/threads.js",
+      "brief": "Implementation constraints: synchronous edits only, no new libraries, no validation code. Edit exactly two lines in src/api/threads.py.\n\nBehavioral specification: \n1. The import block currently starts with exactly: `from fastapi import APIRouter`. Insert ABOVE it a new first line: `from typing import Literal`.\n2. The HistoryEntry model currently contains exactly: `    role: str`. Replace ONLY that line with: `    role: Literal[\"user\", \"assistant\"]`.\nNothing else in the file changes. FastAPI then returns 422 for any other role value automatically (AC-77).\n\nAcceptance: grep -q 'Literal' src/api/threads.py",
+      "contracts": [],
+      "tests": [
+        "tests/test_threads_api.py::test_put_invalid_role_rejected"
+      ]
+    },
+    {
+      "id": "T2",
+      "file": "src/static/index.html",
+      "depends_on": [],
+      "brief": "Implementation constraints: synchronous HTML edit, no JS changes. Edit exactly one line in src/static/index.html.\n\nBehavioral specification: The status strip currently contains exactly: `        <span id=\"status-ram\"></span>`. Insert directly BELOW that line: `        <span id=\"status-save\" data-testid=\"save-status\"></span>`. Nothing else in the file changes.\n\nAcceptance: grep -q 'data-testid=\"save-status\"' src/static/index.html",
       "contracts": [],
       "tests": []
+    },
+    {
+      "id": "T3",
+      "file": "src/static/app.js",
+      "depends_on": [],
+      "brief": "Implementation constraints: no code changes. This is a no_edit_file (D-65) — declared unchanged. The file must exist and be carried forward as-is.\n\nBehavioral specification: No edits. The file src/static/app.js is part of the M23 inventory but requires no modifications in this milestone.\n\nAcceptance: grep -q 'window.TC' src/static/app.js",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T4",
+      "file": "src/static/markdown.js",
+      "depends_on": [],
+      "brief": "Implementation constraints: no code changes. This is a no_edit_file (D-65) — declared unchanged. The file must exist and be carried forward as-is.\n\nBehavioral specification: No edits. The file src/static/markdown.js is part of the M23 inventory but requires no modifications in this milestone.\n\nAcceptance: grep -q 'renderBlocks' src/static/markdown.js",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T5",
+      "file": "src/static/rain.js",
+      "depends_on": [],
+      "brief": "Implementation constraints: no code changes. This is a no_edit_file (D-65) — declared unchanged. The file must exist and be carried forward as-is.\n\nBehavioral specification: No edits. The file src/static/rain.js is part of the M23 inventory but requires no modifications in this milestone.\n\nAcceptance: grep -q 'prefers-reduced-motion' src/static/rain.js",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T6",
+      "file": "src/static/style.css",
+      "depends_on": [],
+      "brief": "Implementation constraints: no code changes. This is a no_edit_file (D-65) — declared unchanged. The file must exist and be carried forward as-is.\n\nBehavioral specification: No edits. The file src/static/style.css is part of the M23 inventory but requires no modifications in this milestone.\n\nAcceptance: grep -q 'data-theme=' src/static/style.css",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T7",
+      "file": "src/static/threads.js",
+      "depends_on": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+        "T6"
+      ],
+      "brief": "Implementation constraints: synchronous JS edit, no async/await, no external libraries. Edit exactly one line in src/static/threads.js.\n\nBehavioral specification: In persistThreads(), the fetch call currently ends with exactly: `    }).catch(function () {});`. Replace ONLY that line with: `    }).then(function (res) {\n      el('status-save').textContent = res.ok ? '' : 'not saved';\n    }).catch(function () {\n      el('status-save').textContent = 'not saved';\n    });`. The el() helper already exists at the top of this file. Nothing else in the file changes. (AC-75: non-2xx lands in .then with res.ok false; network failure lands in .catch. AC-76: the next successful persist writes '' through the same .then.)\n\nAcceptance: grep -q 'getClientRects' src/static/threads.js && grep -q 'window.Threads' src/static/threads.js",
+      "contracts": [],
+      "tests": [
+        "tests/test_ui.py::test_save_failure_indicator_shows_then_clears"
+      ]
     }
   ]
 }
