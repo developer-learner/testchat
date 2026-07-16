@@ -5,16 +5,22 @@
 
 ---
 
-## State at 2026-07-14 session end (handoff)
+## State at 2026-07-15 session end (handoff)
 
-**Frozen spec:** v40, `[success]` tagged, 108/108 green, pushed to
-GitHub (origin = developer-learner/testchat, current as of this session).
+**Frozen spec:** v45 (M24 "History Never Dies", frozen 2026-07-15,
+`9050b24`; 117 frozen tests — oracle proof: 7 new fail-on-current,
+117/117 pass-on-intended). Prior: v44 `[success]` tagged, CEO-accepted,
+pushed to GitHub (origin = developer-learner/testchat), feature-complete
+by CEO decision — M24 is the one PM-audit data-safety hole (silent
+corrupt-history destruction) plus the AC-83 hover-timestamp ratify.
 
-**Shipped this sprint (M14–M22, v28–v40):** rain-on-matrix ratify, phosphor
+**Shipped this sprint (M14–M23, v28–v44):** rain-on-matrix ratify, phosphor
 terminal window, newest-thread-first sidebar, loadable-RAM counter
 (status strip; predicts whether a model load will fit), thread search +
 in-thread highlighting + hit counter with prev/next navigation +
-visible-only hit counting (collapsed think-text excluded).
+visible-only hit counting (collapsed think-text excluded), M23 honest saves
+(persist-failure indicator, threads role Literal 422, lint cleanup, flake
+hardening). Escalation ladder armed (D-70) and validated — every rung fired.
 
 **Models:** `qwen/qwen3.6-27b` holds BOTH EM and coder seats — mapping
 verified in the VM copy of models.env (the copy the pipeline reads; the
@@ -52,19 +58,14 @@ oracle; CI is a second, noisier environment. Harden both at the M23
 refreeze.
 
 **Open items:**
-- M23 candidate "honest saves": persist-failure indicator (threads.js:25 —
-  now flagged by the D-68 gate), tighten threads role to Literal, drop the
-  7 unused frozen-test imports, harden the two flake-record UI tests,
-  ratchet CI coverage bar back up
-- Product roadmap (CEO's pick): mobile layout, export/import, multi-model
-  comparison
+- Coverage ratchet: CI measures the 111-test suite; ratchet bar back up
+  from 75 once Linux/macOS gap narrows
+- EM diagnosis hardening: schema-retry or dense-diagnosis brief as template
+  candidate (M23 exposed mid-tier diagnosis as the weak rung)
 - Blueprint packaging: cheap-tier publish idea (honest README, repo
   public as-is) discussed, no decision
-- Escalation-ladder validation: ARMED 2026-07-15 (D-70, pulled as
-  `9dc702d`) — MAX_TASK_STRIKES now defaults to 2, so the next milestone
-  run exercises it with no special invocation. When a task strikes twice,
-  observe: schema-valid diagnosis, brief actually revised, usable TPM
-  bundle on caps-exhausted; then the CEO calls validated-or-fix.
+- LM Studio housekeeping: delete `unsloth/qwen3.6-27b-mlx` (+5 GB, benched
+  strictly worse)
 
 **Conduct notes for the next conductor:** verify state from the tree, not
 from memory or summaries (this session's worst errors were stale-claim
