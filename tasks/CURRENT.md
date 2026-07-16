@@ -114,3 +114,7 @@ under an open page → "not saved" in the status strip; backend restored +
 save retried → warning cleared, RAM counter back. Claim accepted: "if a
 save ever fails the app says so immediately, clears on recovery; frozen
 test #111 re-verifies forever." No exceptions.
+
+## Results
+
+Full frozen TPM suite green against spec v45. Feature built and validated.
