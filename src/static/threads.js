@@ -47,7 +47,10 @@ window.Threads = (function () {
     var metaText = '';
     if (ts) {
       var d = new Date(ts * 1000);
-      metaText = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+      var time = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+      var now = new Date();
+      var sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+      metaText = sameDay ? time : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined }) + ' ' + time;
     }
     if (model) metaText += (metaText ? ' · ' : '') + model;
     if (metaText) {
