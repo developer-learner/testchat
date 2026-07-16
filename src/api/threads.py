@@ -2,7 +2,7 @@ from typing import Literal
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from src.services.storage import load_snapshot, save_snapshot
+from src.services.storage import load_snapshot, quarantine_files, save_snapshot
 
 router = APIRouter()
 
@@ -28,7 +28,7 @@ class ThreadsPayload(BaseModel):
 
 @router.get("/api/v1/threads")
 def get_threads():
-    return {"threads": load_snapshot()}
+    return {"threads": load_snapshot(), "quarantined": bool(quarantine_files())}
 
 
 @router.put("/api/v1/threads")
