@@ -1,73 +1,96 @@
 {
-  "erd_version": 44,
-  "version": 2,
+  "erd_version": 45,
+  "version": 4,
   "tasks": [
     {
       "id": "T1",
-      "file": "src/api/threads.py",
+      "file": "src/services/storage.py",
       "depends_on": [],
-      "brief": "Implementation constraints: synchronous edits only, no new libraries, no validation code. Edit exactly two lines in src/api/threads.py.\n\nBehavioral specification: \n1. The import block currently starts with exactly: `from fastapi import APIRouter`. Insert ABOVE it a new first line: `from typing import Literal`.\n2. The HistoryEntry model currently contains exactly: `    role: str`. Replace ONLY that line with: `    role: Literal[\"user\", \"assistant\"]`.\nNothing else in the file changes. FastAPI then returns 422 for any other role value automatically (AC-77).\n\nAcceptance: grep -q 'Literal' src/api/threads.py",
+      "brief": "Implementation constraints: synchronous Python edits only, no new libraries beyond stdlib `time` and `os` (already imported). Perform exactly two anchored edits in src/services/storage.py.\n\nBehavioral specification:\n1. Edit A — quarantine on corrupt load (AC-78). In the `load_snapshot` function, the except block currently reads exactly:\n```\n except (json.JSONDecodeError, ValueError) as exc:\n     logger.warning(\"Corrupt snapshot at %s: %s\", path, exc)\n     return []\n```\nReplace it with:\n```\n except (json.JSONDecodeError, ValueError) as exc:\n     quarantine = f\"{path}.corrupt-{int(time.time())}\"\n     try:\n         os.replace(path, quarantine)\n         logger.warning(\n             \"Corrupt snapshot at %s quarantined to %s: %s\",\n             path, quarantine, exc,\n         )\n     except OSError as move_exc:\n         logger.warning(\n             \"Corrupt snapshot at %s could not be quarantined: %s\",\n             path, move_exc,\n         )\n     return []\n```\nAdd `import time` to the import block (stdlib, after `import tempfile`).\n\n2. Edit B — .bak rotation (AC-82) + quarantine listing helper (AC-79). In `save_snapshot`, the tail currently reads exactly:\n```\n     os.replace(tmp_path, path)\n except BaseException:\n     try:\n         os.unlink(tmp_path)\n     except OSError:\n         pass\n     raise\n```\nReplace it with:\n```\n     if os.path.exists(path):\n         os.replace(path, f\"{path}.bak\")\n     os.replace(tmp_path, path)\n except BaseException:\n     try:\n         os.unlink(tmp_path)\n     except OSError:\n         pass  # tmp file already gone; nothing to clean\n     raise\n\n\ndef quarantine_files() -> list[str]:\n    parent, name = os.path.split(_data_path())\n    try:\n        return sorted(\n            f for f in os.listdir(parent or \".\")\n            if f.startswith(name + \".corrupt-\")\n        )\n    except OSError:\n        return []  # no data directory yet means nothing is quarantined\n```\n\nAcceptance: grep -q 'corrupt-' src/services/storage.py && grep -q '.bak' src/services/storage.py",
       "contracts": [],
       "tests": [
-        "tests/test_threads_api.py::test_put_invalid_role_rejected"
+        "tests/test_storage_service.py::test_corrupt_snapshot_is_quarantined",
+        "tests/test_storage_service.py::test_save_rotates_previous_snapshot_to_bak",
+        "tests/test_storage_service.py::test_first_save_creates_no_bak",
+        "tests/test_storage_service.py::test_corrupt_file_loads_empty",
+        "tests/test_storage_service.py::test_env_path_is_read_at_call_time",
+        "tests/test_storage_service.py::test_missing_file_loads_empty",
+        "tests/test_storage_service.py::test_roundtrip_preserves_snapshot",
+        "tests/test_storage_service.py::test_save_creates_parent_directory",
+        "tests/test_storage_service.py::test_save_overwrites_atomically"
       ]
     },
     {
       "id": "T2",
-      "file": "src/static/index.html",
-      "depends_on": [],
-      "brief": "Implementation constraints: synchronous HTML edit, no JS changes. Edit exactly one line in src/static/index.html.\n\nBehavioral specification: The status strip currently contains exactly: `        <span id=\"status-ram\"></span>`. Insert directly BELOW that line: `        <span id=\"status-save\" data-testid=\"save-status\"></span>`. Nothing else in the file changes.\n\nAcceptance: grep -q 'data-testid=\"save-status\"' src/static/index.html",
+      "file": "src/api/threads.py",
+      "depends_on": [
+        "T1"
+      ],
+      "brief": "Implementation constraints: synchronous Python edits only, no new libraries. Perform exactly two anchored edits in src/api/threads.py.\n\nBehavioral specification:\n1. The storage import line currently reads exactly:\n`from src.services.storage import load_snapshot, save_snapshot`\nReplace ONLY that line with:\n`from src.services.storage import load_snapshot, quarantine_files, save_snapshot`\n\n2. The GET handler's return currently reads exactly:\n`    return {\"threads\": load_snapshot()}`\nReplace ONLY that line with:\n`    return {\"threads\": load_snapshot(), \"quarantined\": bool(quarantine_files())}`\n\nNothing else in the file changes (AC-79).\n\nAcceptance: grep -q 'Literal' src/api/threads.py && grep -q 'quarantined' src/api/threads.py",
       "contracts": [],
-      "tests": []
+      "tests": [
+        "tests/test_threads_api.py::test_get_reports_quarantine_after_corrupt_snapshot"
+      ]
     },
     {
       "id": "T3",
-      "file": "src/static/app.js",
+      "file": "src/static/index.html",
       "depends_on": [],
-      "brief": "Implementation constraints: no code changes. This is a no_edit_file (D-65) — declared unchanged. The file must exist and be carried forward as-is.\n\nBehavioral specification: No edits. The file src/static/app.js is part of the M23 inventory but requires no modifications in this milestone.\n\nAcceptance: grep -q 'window.TC' src/static/app.js",
+      "brief": "Implementation constraints: synchronous HTML edit, no JS changes. Edit exactly one line in src/static/index.html.\n\nBehavioral specification: The status strip currently contains exactly:\n`        <span id=\"status-save\" data-testid=\"save-status\"></span>`\nInsert directly BELOW that line:\n`        <span id=\"status-history\" data-testid=\"history-status\"></span>`\nNothing else in the file changes.\n\nAcceptance: grep -q 'data-testid=\"save-status\"' src/static/index.html && grep -q 'data-testid=\"history-status\"' src/static/index.html",
       "contracts": [],
       "tests": []
     },
     {
       "id": "T4",
-      "file": "src/static/markdown.js",
-      "depends_on": [],
-      "brief": "Implementation constraints: no code changes. This is a no_edit_file (D-65) — declared unchanged. The file must exist and be carried forward as-is.\n\nBehavioral specification: No edits. The file src/static/markdown.js is part of the M23 inventory but requires no modifications in this milestone.\n\nAcceptance: grep -q 'renderBlocks' src/static/markdown.js",
-      "contracts": [],
-      "tests": []
-    },
-    {
-      "id": "T5",
-      "file": "src/static/rain.js",
-      "depends_on": [],
-      "brief": "Implementation constraints: no code changes. This is a no_edit_file (D-65) — declared unchanged. The file must exist and be carried forward as-is.\n\nBehavioral specification: No edits. The file src/static/rain.js is part of the M23 inventory but requires no modifications in this milestone.\n\nAcceptance: grep -q 'prefers-reduced-motion' src/static/rain.js",
-      "contracts": [],
-      "tests": []
-    },
-    {
-      "id": "T6",
-      "file": "src/static/style.css",
-      "depends_on": [],
-      "brief": "Implementation constraints: no code changes. This is a no_edit_file (D-65) — declared unchanged. The file must exist and be carried forward as-is.\n\nBehavioral specification: No edits. The file src/static/style.css is part of the M23 inventory but requires no modifications in this milestone.\n\nAcceptance: grep -q 'data-theme=' src/static/style.css",
-      "contracts": [],
-      "tests": []
-    },
-    {
-      "id": "T7",
       "file": "src/static/threads.js",
       "depends_on": [
         "T1",
         "T2",
         "T3",
-        "T4",
         "T5",
-        "T6"
+        "T6",
+        "T7",
+        "T8"
       ],
-      "brief": "Implementation constraints: synchronous JS edit, no async/await, no external libraries. Edit exactly one line in src/static/threads.js.\n\nBehavioral specification: In persistThreads(), the fetch call currently ends with exactly: `    }).catch(function () {});`. Replace ONLY that line with: `    }).then(function (res) {\n      el('status-save').textContent = res.ok ? '' : 'not saved';\n    }).catch(function () {\n      el('status-save').textContent = 'not saved';\n    });`. The el() helper already exists at the top of this file. Nothing else in the file changes. (AC-75: non-2xx lands in .then with res.ok false; network failure lands in .catch. AC-76: the next successful persist writes '' through the same .then.)\n\nAcceptance: grep -q 'getClientRects' src/static/threads.js && grep -q 'window.Threads' src/static/threads.js",
+      "brief": "Implementation constraints: synchronous JS edit, no async/await, no external libraries. Perform exactly two anchored edits in src/static/threads.js. This is the DAG's FINAL task.\n\nBehavioral specification:\n1. Edit A — lock the bubble meta span (AC-83's observable surface). In the `addBubbleChrome` function, the code currently contains exactly:\n```\n   var meta = document.createElement('span');\n   meta.className = 'bubble-meta';\n```\nReplace it with:\n```\n   var meta = document.createElement('span');\n   meta.className = 'bubble-meta';\n   meta.setAttribute('data-testid', 'msg-meta');\n```\n\n2. Edit B — history-status indicator (AC-80/81). The file ends exactly:\n```\n};\n})();\n```\nReplace that ending with:\n```\n};\n})();\n\n// AC-80/81: load-path failure visibility — ask the backend whether the\n// saved history was quarantined at load. Runs at script eval (scripts sit\n// at the end of <body>, DOM is parsed); file-existence flag makes the\n// race with app.js's own hydrate GET harmless.\nfetch('/api/v1/threads')\n  .then(function (res) { return res.json(); })\n  .then(function (data) {\n    document.getElementById('status-history').textContent =\n      data.quarantined ? 'history unreadable (backup kept)' : '';\n  })\n  .catch(function () { /* best-effort indicator: an unreachable backend\n    already surfaces through the app's own load path */ });\n```\n(Note: the fetch is OUTSIDE the IIFE — the el() helper is not in scope there; use document.getElementById as shown.)\n\nAcceptance: grep -q 'getClientRects' src/static/threads.js && grep -q 'window.Threads' src/static/threads.js && grep -q 'status-history' src/static/threads.js && grep -q 'msg-meta' src/static/threads.js",
       "contracts": [],
       "tests": [
-        "tests/test_ui.py::test_save_failure_indicator_shows_then_clears"
+        "tests/test_ui.py::test_history_quarantine_indicator_shows",
+        "tests/test_ui.py::test_history_status_empty_when_healthy",
+        "tests/test_ui.py::test_bubble_meta_includes_date_for_past_messages"
       ]
+    },
+    {
+      "id": "T5",
+      "file": "src/static/app.js",
+      "depends_on": [],
+      "brief": "Implementation constraints: no code changes. This is a no_edit_file (D-65) — declared unchanged. The file must exist and be carried forward as-is.\n\nBehavioral specification: No edits. The file src/static/app.js is part of the M24 inventory but requires no modifications in this milestone.\n\nAcceptance: grep -q 'window.TC' src/static/app.js",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T6",
+      "file": "src/static/markdown.js",
+      "depends_on": [],
+      "brief": "Implementation constraints: no code changes. This is a no_edit_file (D-65) — declared unchanged. The file must exist and be carried forward as-is.\n\nBehavioral specification: No edits. The file src/static/markdown.js is part of the M24 inventory but requires no modifications in this milestone.\n\nAcceptance: grep -q 'renderBlocks' src/static/markdown.js",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T7",
+      "file": "src/static/rain.js",
+      "depends_on": [],
+      "brief": "Implementation constraints: no code changes. This is a no_edit_file (D-65) — declared unchanged. The file must exist and be carried forward as-is.\n\nBehavioral specification: No edits. The file src/static/rain.js is part of the M24 inventory but requires no modifications in this milestone.\n\nAcceptance: grep -q 'prefers-reduced-motion' src/static/rain.js",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T8",
+      "file": "src/static/style.css",
+      "depends_on": [],
+      "brief": "Implementation constraints: no code changes. This is a no_edit_file (D-65) — declared unchanged. The file must exist and be carried forward as-is.\n\nBehavioral specification: No edits. The file src/static/style.css is part of the M24 inventory but requires no modifications in this milestone.\n\nAcceptance: grep -q 'data-theme=' src/static/style.css",
+      "contracts": [],
+      "tests": []
     }
   ]
 }
