@@ -1,4 +1,8 @@
-"""M8 storage service — snapshot persistence (AC-35/AC-37/AC-38 backend)."""
+"""M8 storage service — snapshot persistence (AC-35/AC-37/AC-38 backend).
+
+M24 (AC-78/AC-82): corrupt snapshots are quarantined, never destroyed;
+every save keeps the previous snapshot as <file>.bak.
+"""
 import json
 import os
 
@@ -47,9 +51,49 @@ def test_save_overwrites_atomically(tmp_path, monkeypatch):
     save_snapshot(SAMPLE)
     save_snapshot([])
     assert load_snapshot() == []
-    # the stored artifact is plain JSON, one document, no temp residue
+    # the stored artifact is plain JSON, one document, no temp residue.
+    # M24 amendment: the deliberate .bak rotation artifact (AC-82) is the
+    # ONLY residue allowed beside the data file.
     assert json.loads(path.read_text()) == []
-    assert [f for f in os.listdir(tmp_path) if f != "threads.json"] == []
+    residue = sorted(f for f in os.listdir(tmp_path) if f != "threads.json")
+    assert residue == ["threads.json.bak"]
+
+
+# AC-78 [M24 — corrupt history is quarantined, never destroyed]
+def test_corrupt_snapshot_is_quarantined(tmp_path, monkeypatch):
+    path = _use(tmp_path, monkeypatch)
+    garbage = "{not valid json!!"
+    path.write_text(garbage)
+    assert load_snapshot() == []
+    # the unreadable file moved aside — bytes preserved, original gone
+    assert not path.exists()
+    quarantined = sorted(tmp_path.glob("threads.json.corrupt-*"))
+    assert len(quarantined) == 1
+    assert quarantined[0].read_text() == garbage
+    # the save that used to destroy the evidence now leaves it intact
+    save_snapshot(SAMPLE)
+    assert quarantined[0].read_text() == garbage
+    assert load_snapshot() == SAMPLE
+
+
+# AC-82 [M24 — every save keeps the previous snapshot as .bak]
+def test_save_rotates_previous_snapshot_to_bak(tmp_path, monkeypatch):
+    path = _use(tmp_path, monkeypatch)
+    bak = tmp_path / "threads.json.bak"
+    save_snapshot(SAMPLE)
+    save_snapshot([])
+    assert json.loads(path.read_text()) == []
+    assert json.loads(bak.read_text()) == SAMPLE
+    save_snapshot(SAMPLE)
+    # rotation overwrites: .bak always holds exactly the previous snapshot
+    assert json.loads(bak.read_text()) == []
+
+
+# AC-82 boundary [M24 — nothing to rotate on the very first save]
+def test_first_save_creates_no_bak(tmp_path, monkeypatch):
+    _use(tmp_path, monkeypatch)
+    save_snapshot(SAMPLE)
+    assert not (tmp_path / "threads.json.bak").exists()
 
 
 def test_env_path_is_read_at_call_time(tmp_path, monkeypatch):

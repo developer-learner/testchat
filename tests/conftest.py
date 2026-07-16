@@ -157,8 +157,15 @@ def llm_stub():
 
 
 @pytest.fixture(scope="session")
-def app_url(llm_stub):
-    data_path = Path(tempfile.mkdtemp(prefix="testchat-ui-")) / "threads.json"
+def app_data_path():
+    """The app-under-test's snapshot file (M24: exposed so tests can seed
+    corruption and the isolation fixture can sweep quarantine files)."""
+    return Path(tempfile.mkdtemp(prefix="testchat-ui-")) / "threads.json"
+
+
+@pytest.fixture(scope="session")
+def app_url(llm_stub, app_data_path):
+    data_path = app_data_path
     proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "src.main:app",
          "--host", "127.0.0.1", "--port", str(APP_PORT), "--log-level", "warning"],
@@ -189,6 +196,12 @@ def _fresh_snapshot(request):
     (requesting app_url here would needlessly boot the app for them)."""
     if "app_url" in request.fixturenames:
         base = request.getfixturevalue("app_url")
+        # M24: the quarantined flag is file-existence based, so quarantine
+        # files from a corruption test are session-sticky by design — sweep
+        # them here so each test starts with a healthy history.
+        data_path = request.getfixturevalue("app_data_path")
+        for q in data_path.parent.glob(data_path.name + ".corrupt-*"):
+            q.unlink()
         # A fire-and-forget persist from the PREVIOUS test's page can land
         # AFTER our delete and resurrect its thread (caught in the sandbox:
         # the stop-test's abort->persist PUT raced this fixture and handed
@@ -201,7 +214,7 @@ def _fresh_snapshot(request):
                 pass
             time.sleep(0.15)
             with urllib.request.urlopen(f"{base}/api/v1/threads", timeout=5) as r:
-                if json.loads(r.read()) == {"threads": []}:
+                if json.loads(r.read()).get("threads") == []:
                     # one empty read raced a late PUT on a slow CI runner
                     # (2026-07-15): require the snapshot to STAY empty
                     # across two consecutive settle windows.

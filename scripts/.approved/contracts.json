@@ -1,6 +1,7 @@
 {
-  "erd_version": 44,
+  "erd_version": 45,
   "files": [
+    "src/services/storage.py",
     "src/api/threads.py",
     "src/static/index.html",
     "src/static/threads.js",
@@ -177,6 +178,13 @@
       "fields": {
         "threads": "array of ThreadSnapshot"
       }
+    },
+    {
+      "id": "schema:ThreadsListResponse",
+      "fields": {
+        "threads": "array of ThreadSnapshot",
+        "quarantined": "boolean — true while a quarantined (unreadable) snapshot file sits beside the data file"
+      }
     }
   ],
   "errors": [
@@ -200,7 +208,7 @@
       "id": "external:lmstudio-chat-stream",
       "probe": "curl -sS -N -X POST http://localhost:1234/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"qwen/qwen3.6-27b\",\"messages\":[{\"role\":\"user\",\"content\":\"/no_think Say hi in three words\"}],\"stream\":true}'",
       "capture": "captures/lmstudio-chat-stream.txt",
-      "notes": "OpenAI chunk shape. Captured reality (2026-07-08): thinking arrives INLINE as <think>...</think> inside delta.content \u2014 this LM Studio config emits no reasoning_content. Think text therefore reaches the frontend through SSE 'token' events; the frontend must render it via the think toggle AND strip it from stored/POSTed history. The 'think' SSE event path (reasoning_content) remains contractually valid for configs that parse reasoning."
+      "notes": "OpenAI chunk shape. Captured reality (2026-07-08): thinking arrives INLINE as <think>...</think> inside delta.content — this LM Studio config emits no reasoning_content. Think text therefore reaches the frontend through SSE 'token' events; the frontend must render it via the think toggle AND strip it from stored/POSTed history. The 'think' SSE event path (reasoning_content) remains contractually valid for configs that parse reasoning."
     }
   ],
   "ui": [
@@ -212,7 +220,7 @@
     {
       "id": "ui:thread-item",
       "testid": "thread-item",
-      "description": "each thread entry in the sidebar list (one per thread, newest thread first \u2014 reverse creation order)"
+      "description": "each thread entry in the sidebar list (one per thread, newest thread first — reverse creation order)"
     },
     {
       "id": "ui:message-input",
@@ -338,16 +346,27 @@
       "id": "ui:save-status",
       "testid": "save-status",
       "description": "status-strip save indicator: empty while persists succeed, 'not saved' after a failed persist (AC-75/76)"
+    },
+    {
+      "id": "ui:history-status",
+      "testid": "history-status",
+      "description": "status-strip history indicator: empty while the saved history loads cleanly, 'history unreadable (backup kept)' after a corrupt snapshot was quarantined at load (AC-80/81)"
+    },
+    {
+      "id": "ui:msg-meta",
+      "testid": "msg-meta",
+      "description": "per-bubble meta span; its data-meta attribute carries the hover text: time for today's messages, date + time for past-day messages (AC-83), plus the model name when stored"
     }
   ],
   "smoke_checks": {
-    "src/static/threads.js": "grep -q 'getClientRects' src/static/threads.js && grep -q 'window.Threads' src/static/threads.js",
-    "src/api/threads.py": "grep -q 'Literal' src/api/threads.py",
-    "src/static/index.html": "grep -q 'data-testid=\"save-status\"' src/static/index.html",
+    "src/static/threads.js": "grep -q 'getClientRects' src/static/threads.js && grep -q 'window.Threads' src/static/threads.js && grep -q 'status-history' src/static/threads.js && grep -q 'msg-meta' src/static/threads.js",
+    "src/api/threads.py": "grep -q 'Literal' src/api/threads.py && grep -q 'quarantined' src/api/threads.py",
+    "src/static/index.html": "grep -q 'data-testid=\"save-status\"' src/static/index.html && grep -q 'data-testid=\"history-status\"' src/static/index.html",
     "src/static/app.js": "grep -q 'window.TC' src/static/app.js",
     "src/static/markdown.js": "grep -q 'renderBlocks' src/static/markdown.js",
     "src/static/rain.js": "grep -q 'prefers-reduced-motion' src/static/rain.js",
-    "src/static/style.css": "grep -q 'data-theme=' src/static/style.css"
+    "src/static/style.css": "grep -q 'data-theme=' src/static/style.css",
+    "src/services/storage.py": "grep -q 'corrupt-' src/services/storage.py && grep -q '.bak' src/services/storage.py"
   },
   "no_edit_files": [
     "src/static/app.js",

@@ -378,3 +378,40 @@ def test_save_failure_indicator_shows_then_clears(page: Page, app_url: str) -> N
     _send(page, "message after saves recover")
     _await_reply(page, count=2)  # same thread: two replies now
     expect(indicator).to_have_text("")                 # AC-76
+
+
+# AC-80 [M24 — unreadable history is announced, with its backup noted]
+def test_history_quarantine_indicator_shows(page: Page, app_url: str, app_data_path) -> None:
+    app_data_path.write_text("{not valid json!!")
+    page.goto(app_url)
+    expect(page.get_by_test_id("history-status")).to_have_text(
+        "history unreadable (backup kept)"
+    )
+
+
+# AC-81 [M24 — healthy loads say nothing]
+def test_history_status_empty_when_healthy(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    expect(page.get_by_test_id("history-status")).to_have_text("")
+
+
+# AC-83 [M24 — ratifies the 2026-07-15 hover-timestamp live-fix: past-day
+# messages carry their calendar date, not a bare time]
+def test_bubble_meta_includes_date_for_past_messages(page: Page, app_url: str) -> None:
+    from datetime import datetime, timedelta
+
+    past = datetime.now() - timedelta(days=3)
+    expected_time = past.strftime("%H:%M")
+    payload = {"threads": [{
+        "id": 1, "title": "Old chat", "model": "", "locked": False,
+        "messages": [{"role": "user", "content": "from another day",
+                      "ts": int(past.timestamp()), "model": ""}],
+    }]}
+    page.request.put(app_url + "/api/v1/threads", data=payload)
+    page.goto(app_url)
+    meta = page.get_by_test_id("msg-meta").first
+    # date ahead of the time — never a bare HH:MM for a past-day message.
+    # (locale-agnostic: asserts a non-empty date prefix, not its wording)
+    expect(meta).to_have_attribute(
+        "data-meta", re.compile(rf"^\S.+ {expected_time}$")
+    )

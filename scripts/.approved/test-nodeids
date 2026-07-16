@@ -77,6 +77,9 @@ tests/test_storage_service.py::test_missing_file_loads_empty
 tests/test_storage_service.py::test_corrupt_file_loads_empty
 tests/test_storage_service.py::test_save_creates_parent_directory
 tests/test_storage_service.py::test_save_overwrites_atomically
+tests/test_storage_service.py::test_corrupt_snapshot_is_quarantined
+tests/test_storage_service.py::test_save_rotates_previous_snapshot_to_bak
+tests/test_storage_service.py::test_first_save_creates_no_bak
 tests/test_storage_service.py::test_env_path_is_read_at_call_time
 tests/test_threads_api.py::test_get_with_no_saved_data_returns_empty
 tests/test_threads_api.py::test_put_then_get_roundtrips
@@ -84,6 +87,7 @@ tests/test_threads_api.py::test_put_malformed_payload_is_422_and_preserves_store
 tests/test_threads_api.py::test_delete_clears_snapshot
 tests/test_threads_api.py::test_optional_fields_default
 tests/test_threads_api.py::test_put_invalid_role_rejected
+tests/test_threads_api.py::test_get_reports_quarantine_after_corrupt_snapshot
 tests/test_ui.py::test_think_toggle_reveals_and_hides_thinking
 tests/test_ui.py::test_model_lock_is_per_thread
 tests/test_ui.py::test_thread_switch_restores_history
@@ -108,3 +112,6 @@ tests/test_ui.py::test_sidebar_search_filters_threads
 tests/test_ui.py::test_search_hits_highlighted_in_open_thread
 tests/test_ui.py::test_search_hit_count_and_navigation
 tests/test_ui.py::test_save_failure_indicator_shows_then_clears
+tests/test_ui.py::test_history_quarantine_indicator_shows
+tests/test_ui.py::test_history_status_empty_when_healthy
+tests/test_ui.py::test_bubble_meta_includes_date_for_past_messages
