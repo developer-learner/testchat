@@ -104,6 +104,12 @@ before freezing a test; a no-edit declaration still needs an acceptance
 signal. Gates D-65 (4 no-op tasks skipped coder), D-67 (lint gate green
 at every freeze), D-68 (clean output passed) all did production duty.
 
-Residue: two empty "New Chat" threads created during browser
-verification — CEO deletes by hand at leisure (scripted delete clicks
-no-op; real gestures work).
+Residue: three empty "New Chat" threads created during browser
+verification/demo — CEO deletes by hand at leisure (scripted delete
+clicks no-op; real gestures work).
+
+**M23 CEO-ACCEPTED (2026-07-15).** Demoed live to the CEO: backend killed
+under an open page → "not saved" in the status strip; backend restored +
+save retried → warning cleared, RAM counter back. Claim accepted: "if a
+save ever fails the app says so immediately, clears on recovery; frozen
+test #111 re-verifies forever." No exceptions.
