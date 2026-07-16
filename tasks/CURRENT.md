@@ -137,4 +137,10 @@ exactly; saves continue while quarantine sits untouched; `.bak` holds
 exactly the previous snapshot after each save; renaming the quarantined
 file back restores the history and clears the flag; past-day bubbles
 hover "Jul 12 23:19" (date ahead of time, AC-83 ratifying live-fix
-`5a950ae`). Awaiting CEO acceptance.
+`5a950ae`).
+
+**M24 CEO-ACCEPTED (2026-07-15).** Claim accepted: a corrupted history
+file can no longer destroy itself — it is quarantined bytes-intact and
+announced in the status strip; every save keeps the previous snapshot
+as .bak; recovery is renaming the quarantined file back. Frozen tests
+re-verify forever. Pushed to GitHub same session.
