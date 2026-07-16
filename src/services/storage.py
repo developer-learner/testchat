@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,18 @@ def load_snapshot() -> list[dict]:
     except FileNotFoundError:
         return []
     except (json.JSONDecodeError, ValueError) as exc:
-        logger.warning("Corrupt snapshot at %s: %s", path, exc)
+        quarantine = f"{path}.corrupt-{int(time.time())}"
+        try:
+            os.replace(path, quarantine)
+            logger.warning(
+                "Corrupt snapshot at %s quarantined to %s: %s",
+                path, quarantine, exc,
+            )
+        except OSError as move_exc:
+            logger.warning(
+                "Corrupt snapshot at %s could not be quarantined: %s",
+                path, move_exc,
+            )
         return []
     except OSError as exc:
         logger.warning("Cannot read snapshot at %s: %s", path, exc)
@@ -40,10 +52,23 @@ def save_snapshot(threads: list[dict]) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(threads, f, ensure_ascii=False, indent=2)
+        if os.path.exists(path):
+            os.replace(path, f"{path}.bak")
         os.replace(tmp_path, path)
     except BaseException:
         try:
             os.unlink(tmp_path)
         except OSError:
-            pass
+            pass  # tmp file already gone; nothing to clean
         raise
+
+
+def quarantine_files() -> list[str]:
+    parent, name = os.path.split(_data_path())
+    try:
+        return sorted(
+            f for f in os.listdir(parent or ".")
+            if f.startswith(name + ".corrupt-")
+        )
+    except OSError:
+        return []  # no data directory yet means nothing is quarantined
