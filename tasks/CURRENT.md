@@ -118,3 +118,23 @@ test #111 re-verifies forever." No exceptions.
 ## Results
 
 Full frozen TPM suite green against spec v45. Feature built and validated.
+
+**M24 HISTORY NEVER DIES COMPLETE: `[success] spec v45` (`c343b27`), 117
+frozen tests, full run 208s, zero strikes — every edit task passed on
+attempt 1 (T1 storage.py, T2 threads.py, T3 index.html, T4 threads.js;
+T5–T8 no-edit acceptance only, D-65).** Second consecutive
+zero-hand-fix milestone. Pre-freeze oracle proof re-derived after the
+authoring session aborted: 7 new tests fail-on-current, 117/117
+pass-on-intended; a fourth amended exact-shape assert
+(test_put_invalid_role_rejected) was found during the proof and the
+PRD/ERD accounting corrected before freeze.
+
+Browser-eyes verified live (scratch TESTCHAT_DATA, real history never
+touched): healthy load shows empty history-status; corrupt snapshot →
+app starts empty, "history unreadable (backup kept)" in the status
+strip, `threads.json.corrupt-<ts>` preserves the unreadable bytes
+exactly; saves continue while quarantine sits untouched; `.bak` holds
+exactly the previous snapshot after each save; renaming the quarantined
+file back restores the history and clears the flag; past-day bubbles
+hover "Jul 12 23:19" (date ahead of time, AC-83 ratifying live-fix
+`5a950ae`). Awaiting CEO acceptance.
