@@ -187,3 +187,7 @@ re-verify forever. Pushed to GitHub same session.
 ## Results
 
 Full frozen TPM suite green against spec v47. Feature built and validated.
+
+## Results
+
+Full frozen TPM suite green against spec v49. Feature built and validated.
