@@ -78,6 +78,30 @@ window.Threads = (function () {
     bubble.appendChild(actions);
   }
 
+function addSources(bubble, sources, notice) {
+  var box = document.createElement('div');
+  box.className = 'msg-sources';
+  box.setAttribute('data-testid', 'msg-sources');
+  if (notice) {
+    var n = document.createElement('span');
+    n.className = 'web-notice';
+    n.setAttribute('data-testid', 'web-notice');
+    n.textContent = notice;
+    box.appendChild(n);
+  }
+  for (var i = 0; i < sources.length; i++) {
+    var a = document.createElement('a');
+    a.className = 'source-link';
+    a.setAttribute('data-testid', 'source-link');
+    a.href = sources[i].url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = '[' + (i + 1) + '] ' + (sources[i].title || sources[i].url);
+    box.appendChild(a);
+  }
+  bubble.appendChild(box);
+}
+
   function renderThreadMessages(thread) {
     var container = el('chat-container');
     for (var i = 0; i < thread.messages.length; i++) {
@@ -91,6 +115,7 @@ window.Threads = (function () {
         bubble.textContent = msg.content;
       }
       addBubbleChrome(bubble, msg.content, msg.ts || 0, msg.role === 'assistant' ? (msg.model || '') : '', i);
+      if (msg.role === 'assistant' && msg.sources && msg.sources.length) addSources(bubble, msg.sources, '');
       container.appendChild(bubble);
     }
     container.scrollTop = container.scrollHeight;
@@ -367,6 +392,7 @@ window.Threads = (function () {
   if (nextBtn) nextBtn.addEventListener('click', function () { gotoHit(1); });
 
   return {
+    addSources: addSources,
     persistThreads: persistThreads,
     saveThreadModelState: saveThreadModelState,
     restoreThreadModelState: restoreThreadModelState,
