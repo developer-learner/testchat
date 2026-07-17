@@ -110,7 +110,10 @@ function addSources(bubble, sources, notice) {
       bubble.className = 'chat-bubble ' + (msg.role === 'user' ? 'user' : 'reply');
       bubble.setAttribute('data-testid', msg.role === 'user' ? 'msg-user' : 'msg-assistant');
       if (msg.role === 'assistant') {
-        bubble.innerHTML = MD.renderThink(msg.content);
+        // AC-92: normalize Qwen 【N†…】 citations to [N] on the reload path,
+        // matching renderReply's live-stream transform in app.js.
+        var content = String(msg.content || '').replace(/【(\d+)[†‡]?[^】]*】/g, '[$1]');
+        bubble.innerHTML = MD.renderThink(content);
       } else {
         bubble.textContent = msg.content;
       }
