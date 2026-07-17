@@ -1,4 +1,4 @@
-PRD — testchat M26: Web Search Ratify (erd_version 48)
+PRD — testchat M26: Web Search Ratify (erd_version 49)
 
 Milestone
 

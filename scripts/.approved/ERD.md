@@ -1,55 +1,62 @@
-ERD — testchat M26: Web Search Ratify (erd_version 48)
+ERD — testchat M26: Web Search Ratify (erd_version 49)
 
-What changes v47 -> v48
+What changes v48 -> v49 (v48 was authored over-scoped and never
+successfully ran a plan; v49 is the correct ratify shape.)
 
-Ratify milestone (D-63): every M25 live-fix is already in the tree.
-The pipeline run for this freeze is a coder no-op — every file in the
-inventory carries "NO EDIT NEEDED". The frozen tests catch up: three
-new tests pin the ratified behavior (AC-92 citation transform,
-AC-93 prompt cite instruction, AC-90 .env boot-load).
+Pure spec-catch-up ratify (D-63). The tree already carries every M25
+live-fix; the pipeline run here is a coder no-op. The M26 delta is
+SPEC-ONLY: no file is added to or removed from the build inventory
+(same 10 files as v47), so no test that was regression under v47
+becomes "delta inventory" under v49 (which was v48's over-scope defect).
+Behavior newly locked:
 
-File inventory (M26 build) — all NO EDIT NEEDED
+- AC-90 wiring — src/main.py loads .env at import via python-dotenv
+  (live-fix `d093a55`). Pinned by the existing
+  test_websearch_api::test_status_reports_web_configured (regression)
+  plus a smoke_check note in this ERD (main.py is NOT added to the
+  inventory — this ratify does not turn the app entry-point into a
+  gated task).
+- AC-92 citation transform — `renderReply` in src/static/app.js
+  normalizes Qwen full-width markers `【N†anchor】` to `[N]` before
+  render (live-fix `ebbaa75`). Pinned by
+  test_ui_websearch::test_full_width_citation_markers_render_as_plain_brackets
+  (regression band) AND a strengthened smoke_check that greps for
+  `【` in app.js (the character only appears there because of the
+  regex).
+- AC-93 prompt cite instruction — `build_prompt` in
+  src/services/websearch.py names plain `[N]` brackets and prefers the
+  most specific/recent number when sources disagree (live-fix
+  `ebbaa75`). Pinned by
+  test_websearch_service::test_prompt_forbids_full_width_citations
+  (regression band) AND a strengthened smoke_check that greps for
+  `plain square`.
 
-1. src/main.py — NO EDIT NEEDED. Already loads `.env` via
-   `python-dotenv` at import (live-fix `d093a55`). Behavior pinned by
-   AC-90.
-2. src/services/websearch.py — NO EDIT NEEDED. `build_prompt` already
-   instructs plain `[N]` citations and "prefer the most specific/recent
-   number when sources disagree" (live-fix `ebbaa75`). Behavior pinned
-   by AC-93.
-3. src/static/app.js — NO EDIT NEEDED. `renderReply` already normalizes
-   `【N†anchor】` → `[N]` before markdown render (live-fix `ebbaa75`).
-   Behavior pinned by AC-92 via a UI test.
-4. src/static/style.css — NO EDIT NEEDED. Web-toggle armed/disabled
-   states and source-link list styling landed (live-fixes `a7b0c33`,
-   `efdd174`). No AC — visuals are CEO-eyeball, D-44 already accepted.
-5. src/api/status.py — NO EDIT NEEDED (v47).
-6. src/api/chat.py — NO EDIT NEEDED (v47).
-7. src/api/threads.py — NO EDIT NEEDED (v47).
-8. src/static/index.html — NO EDIT NEEDED (v47).
-9. src/static/threads.js — NO EDIT NEEDED (v47).
-10. src/static/markdown.js — NO EDIT NEEDED (v47).
-11. src/static/rain.js — NO EDIT NEEDED (v47).
+File inventory (M26 build) — UNCHANGED from v47
 
-no_edit_files (D-65 — every file this milestone; the coder is never
-called):
-src/services/websearch.py, src/api/status.py, src/api/chat.py,
-src/api/threads.py, src/main.py, src/static/index.html,
-src/static/threads.js, src/static/app.js, src/static/markdown.js,
-src/static/rain.js, src/static/style.css
+Same 10 files as v47. Same no_edit_files as v47 (markdown.js, rain.js,
+style.css). No tasks are needed for this ratify: no file's build
+inventory changes; every task that WOULD be emitted would be a no_edit
+no-op for a file that already carries the ratified behavior.
 
-Contract ids per task: contracts = [] (empty for every no-op task).
+DAG: EMPTY. The EM MUST emit an empty plan (`{"erd_version": 49,
+"tasks": []}`). The validator accepts an empty plan when the frozen
+tests satisfy the whole delta as regression — which they do here: the
+two new test node-ids are auto-carried by D-57 regression assignment,
+and the AC-90/92/93 smoke_checks live in contracts.json (checked at
+freeze, not run-time).
 
-Oracle Mapping — two NEW node-ids this milestone:
+Contract ids per task: N/A (no tasks).
+
+Oracle Mapping — no new mappings; two new node-ids ride as regression:
 - tests/test_websearch_service.py::test_prompt_forbids_full_width_citations
-  -> maps to the src/services/websearch.py task (no_edit acceptance —
-  AC-93).
+  (regression — no mapping; observes only websearch.py which is not
+  in this delta's edit scope)
 - tests/test_ui_websearch.py::test_full_width_citation_markers_render_as_plain_brackets
-  -> maps to the src/static/app.js task (no_edit acceptance — AC-92).
+  (regression — no mapping; observes only app.js which is not in this
+  delta's edit scope)
 ALL other node-ids are carried forward — do NOT map them.
 
-Test dependencies: no new externals; no new stack imports (dotenv
-already in requirements.txt since M8). The new UI test seeds a
-prepared assistant message via PUT /api/v1/threads (locked route) and
-verifies renderThreadMessages transforms the marker on reload —
-avoiding an LLM stub change.
+Test dependencies: no new externals; no new stack imports. The new
+UI test seeds a prepared assistant message via the locked PUT
+/api/v1/threads route and verifies renderThreadMessages transforms the
+marker on reload — avoiding an LLM stub change.

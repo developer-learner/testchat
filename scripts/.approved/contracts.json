@@ -1,5 +1,5 @@
 {
-  "erd_version": 48,
+  "erd_version": 49,
   "files": [
     "src/services/websearch.py",
     "src/api/status.py",
@@ -10,8 +10,7 @@
     "src/static/app.js",
     "src/static/markdown.js",
     "src/static/rain.js",
-    "src/static/style.css",
-    "src/main.py"
+    "src/static/style.css"
   ],
   "entry_points": [
     "src.main:app",
@@ -429,18 +428,9 @@
     "src/static/app.js": "grep -q 'webToggle' src/static/app.js && grep -q 'pendingSources' src/static/app.js && grep -q '\u3010' src/static/app.js",
     "src/static/markdown.js": "grep -q 'renderBlocks' src/static/markdown.js",
     "src/static/rain.js": "grep -q 'prefers-reduced-motion' src/static/rain.js",
-    "src/static/style.css": "grep -q 'data-theme=' src/static/style.css",
-    "src/main.py": "grep -q 'load_dotenv' src/main.py"
+    "src/static/style.css": "grep -q 'data-theme=' src/static/style.css"
   },
   "no_edit_files": [
-    "src/services/websearch.py",
-    "src/api/status.py",
-    "src/api/chat.py",
-    "src/api/threads.py",
-    "src/main.py",
-    "src/static/index.html",
-    "src/static/threads.js",
-    "src/static/app.js",
     "src/static/markdown.js",
     "src/static/rain.js",
     "src/static/style.css"
