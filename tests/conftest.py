@@ -7,6 +7,10 @@ Shapes derive from scripts/.approved/captures/ (D-56):
   in delta.content ('token' events — the captured reality for the current
   LM Studio config). The stub emits both in one stream so the frozen suite
   exercises both spec paths.
+- tavily-search.json (M25): top-level results[] of {url, title, content,
+  score, raw_content}; the stub serves two fixed sources on POST /search
+  and the app under test points TAVILY_ENDPOINT here — sandbox-safe under
+  --network none.
 
 Content is synthetic, shape is real (PRD A13). Everything binds loopback
 only — sandbox-safe under --network none. This file must NOT import
@@ -71,6 +75,21 @@ STREAM_DELTAS = [
 # AC-48 (M10): a deliberately slow stream so a test can click Stop mid-reply.
 SLOW_DELTAS = [{"content": "tick" + str(i) + " "} for i in range(20)]
 
+# shape: capture tavily-search.json (M25) — two fixed sources for every
+# search; test_ui_websearch.py asserts these exact URLs.
+TAVILY_RESPONSE = {
+    "query": "stub",
+    "follow_up_questions": None,
+    "answer": None,
+    "images": [],
+    "results": [
+        {"url": "https://example.org/one", "title": "One", "content": "first fact", "score": 0.9, "raw_content": None},
+        {"url": "https://example.org/two", "title": "Two", "content": "second fact", "score": 0.8, "raw_content": None},
+    ],
+    "response_time": 0.1,
+    "request_id": "stub",
+}
+
 _chat_requests: list[dict] = []
 
 
@@ -98,6 +117,13 @@ class _StubHandler(BaseHTTPRequestHandler):
             self._json(404, {"error": "unknown path"})
 
     def do_POST(self) -> None:
+        if self.path == "/search":
+            # M25: capture-shaped Tavily stub (the app under test's
+            # TAVILY_ENDPOINT points here)
+            length = int(self.headers.get("Content-Length", "0"))
+            self.rfile.read(length)
+            self._json(200, TAVILY_RESPONSE)
+            return
         if self.path != "/v1/chat/completions":
             self._json(404, {"error": "unknown path"})
             return
@@ -176,6 +202,9 @@ def app_url(llm_stub, app_data_path):
             "PYTHONPATH": str(REPO_ROOT),
             "TESTCHAT_DATA": str(data_path),
             "TESTCHAT_SETTINGS": str(data_path.parent / "settings.json"),
+            # M25: the app under test runs web-configured against the stub
+            "TAVILY_API_KEY": "ui-test-key",
+            "TAVILY_ENDPOINT": f"{llm_stub}/search",
         },
     )
     try:

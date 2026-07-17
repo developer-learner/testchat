@@ -1,178 +1,373 @@
-ERD — testchat M24: History Never Dies (erd_version 45)
+ERD — testchat M25: Web-Informed Answers (erd_version 46)
 
-What changes v44 -> v45
+What changes v45 -> v46
 
-Four files change, each a small set of anchored edits. Four frontend
-files remain no_edit_files (D-65). The DAG below is the required order.
-No new stack imports; no new externals. The quarantine flag is
-file-existence based (any `<data>.corrupt-*` beside the data file), so it
-is idempotent across concurrent GETs and survives restarts until a human
-removes or restores the quarantined file — that persistence is the
-feature, not a bug.
+One new backend service (websearch.py), anchored edits in three backend
+files and three frontend files. Three frontend files remain no_edit_files
+(D-65). The DAG below is the required order. One new external
+(external:tavily-search, capture frozen with this spec). No new stack
+imports — the Tavily client is urllib, matching llm.py's convention.
 
-File inventory (M24 build) — DAG order
+File inventory (M25 build) — DAG order
 
-1. src/services/storage.py — EDIT (two anchored edits, one task).
+1. src/services/websearch.py — CREATE (~85 lines). Module docstring:
+   "Tavily web search client (M25). Key from TAVILY_API_KEY; endpoint
+   overridable via TAVILY_ENDPOINT for the sandboxed suite." Contents,
+   in order:
 
-   Edit A — quarantine on corrupt load (AC-78). The load_snapshot except
-   block currently reads exactly:
+   - imports: json, logging, os, urllib.error, urllib.request
+   - module logger via logging.getLogger(__name__)
+   - DEFAULT_ENDPOINT = "https://api.tavily.com/search"
+   - MAX_SOURCES = 4
+   - MAX_CONTENT_CHARS = 2000
+   - class WebSearchError(Exception) with docstring "Any failure to
+     obtain search results — caller falls back to an un-augmented call."
+   - def is_configured() -> bool: returns bool(os.environ.get(
+     "TAVILY_API_KEY", "").strip())
+   - def search_web(query: str) -> list[dict]:
+     raises WebSearchError if not is_configured().
+     POSTs json {"query": query, "max_results": MAX_SOURCES} to
+     os.environ.get("TAVILY_ENDPOINT", DEFAULT_ENDPOINT) with headers
+     Content-Type: application/json and Authorization: Bearer <key>,
+     timeout float(os.environ.get("TAVILY_TIMEOUT_SECONDS", "10")).
+     Parses the response per captures/tavily-search.json: top-level
+     "results" list; for each of the first MAX_SOURCES entries builds
+     {"title": str(r.get("title", "")), "url": str(r.get("url", "")),
+      "content": str(r.get("content", ""))[:MAX_CONTENT_CHARS]}.
+     EVERY failure path (urllib.error.URLError, urllib.error.HTTPError,
+     OSError, json.JSONDecodeError, KeyError, TypeError, ValueError)
+     logs a warning and raises WebSearchError — never returns partial
+     garbage.
+   - def build_prompt(message: str, sources: list[dict]) -> str:
+     returns the augmented prompt, exactly this structure:
+     "Web search results (cite sources by number, like [1]):\n\n"
+     then for each source i (1-based):
+     "[{i}] {title}\n{url}\n{content}\n\n"
+     then "Using the results above when relevant, answer:\n{message}"
+
+2. src/api/status.py — EDIT (two anchored edits, one task; depends on 1).
+
+   Edit A — the import block currently contains exactly:
    ```
-    except (json.JSONDecodeError, ValueError) as exc:
-        logger.warning("Corrupt snapshot at %s: %s", path, exc)
-        return []
+   from src.services import models as models_service
    ```
-   Replace it with:
+   Replace with:
    ```
-    except (json.JSONDecodeError, ValueError) as exc:
-        quarantine = f"{path}.corrupt-{int(time.time())}"
+   from src.services import models as models_service
+   from src.services import websearch
+   ```
+
+   Edit B — the get_status return currently contains exactly:
+   ```
+        "loadable_gb": round(_loadable_gb(), 1),
+    }
+   ```
+   Replace with:
+   ```
+        "loadable_gb": round(_loadable_gb(), 1),
+        "web_configured": websearch.is_configured(),
+    }
+   ```
+
+3. src/api/chat.py — EDIT (three anchored edits, one task; depends on 1).
+
+   Edit A — the import block currently contains exactly:
+   ```
+   import src.services.llm as llm_mod
+   ```
+   Replace with:
+   ```
+   import src.services.llm as llm_mod
+   from src.services import websearch
+   ```
+
+   Edit B — ChatRequest currently reads exactly:
+   ```
+   class ChatRequest(BaseModel):
+       message: str
+       model: StrictStr | None = None
+       history: list[HistoryEntry] = []
+   ```
+   Replace with:
+   ```
+   class ChatRequest(BaseModel):
+       message: str
+       model: StrictStr | None = None
+       history: list[HistoryEntry] = []
+       web: bool = False
+   ```
+
+   Edit C — the generator opening currently reads exactly:
+   ```
+    async def event_generator():
+        history_dicts = [{"role": e.role, "content": e.content} for e in request.history]
         try:
-            os.replace(path, quarantine)
-            logger.warning(
-                "Corrupt snapshot at %s quarantined to %s: %s",
-                path, quarantine, exc,
-            )
-        except OSError as move_exc:
-            logger.warning(
-                "Corrupt snapshot at %s could not be quarantined: %s",
-                path, move_exc,
-            )
-        return []
+            for item in llm_mod.stream_reply(request.message, history_dicts, endpoint_override, model=request.model):
    ```
-   This needs `import time` added to the import block (stdlib, after
-   `import tempfile`).
-
-   Edit B — .bak rotation (AC-82) + quarantine listing helper (AC-79).
-   The save_snapshot tail currently reads exactly:
+   Replace with:
    ```
-        os.replace(tmp_path, path)
-    except BaseException:
+    async def event_generator():
+        history_dicts = [{"role": e.role, "content": e.content} for e in request.history]
+        prompt_message = request.message
+        if request.web:
+            try:
+                sources = websearch.search_web(request.message)
+                numbered = [{"n": i + 1, "title": s["title"], "url": s["url"]} for i, s in enumerate(sources)]
+                payload = json.dumps({"sources": numbered})
+                yield f'event: sources\ndata: {payload}\n\n'.encode()
+                prompt_message = websearch.build_prompt(request.message, sources)
+            except websearch.WebSearchError:
+                yield b'event: sources\ndata: {"sources": [], "notice": "web search unavailable"}\n\n'
         try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
+            for item in llm_mod.stream_reply(prompt_message, history_dicts, endpoint_override, model=request.model):
    ```
-   Replace it with:
+   (The sources event must be emitted BEFORE stream_reply is entered —
+   AC-87 orders it ahead of every token.)
+
+4. src/api/threads.py — EDIT (three anchored edits, one task; no
+   dependency on 1-3).
+
+   Edit A — the models currently begin exactly:
    ```
-        if os.path.exists(path):
-            os.replace(path, f"{path}.bak")
-        os.replace(tmp_path, path)
-    except BaseException:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass  # tmp file already gone; nothing to clean
-        raise
-
-
-def quarantine_files() -> list[str]:
-    parent, name = os.path.split(_data_path())
-    try:
-        return sorted(
-            f for f in os.listdir(parent or ".")
-            if f.startswith(name + ".corrupt-")
-        )
-    except OSError:
-        return []  # no data directory yet means nothing is quarantined
+   class HistoryEntry(BaseModel):
    ```
-   (Both renames are same-directory os.replace calls — O(1) metadata
-   operations at any file size; the rotation must sit ABOVE the final
-   os.replace so a crash between the two renames still leaves every byte
-   under some name.)
+   Replace with:
+   ```
+   class SourceLink(BaseModel):
+       title: str
+       url: str
 
-2. src/api/threads.py — EDIT (two related edits, one task; depends on 1).
-   The storage import line currently reads exactly:
-   `from src.services.storage import load_snapshot, save_snapshot`
-   Replace ONLY that line with:
-   `from src.services.storage import load_snapshot, quarantine_files, save_snapshot`
-   The GET handler's return currently reads exactly:
-   `    return {"threads": load_snapshot()}`
-   Replace ONLY that line with:
-   `    return {"threads": load_snapshot(), "quarantined": bool(quarantine_files())}`
-   Nothing else in the file changes (AC-79).
 
-3. src/static/index.html — EDIT (one edit). The status strip currently
+   class HistoryEntry(BaseModel):
+   ```
+
+   Edit B — HistoryEntry's fields currently end exactly:
+   ```
+       model: str = ""
+   ```
+   Replace with:
+   ```
+       model: str = ""
+       sources: list[SourceLink] | None = None
+   ```
+
+   Edit C — the PUT handler currently reads exactly:
+   ```
+       save_snapshot([t.model_dump() for t in payload.threads])
+   ```
+   Replace with:
+   ```
+       save_snapshot([t.model_dump(exclude_none=True) for t in payload.threads])
+   ```
+   (sources is None — not [] — when absent, and exclude_none drops it,
+   so v45-shaped messages persist byte-identically: AC-91's second
+   clause. No other field in these models can ever be None.)
+
+5. src/static/index.html — EDIT (one edit). The composer currently
    contains exactly:
-   `        <span id="status-save" data-testid="save-status"></span>`
+   ```
+        <button type="button" class="think-toggle" id="think-toggle" data-testid="think-toggle" title="Toggle thinking display">💭</button>
+   ```
    Insert directly BELOW that line:
-   `        <span id="status-history" data-testid="history-status"></span>`
+   ```
+        <button type="button" class="think-toggle" id="web-toggle" data-testid="web-toggle" title="Search the web for this message">🌐</button>
+   ```
    Nothing else in the file changes.
 
-4. src/static/threads.js — EDIT (two anchored edits) — the DAG's FINAL
-   task: depends_on MUST list EVERY other task id (1, 2, 3, and all four
+6. src/static/threads.js — EDIT (three anchored edits, one task;
+   depends on 5).
+
+   Edit A — add the source-links renderer. The file currently contains
+   exactly:
+   ```
+  function renderThreadMessages(thread) {
+   ```
+   Replace with:
+   ```
+  function addSources(bubble, sources, notice) {
+    var box = document.createElement('div');
+    box.className = 'msg-sources';
+    box.setAttribute('data-testid', 'msg-sources');
+    if (notice) {
+      var n = document.createElement('span');
+      n.className = 'web-notice';
+      n.setAttribute('data-testid', 'web-notice');
+      n.textContent = notice;
+      box.appendChild(n);
+    }
+    for (var i = 0; i < sources.length; i++) {
+      var a = document.createElement('a');
+      a.className = 'source-link';
+      a.setAttribute('data-testid', 'source-link');
+      a.href = sources[i].url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = '[' + (i + 1) + '] ' + (sources[i].title || sources[i].url);
+      box.appendChild(a);
+    }
+    bubble.appendChild(box);
+  }
+
+  function renderThreadMessages(thread) {
+   ```
+
+   Edit B — re-render persisted sources (AC-91). renderThreadMessages
+   currently contains exactly:
+   ```
+      addBubbleChrome(bubble, msg.content, msg.ts || 0, msg.role === 'assistant' ? (msg.model || '') : '', i);
+   ```
+   Replace with:
+   ```
+      addBubbleChrome(bubble, msg.content, msg.ts || 0, msg.role === 'assistant' ? (msg.model || '') : '', i);
+      if (msg.role === 'assistant' && msg.sources && msg.sources.length) addSources(bubble, msg.sources, '');
+   ```
+
+   Edit C — export. The return object currently begins exactly:
+   ```
+  return {
+    persistThreads: persistThreads,
+   ```
+   Replace with:
+   ```
+  return {
+    addSources: addSources,
+    persistThreads: persistThreads,
+   ```
+
+7. src/static/app.js — EDIT (five anchored edits) — the DAG's FINAL
+   task: depends_on MUST list EVERY other task id (1-6 and all three
    no_edit tasks). D-64: browser tests are accepted only downstream of
    the whole inventory.
 
-   Edit A — lock the bubble meta span (AC-83's observable surface). The
-   addBubbleChrome function currently contains exactly:
+   Edit A — element handle + armed state. The file currently contains
+   exactly:
    ```
-      var meta = document.createElement('span');
-      meta.className = 'bubble-meta';
+      var thinkToggle = document.getElementById('think-toggle');
    ```
-   Replace it with:
+   Replace with:
    ```
-      var meta = document.createElement('span');
-      meta.className = 'bubble-meta';
-      meta.setAttribute('data-testid', 'msg-meta');
+      var thinkToggle = document.getElementById('think-toggle');
+      var webToggle = document.getElementById('web-toggle');
+      var webArmed = false;
+      webToggle.addEventListener('click', function () {
+        if (webToggle.disabled) return;
+        webArmed = !webArmed;
+        webToggle.classList.toggle('active', webArmed);
+      });
    ```
 
-   Edit B — history-status indicator (AC-80/81). The file ends exactly:
+   Edit B — status-driven enablement (AC-90). pollStatus currently
+   contains exactly:
    ```
-  };
-})();
+            statusRam.textContent = ram;
    ```
-   Replace that ending with:
+   Replace with:
    ```
-  };
-})();
+            statusRam.textContent = ram;
+            webToggle.disabled = !d.web_configured;
+            webToggle.title = d.web_configured ? 'Search the web for this message' : 'Web search not configured (set TAVILY_API_KEY)';
+            if (webToggle.disabled && webArmed) { webArmed = false; webToggle.classList.remove('active'); }
+   ```
 
-// AC-80/81: load-path failure visibility — ask the backend whether the
-// saved history was quarantined at load. Runs at script eval (scripts sit
-// at the end of <body>, DOM is parsed); file-existence flag makes the
-// race with app.js's own hydrate GET harmless.
-fetch('/api/v1/threads')
-  .then(function (res) { return res.json(); })
-  .then(function (data) {
-    document.getElementById('status-history').textContent =
-      data.quarantined ? 'history unreadable (backup kept)' : '';
-  })
-  .catch(function () { /* best-effort indicator: an unreachable backend
-    already surfaces through the app's own load path */ });
+   Edit C — request flag + per-message reset (AC-84/86). The submit
+   handler currently contains exactly:
    ```
-   (Note: the fetch is OUTSIDE the IIFE — the el() helper is not in scope
-   there; use document.getElementById as shown.)
+        if (modelSelect.value) {
+          bodyObj.model = modelSelect.value;
+        }
+   ```
+   Replace with:
+   ```
+        if (modelSelect.value) {
+          bodyObj.model = modelSelect.value;
+        }
+        if (webArmed) bodyObj.web = true;
+        webArmed = false;
+        webToggle.classList.remove('active');
+        var pendingSources = [];
+        var pendingNotice = '';
+   ```
+
+   Edit D — consume the sources event. processFrame currently contains
+   exactly:
+   ```
+            if (eventType === 'token') {
+   ```
+   Replace with:
+   ```
+            if (eventType === 'sources') {
+              try {
+                var srcData = JSON.parse(dataStr);
+                pendingSources = srcData.sources || [];
+                pendingNotice = srcData.notice || '';
+              } catch (err) { pendingSources = []; pendingNotice = ''; }
+            } else if (eventType === 'token') {
+   ```
+
+   Edit E — store + render on done (AC-88/91). The done branch currently
+   contains exactly:
+   ```
+              currentThread.messages.push({ role: 'assistant', content: replyText, ts: now, model: modelSelect.value || '' });
+              renderReply(replyBubble, replyText);
+              Threads.addBubbleChrome(replyBubble, MD.stripThink(replyText), now, modelSelect.value || '', currentThread.messages.length - 1);
+   ```
+   Replace with:
+   ```
+              var assistantMsg = { role: 'assistant', content: replyText, ts: now, model: modelSelect.value || '' };
+              if (pendingSources.length) assistantMsg.sources = pendingSources.map(function (s) { return { title: s.title, url: s.url }; });
+              currentThread.messages.push(assistantMsg);
+              renderReply(replyBubble, replyText);
+              Threads.addBubbleChrome(replyBubble, MD.stripThink(replyText), now, modelSelect.value || '', currentThread.messages.length - 1);
+              if (pendingSources.length || pendingNotice) Threads.addSources(replyBubble, pendingSources, pendingNotice);
+   ```
 
 no_edit_files (D-65 — never sent to the coder, acceptance still runs):
-src/static/app.js, src/static/markdown.js, src/static/rain.js,
-src/static/style.css
+src/static/markdown.js, src/static/rain.js, src/static/style.css
 
 Contract ids per task: contracts = [] — an EMPTY list for ALL tasks.
 NEVER invent module-style ids.
 
-Oracle Mapping — seven NEW node-ids this milestone:
-- tests/test_storage_service.py::test_corrupt_snapshot_is_quarantined
-  -> maps to the src/services/storage.py task.
-- tests/test_storage_service.py::test_save_rotates_previous_snapshot_to_bak
-  -> maps to the src/services/storage.py task.
-- tests/test_storage_service.py::test_first_save_creates_no_bak
-  -> maps to the src/services/storage.py task.
-- tests/test_threads_api.py::test_get_reports_quarantine_after_corrupt_snapshot
+Oracle Mapping — sixteen NEW node-ids this milestone:
+- tests/test_websearch_service.py::test_unconfigured_when_key_missing
+  -> maps to the src/services/websearch.py task.
+- tests/test_websearch_service.py::test_configured_with_key
+  -> maps to the src/services/websearch.py task.
+- tests/test_websearch_service.py::test_search_sends_bearer_and_query
+  -> maps to the src/services/websearch.py task.
+- tests/test_websearch_service.py::test_search_returns_at_most_four_sources
+  -> maps to the src/services/websearch.py task.
+- tests/test_websearch_service.py::test_source_content_capped
+  -> maps to the src/services/websearch.py task.
+- tests/test_websearch_service.py::test_search_http_error_raises
+  -> maps to the src/services/websearch.py task.
+- tests/test_websearch_service.py::test_build_prompt_numbers_sources_and_keeps_question
+  -> maps to the src/services/websearch.py task.
+- tests/test_websearch_api.py::test_status_reports_web_configured
+  -> maps to the src/api/status.py task.
+- tests/test_websearch_api.py::test_web_false_issues_no_search
+  -> maps to the src/api/chat.py task.
+- tests/test_websearch_api.py::test_web_true_emits_sources_before_tokens
+  -> maps to the src/api/chat.py task.
+- tests/test_websearch_api.py::test_web_true_augments_prompt
+  -> maps to the src/api/chat.py task.
+- tests/test_websearch_api.py::test_search_failure_falls_back_with_notice
+  -> maps to the src/api/chat.py task.
+- tests/test_websearch_api.py::test_put_threads_roundtrips_sources
   -> maps to the src/api/threads.py task.
-- tests/test_ui.py::test_history_quarantine_indicator_shows
-  -> maps to the src/static/threads.js task (the DAG's final task).
-- tests/test_ui.py::test_history_status_empty_when_healthy
-  -> maps to the src/static/threads.js task.
-- tests/test_ui.py::test_bubble_meta_includes_date_for_past_messages
-  -> maps to the src/static/threads.js task (ratifies behavior already
-  present in the tree via the committed 2026-07-15 hover-timestamp fix;
-  the task's Edit A provides the msg-meta testid the test observes).
+- tests/test_ui_websearch.py::test_web_toggle_present_default_off
+  -> maps to the src/static/app.js task (the DAG's final task).
+- tests/test_ui_websearch.py::test_web_reply_shows_source_links_and_toggle_resets
+  -> maps to the src/static/app.js task.
+- tests/test_ui_websearch.py::test_sources_persist_across_reload
+  -> maps to the src/static/app.js task.
 Transcribe the dependency edges literally; do not infer or omit any.
 ALL other node-ids are carried forward — do NOT map them (the shell
 auto-assigns regression, D-57).
 
-Test dependencies: the browser tests observe history-status and msg-meta
-(new testids, locked in contracts.ui) and PUT/GET /api/v1/threads
-(already locked routes). Four frozen tests and conftest.py are amended
-in this same freeze (exact-shape asserts extended for the quarantined
-field and the .bak artifact; fixture sweeps quarantine files between
-tests). No new externals; no new stack imports.
+Test dependencies: the browser tests observe web-toggle, msg-sources,
+source-link (new testids, locked in contracts.ui) plus existing locked
+testids/routes. conftest.py is amended in this same freeze (the LLM stub
+gains a capture-shaped Tavily /search route; the app under test gets
+TAVILY_API_KEY + TAVILY_ENDPOINT pointed at the stub — sandbox-safe under
+--network none). One new external with frozen capture
+(captures/tavily-search.json). No new stack imports.

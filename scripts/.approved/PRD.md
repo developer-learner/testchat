@@ -1,81 +1,79 @@
-PRD — testchat M24: History Never Dies (maintenance milestone)
+PRD — testchat M25: Web-Informed Answers (erd_version 46)
 
 Milestone
 
-testchat is feature-complete; M24 closes the one critical data-safety hole
-a PM audit found (2026-07-15). The entire chat history is a single file
-with a silent destruction path: if that file is ever unreadable, the app
-starts fresh without saying so, and the very next save overwrites the
-unreadable-but-recoverable original with the near-empty new state. M23
-made SAVE failures visible; M24 does the same for the LOAD path, and adds
-a one-save-deep backup so no save can destroy the only copy of anything.
-A rider ratifies the 2026-07-15 hover-timestamp live-fix (past-day
-messages showed a bare time, indistinguishable from today's).
+The local models' knowledge is frozen at their training cutoff. M25 gives
+a chat message the option to draw on live web content: a per-message
+globe toggle in the composer. When ON, the backend queries Tavily
+(purpose-built search API returning extracted page content — chosen over
+snippet-scraping precisely because the weak local models need clean,
+complete context, not fragments), injects the top results into the LLM
+prompt as numbered sources, and the reply's sources render as clickable
+links under the bubble. When OFF, behavior is byte-identical to v45.
+
+Design rules fixed by the weak-model constraint (CEO-directed):
+the model NEVER formulates the search (the user's message is the query —
+no tool-calling, no query-rewriting hop); injection is bounded and rigidly
+structured (at most 4 sources, per-source content capped, numbered, with
+an explicit "cite by number" instruction).
 
 Acceptance Criteria
 
-- AC-78: WHEN the server loads the thread snapshot and the file exists
-  but is not valid JSON, the server SHALL move that file aside to
-  `<file>.corrupt-<timestamp>` in the same directory — bytes preserved —
-  and serve an empty thread list.
-- AC-79: WHILE at least one quarantined snapshot file exists beside the
-  data file, GET /api/v1/threads SHALL report `"quarantined": true`;
-  otherwise `"quarantined": false`.
-- AC-80: WHEN the page loads and the threads response reports quarantined
-  true, the status strip SHALL display "history unreadable (backup kept)"
-  in the history-status element.
-- AC-81: WHILE no quarantine exists, the history-status element SHALL be
-  empty.
-- AC-82: WHEN a snapshot save replaces an existing snapshot file, the
-  replaced file's content SHALL survive as `<file>.bak` beside the data
-  file (each save rotates: .bak always holds exactly the previous
-  snapshot).
-- AC-83 (ratifies the 2026-07-15 live-fix): WHEN a message's stored
-  timestamp falls on a calendar day other than today, its hover meta
-  SHALL include the calendar date ahead of the time. (Same-day messages
-  keep time-only display — existing behavior, not separately pinned.)
-- All prior ACs unchanged in intent. Four frozen tests are AMENDED in
-  this freeze because they pinned exact shapes this milestone legitimately
-  extends (each amendment listed in the delta):
-  - test_threads_api.py::test_get_with_no_saved_data_returns_empty,
-    ::test_delete_clears_snapshot, and ::test_put_invalid_role_rejected
-    (its preserved-state assert) — the GET response gains the AC-79
-    `quarantined` field.
-  - test_storage_service.py::test_save_overwrites_atomically — the
-    no-residue allowlist admits the deliberate AC-82 `.bak` artifact.
+- AC-84: WHEN the composer is rendered, it SHALL contain a web-search
+  toggle (globe), default OFF; WHEN a message is sent, the toggle SHALL
+  reset to OFF.
+- AC-85: WHEN a message is sent with the toggle OFF, the backend SHALL
+  issue no search request and process the message exactly as v45.
+- AC-86: WHEN a message is sent with the toggle ON, the backend SHALL
+  issue exactly one Tavily search using the user's message text as the
+  query, before the LLM call.
+- AC-87: WHEN the search succeeds, the backend SHALL inject at most 4
+  sources (title, URL, extracted content capped at 2000 characters per
+  source) into the LLM prompt as a numbered block ahead of the user's
+  question, and SHALL emit an SSE `sources` event carrying the numbered
+  title/URL list before any token events.
+- AC-88: WHEN a web-informed reply is rendered, the UI SHALL display the
+  sources as clickable links (opening in a new tab) beneath the reply
+  bubble, numbered to match the injection.
+- AC-89: IF the search fails for any reason (HTTP error, timeout at 10s,
+  bad response), THEN the backend SHALL proceed with the normal
+  un-augmented LLM call AND the reply SHALL carry a "web search
+  unavailable" notice — a failed search never kills the chat.
+- AC-90: WHILE `TAVILY_API_KEY` is unset on the backend, GET
+  /api/v1/status SHALL report `"web_configured": false` and the toggle
+  SHALL be disabled with a title naming the missing configuration.
+  (manual-only: the disabled-toggle visual state — the app under UI test
+  always runs configured; the status field and the backend refusal are
+  frozen-tested.)
+- AC-91: WHEN a web-informed exchange is persisted, the source list
+  (title + URL per source) SHALL persist with the assistant message and
+  re-render on thread reload. Messages without sources SHALL persist in
+  the exact v45 shape (no new field).
 
-D-68 failure-visibility accounting: the quarantine rename itself failing
-(exotic: permissions flipped between read and rename) is logged but not
-user-visible — accepted residual risk, because the same conditions make
-the next save fail, which AC-75/76 already surface as "not saved". A .bak
-rotation failure fails the whole save and is likewise caught by AC-75/76.
+Out of Scope: full-page fetching beyond Tavily's extracted content;
+multi-query or iterative search; model-formulated queries (tool-calling);
+auto-detecting when a message needs the web (the toggle is the only
+trigger); persisting the failure notice (transient, live-render only);
+visual styling polish for the source links (theme CSS untouched this
+milestone — live-fix territory if wanted).
 
-Maintenance riders (no new app-behavior ACs; land with this freeze):
+Externals (D-56): `external:tavily-search` — real response captured
+2026-07-17 (captures/tavily-search.json) from a live probe. The mock and
+all tests derive from that shape: top-level `results` array of
+`{url, title, content, score, raw_content}`. The API key travels only as
+an env var (`TAVILY_API_KEY`); `TAVILY_ENDPOINT` is overridable so the
+sandboxed suite (--network none) binds a loopback stub.
 
-- conftest hardening: the persistence-isolation fixture compared the GET
-  body to an exact dict — the AC-79 field would have silently broken every
-  UI test's settle loop; it now checks the threads list only, and sweeps
-  quarantine files between tests (the AC-79 flag is file-existence based
-  and deliberately sticky).
-- storage.py's tmp-cleanup `except OSError: pass` gains its justification
-  comment (audit note from 2026-07-14, riding this milestone's touch of
-  the file as planned).
-
-Out of Scope: automatic restore from .bak or quarantine files (recovery
-is a deliberate human act on a single-user app); generational/daily
-backups (design sketched, deferred until wanted); multi-tab conflict
-detection (unchanged from M23); pruning think-text from stored history
-(size horizon is ~6 months away).
+Flagged assumptions (ruled 2026-07-17, CEO session): toggle resets after
+every send; the raw user message is the query; sources persist in
+history.
 
 CEO Demo Script
 
-1. Open the app with a healthy history — status strip shows nothing new.
-2. Stop the backend; hand-corrupt data/threads.json (any stray character);
-   restart; reload the page — "history unreadable (backup kept)" appears,
-   the app starts empty, and a threads.json.corrupt-<ts> file sits in
-   data/ with the full original content.
-3. Send a message, then check data/: the new snapshot saved, the
-   quarantine file untouched. Restore it by renaming it back over
-   threads.json (optional live proof: reload — history returns).
-4. Hover any bubble from a previous day — the tooltip reads e.g.
-   "Jul 12 21:31", not a bare "21:31".
+1. Toggle the globe, ask something after the models' cutoff ("what
+   happened with X this week") — the reply uses current information and
+   shows numbered source links; click one, it opens the real page.
+2. Same question, toggle off — the old offline behavior, no sources.
+3. Reload the page — the web-informed reply still shows its sources.
+4. Break the network (or unset the key and restart), toggle on, send —
+   the reply still arrives, marked "web search unavailable".
