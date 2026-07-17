@@ -133,3 +133,23 @@ def test_build_prompt_numbers_sources_and_keeps_question():
     assert "alpha facts" in prompt
     assert prompt.rstrip().endswith("what changed?")
     assert prompt.index("[1]") < prompt.index("[2]") < prompt.index("what changed?")
+
+
+# ---------------------------------------------------------------------------
+# AC-93 (M26 ratify) — the prompt must instruct plain-bracket citations and
+# specific/recent-number preference; a live Qwen reply used 【N†…】 markers
+# and picked a stale point-release even though the current one was in the
+# sources, so the prompt now nudges both.
+# ---------------------------------------------------------------------------
+
+
+def test_prompt_forbids_full_width_citations():
+    prompt = build_prompt("q", [{"title": "A", "url": "https://a", "content": "x"}])
+    lowered = prompt.lower()
+    assert "[1]" in prompt
+    # instruction must explicitly name the plain-bracket form
+    assert "[n]" in lowered or "[1] or [2]" in lowered or "plain square" in lowered
+    # and nudge toward the freshest/most-specific number when sources differ
+    assert "specific" in lowered or "recent" in lowered
+    # explicitly reject the Chinese full-width marker in the emitted prompt
+    assert "【" not in prompt and "】" not in prompt  # 【 】

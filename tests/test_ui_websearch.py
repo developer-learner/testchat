@@ -67,3 +67,43 @@ def test_sources_persist_across_reload(page: Page, app_url: str) -> None:
     links = page.get_by_test_id("source-link")
     expect(links).to_have_count(2)
     expect(links.nth(0)).to_have_attribute("href", "https://example.org/one")
+
+
+# AC-92 (M26 ratify) — Qwen full-width citation markers like 【1†L1-L3】 must
+# render as [1]. Seed a prepared message via the locked PUT route so the
+# test doesn't depend on the LLM stub's output shape.
+def test_full_width_citation_markers_render_as_plain_brackets(
+    page: Page, app_url: str
+) -> None:
+    import json
+    import urllib.request
+
+    raw = "The latest release is Python 3.14 【1†L1-L3】【4†L1-L4】."
+    payload = {
+        "threads": [
+            {
+                "id": 1,
+                "title": "ratify",
+                "model": "",
+                "locked": False,
+                "messages": [
+                    {"role": "user", "content": "python?", "ts": 1.0, "model": ""},
+                    {"role": "assistant", "content": raw, "ts": 2.0, "model": "m"},
+                ],
+            }
+        ]
+    }
+    req = urllib.request.Request(
+        f"{app_url}/api/v1/threads",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="PUT",
+    )
+    urllib.request.urlopen(req, timeout=5).read()
+    page.goto(app_url)
+    page.get_by_test_id("thread-item").filter(has_text="ratify").click()
+    reply = page.get_by_test_id("msg-assistant").first
+    expect(reply).to_contain_text("[1]")
+    expect(reply).to_contain_text("[4]")
+    expect(reply).not_to_contain_text("【")
+    expect(reply).not_to_contain_text("】")

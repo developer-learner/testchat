@@ -1,79 +1,62 @@
-PRD — testchat M25: Web-Informed Answers (erd_version 46)
+PRD — testchat M26: Web Search Ratify (erd_version 48)
 
 Milestone
 
-The local models' knowledge is frozen at their training cutoff. M25 gives
-a chat message the option to draw on live web content: a per-message
-globe toggle in the composer. When ON, the backend queries Tavily
-(purpose-built search API returning extracted page content — chosen over
-snippet-scraping precisely because the weak local models need clean,
-complete context, not fragments), injects the top results into the LLM
-prompt as numbered sources, and the reply's sources render as clickable
-links under the bubble. When OFF, behavior is byte-identical to v45.
+M25 web search shipped, was CEO-demoed live (2026-07-17: real Tavily,
+real MLX-served reply, real clickable sources under the bubble), and
+five live-fixes landed same-day in the CEO session to close the gap
+between the frozen spec and what the demo actually needed:
 
-Design rules fixed by the weak-model constraint (CEO-directed):
-the model NEVER formulates the search (the user's message is the query —
-no tool-calling, no query-rewriting hop); injection is bounded and rigidly
-structured (at most 4 sources, per-source content capped, numbered, with
-an explicit "cite by number" instruction).
+1. `src/main.py` — `python-dotenv` boot-load so `TAVILY_API_KEY` from
+   `.env` reaches the running app (the AC-90 status flag would otherwise
+   report false against a real key, greying the toggle).
+2. `src/static/style.css` — visible armed/disabled treatment for the
+   web toggle (dim+grayscale off, full-color+ring on) plus the
+   source-link list styling. The frozen spec locked behavior and
+   testids; visuals were deferred out of the freeze and only implemented
+   under CEO eyes.
+3. `src/static/app.js` — client-side normalization of Qwen-style
+   citations `【N†anchor】` to plain `[N]`, before render, so the
+   numbered form matches the source list a user sees.
+4. `src/services/websearch.py` — sharpened prompt: instructs the model
+   to cite as `[N]` in plain brackets and to prefer the most
+   specific/recent number when sources disagree.
 
-Acceptance Criteria
+M26 ratifies all four: the ERD says "NO EDIT NEEDED" for every file,
+two new ACs describe the ratified behavior, and three frozen tests pin
+what the coder must not later break.
 
-- AC-84: WHEN the composer is rendered, it SHALL contain a web-search
-  toggle (globe), default OFF; WHEN a message is sent, the toggle SHALL
-  reset to OFF.
-- AC-85: WHEN a message is sent with the toggle OFF, the backend SHALL
-  issue no search request and process the message exactly as v45.
-- AC-86: WHEN a message is sent with the toggle ON, the backend SHALL
-  issue exactly one Tavily search using the user's message text as the
-  query, before the LLM call.
-- AC-87: WHEN the search succeeds, the backend SHALL inject at most 4
-  sources (title, URL, extracted content capped at 2000 characters per
-  source) into the LLM prompt as a numbered block ahead of the user's
-  question, and SHALL emit an SSE `sources` event carrying the numbered
-  title/URL list before any token events.
-- AC-88: WHEN a web-informed reply is rendered, the UI SHALL display the
-  sources as clickable links (opening in a new tab) beneath the reply
-  bubble, numbered to match the injection.
-- AC-89: IF the search fails for any reason (HTTP error, timeout at 10s,
-  bad response), THEN the backend SHALL proceed with the normal
-  un-augmented LLM call AND the reply SHALL carry a "web search
-  unavailable" notice — a failed search never kills the chat.
-- AC-90: WHILE `TAVILY_API_KEY` is unset on the backend, GET
-  /api/v1/status SHALL report `"web_configured": false` and the toggle
-  SHALL be disabled with a title naming the missing configuration.
-  (manual-only: the disabled-toggle visual state — the app under UI test
-  always runs configured; the status field and the backend refusal are
-  frozen-tested.)
-- AC-91: WHEN a web-informed exchange is persisted, the source list
-  (title + URL per source) SHALL persist with the assistant message and
-  re-render on thread reload. Messages without sources SHALL persist in
-  the exact v45 shape (no new field).
+Acceptance Criteria (new — ratifying live behavior)
 
-Out of Scope: full-page fetching beyond Tavily's extracted content;
-multi-query or iterative search; model-formulated queries (tool-calling);
-auto-detecting when a message needs the web (the toggle is the only
-trigger); persisting the failure notice (transient, live-render only);
-visual styling polish for the source links (theme CSS untouched this
-milestone — live-fix territory if wanted).
+- AC-92: WHEN the assistant reply text contains a citation marker of
+  the form `【N…】` (Chinese full-width brackets, an integer N, optional
+  dagger and label text), the rendered reply SHALL display it as `[N]`.
+- AC-93: WHEN the backend builds a web-augmented prompt, that prompt
+  SHALL instruct the model to cite in plain `[N]` square-bracket form
+  and to prefer the most specific/recent number when sources disagree.
 
-Externals (D-56): `external:tavily-search` — real response captured
-2026-07-17 (captures/tavily-search.json) from a live probe. The mock and
-all tests derive from that shape: top-level `results` array of
-`{url, title, content, score, raw_content}`. The API key travels only as
-an env var (`TAVILY_API_KEY`); `TAVILY_ENDPOINT` is overridable so the
-sandboxed suite (--network none) binds a loopback stub.
+Amended AC
 
-Flagged assumptions (ruled 2026-07-17, CEO session): toggle resets after
-every send; the raw user message is the query; sources persist in
-history.
+- AC-90 (backend key wiring): the backend SHALL surface
+  `web_configured: true` while `TAVILY_API_KEY` is set in the process
+  environment — which, at runtime, includes a `.env` file loaded at
+  application boot. (No behavior change; documents the load path M25's
+  spec silently assumed.)
 
-CEO Demo Script
+Out of scope for M26: broader answer-quality tuning (larger content
+budget, tool-calling, iterative queries); "stop the toggle from
+*looking* like the think toggle" (already visibly distinct via the
+CSS pass).
 
-1. Toggle the globe, ask something after the models' cutoff ("what
-   happened with X this week") — the reply uses current information and
-   shows numbered source links; click one, it opens the real page.
-2. Same question, toggle off — the old offline behavior, no sources.
-3. Reload the page — the web-informed reply still shows its sources.
-4. Break the network (or unset the key and restart), toggle on, send —
-   the reply still arrives, marked "web search unavailable".
+Externals: unchanged from v47 (Tavily capture already frozen).
+
+CEO Demo Script (already accepted 2026-07-17)
+
+1. Restart app, reload page. Globe is dim/grayscale (default OFF).
+2. Click globe → full-color with a ring (ON).
+3. Send "what's the latest stable Python release?". Answer arrives
+   with `[N]`-form citations and clickable source links under the
+   bubble; sources open in a new tab.
+4. Reload — the sourced reply keeps its links.
+5. Accepted live 2026-07-17: real Tavily, four real sources,
+   MLX-served reply, citations rendered as `[1]…[4]`.

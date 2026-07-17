@@ -1,5 +1,5 @@
 {
-  "erd_version": 46,
+  "erd_version": 48,
   "files": [
     "src/services/websearch.py",
     "src/api/status.py",
@@ -10,7 +10,8 @@
     "src/static/app.js",
     "src/static/markdown.js",
     "src/static/rain.js",
-    "src/static/style.css"
+    "src/static/style.css",
+    "src/main.py"
   ],
   "entry_points": [
     "src.main:app",
@@ -107,7 +108,7 @@
         "message": "string",
         "history": "array of HistoryEntry, optional, default []",
         "model": "string, optional, default null",
-        "web": "boolean, optional, default false — when true the backend performs one Tavily search before the LLM call (AC-86)"
+        "web": "boolean, optional, default false \u2014 when true the backend performs one Tavily search before the LLM call (AC-86)"
       }
     },
     {
@@ -127,7 +128,7 @@
     {
       "id": "schema:SSESources",
       "fields": {
-        "event": "literal 'sources' — emitted at most once, BEFORE any token event, only when the request had web=true",
+        "event": "literal 'sources' \u2014 emitted at most once, BEFORE any token event, only when the request had web=true",
         "sources": "array of {n: integer 1-based, title, url}; empty on search failure",
         "notice": "string, present only on search failure: 'web search unavailable' (AC-89)"
       }
@@ -191,7 +192,7 @@
       "fields": {
         "id": "integer",
         "title": "string",
-        "messages": "array of HistoryEntry (role: \"user\"|\"assistant\", content, ts, model, optional sources: array of SourceLink — absent, never empty-list, when the message had no web sources)",
+        "messages": "array of HistoryEntry (role: \"user\"|\"assistant\", content, ts, model, optional sources: array of SourceLink \u2014 absent, never empty-list, when the message had no web sources)",
         "model": "string, may be empty",
         "locked": "boolean"
       }
@@ -206,7 +207,7 @@
       "id": "schema:ThreadsListResponse",
       "fields": {
         "threads": "array of ThreadSnapshot",
-        "quarantined": "boolean — true while a quarantined (unreadable) snapshot file sits beside the data file"
+        "quarantined": "boolean \u2014 true while a quarantined (unreadable) snapshot file sits beside the data file"
       }
     },
     {
@@ -217,7 +218,7 @@
         "ram_used_gb": "number",
         "ram_total_gb": "number",
         "loadable_gb": "number",
-        "web_configured": "boolean — true iff TAVILY_API_KEY is set (AC-90)"
+        "web_configured": "boolean \u2014 true iff TAVILY_API_KEY is set (AC-90)"
       }
     }
   ],
@@ -242,13 +243,13 @@
       "id": "external:lmstudio-chat-stream",
       "probe": "curl -sS -N -X POST http://localhost:1234/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"qwen/qwen3.6-27b\",\"messages\":[{\"role\":\"user\",\"content\":\"/no_think Say hi in three words\"}],\"stream\":true}'",
       "capture": "captures/lmstudio-chat-stream.txt",
-      "notes": "OpenAI chunk shape. Captured reality (2026-07-08): thinking arrives INLINE as <think>...</think> inside delta.content — this LM Studio config emits no reasoning_content. Think text therefore reaches the frontend through SSE 'token' events; the frontend must render it via the think toggle AND strip it from stored/POSTed history. The 'think' SSE event path (reasoning_content) remains contractually valid for configs that parse reasoning."
+      "notes": "OpenAI chunk shape. Captured reality (2026-07-08): thinking arrives INLINE as <think>...</think> inside delta.content \u2014 this LM Studio config emits no reasoning_content. Think text therefore reaches the frontend through SSE 'token' events; the frontend must render it via the think toggle AND strip it from stored/POSTed history. The 'think' SSE event path (reasoning_content) remains contractually valid for configs that parse reasoning."
     },
     {
       "id": "external:tavily-search",
       "probe": "curl -sS https://api.tavily.com/search -H 'Content-Type: application/json' -H \"Authorization: Bearer $TAVILY_API_KEY\" -d '{\"query\":\"latest stable Python version July 2026\",\"max_results\":4}'",
       "capture": "captures/tavily-search.json",
-      "notes": "Captured 2026-07-17 against the live API. Backend reads top-level results[] only: url, title, content (extracted page prose — quality varies by page, hence the per-source char cap). score/raw_content/answer/images are present in the shape but unread. Key travels as Authorization: Bearer; TAVILY_ENDPOINT env overrides the URL so the sandboxed suite binds a loopback stub."
+      "notes": "Captured 2026-07-17 against the live API. Backend reads top-level results[] only: url, title, content (extracted page prose \u2014 quality varies by page, hence the per-source char cap). score/raw_content/answer/images are present in the shape but unread. Key travels as Authorization: Bearer; TAVILY_ENDPOINT env overrides the URL so the sandboxed suite binds a loopback stub."
     }
   ],
   "ui": [
@@ -260,7 +261,7 @@
     {
       "id": "ui:thread-item",
       "testid": "thread-item",
-      "description": "each thread entry in the sidebar list (one per thread, newest thread first — reverse creation order)"
+      "description": "each thread entry in the sidebar list (one per thread, newest thread first \u2014 reverse creation order)"
     },
     {
       "id": "ui:message-input",
@@ -419,18 +420,27 @@
     }
   ],
   "smoke_checks": {
-    "src/services/websearch.py": "grep -q 'WebSearchError' src/services/websearch.py && grep -q 'TAVILY_ENDPOINT' src/services/websearch.py && grep -q 'def build_prompt' src/services/websearch.py",
+    "src/services/websearch.py": "grep -q 'WebSearchError' src/services/websearch.py && grep -q 'TAVILY_ENDPOINT' src/services/websearch.py && grep -q 'def build_prompt' src/services/websearch.py && grep -q 'plain square' src/services/websearch.py",
     "src/api/status.py": "grep -q 'web_configured' src/api/status.py",
     "src/api/chat.py": "grep -q 'web: bool = False' src/api/chat.py && grep -q 'event: sources' src/api/chat.py",
     "src/api/threads.py": "grep -q 'class SourceLink' src/api/threads.py && grep -q 'exclude_none=True' src/api/threads.py",
     "src/static/index.html": "grep -q 'data-testid=\"web-toggle\"' src/static/index.html",
     "src/static/threads.js": "grep -q 'addSources' src/static/threads.js && grep -q 'msg-sources' src/static/threads.js",
-    "src/static/app.js": "grep -q 'webToggle' src/static/app.js && grep -q 'pendingSources' src/static/app.js",
+    "src/static/app.js": "grep -q 'webToggle' src/static/app.js && grep -q 'pendingSources' src/static/app.js && grep -q '\u3010' src/static/app.js",
     "src/static/markdown.js": "grep -q 'renderBlocks' src/static/markdown.js",
     "src/static/rain.js": "grep -q 'prefers-reduced-motion' src/static/rain.js",
-    "src/static/style.css": "grep -q 'data-theme=' src/static/style.css"
+    "src/static/style.css": "grep -q 'data-theme=' src/static/style.css",
+    "src/main.py": "grep -q 'load_dotenv' src/main.py"
   },
   "no_edit_files": [
+    "src/services/websearch.py",
+    "src/api/status.py",
+    "src/api/chat.py",
+    "src/api/threads.py",
+    "src/main.py",
+    "src/static/index.html",
+    "src/static/threads.js",
+    "src/static/app.js",
     "src/static/markdown.js",
     "src/static/rain.js",
     "src/static/style.css"
