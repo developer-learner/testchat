@@ -1430,13 +1430,18 @@
 
     /* M25 live-fix: web-toggle armed state + source links (spec locked the
        behavior and testids; visuals were deferred out of the freeze) */
+    #web-toggle {
+      opacity: 0.45;
+      filter: grayscale(1);
+      transition: opacity 0.15s, filter 0.15s, box-shadow 0.15s;
+    }
     #web-toggle.active {
-      background: var(--accent);
-      color: var(--accent-contrast);
-      border-color: var(--accent);
+      opacity: 1;
+      filter: none;
+      box-shadow: 0 0 0 2px var(--accent-contrast), 0 0 0 4px var(--accent);
     }
     #web-toggle:disabled {
-      opacity: 0.4;
+      opacity: 0.25;
       cursor: not-allowed;
     }
     .msg-sources {
