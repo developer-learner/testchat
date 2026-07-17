@@ -144,3 +144,7 @@ file can no longer destroy itself — it is quarantined bytes-intact and
 announced in the status strip; every save keeps the previous snapshot
 as .bak; recovery is renaming the quarantined file back. Frozen tests
 re-verify forever. Pushed to GitHub same session.
+
+## Results
+
+Full frozen TPM suite green against spec v47. Feature built and validated.
