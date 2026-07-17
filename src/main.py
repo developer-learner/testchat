@@ -1,8 +1,12 @@
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
+
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+
+load_dotenv()  # repo convention: runtime config via .env (TAVILY_API_KEY etc.)
 
 app = FastAPI()
 
