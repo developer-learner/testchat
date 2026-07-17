@@ -1427,3 +1427,33 @@
       padding: 0 2px;
       outline: 2px solid var(--accent-hover);
     }
+
+    /* M25 live-fix: web-toggle armed state + source links (spec locked the
+       behavior and testids; visuals were deferred out of the freeze) */
+    #web-toggle.active {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      border-color: var(--accent);
+    }
+    #web-toggle:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .msg-sources {
+      display: block;
+      margin-top: 0.5rem;
+      padding-top: 0.4rem;
+      border-top: 1px solid var(--input-border);
+      font-size: 0.82rem;
+    }
+    .msg-sources .source-link {
+      display: block;
+      color: var(--accent);
+      text-decoration: none;
+      margin-top: 0.15rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .msg-sources .source-link:hover { text-decoration: underline; }
+    .msg-sources .web-notice { color: var(--muted-text); font-style: italic; }
