@@ -5,7 +5,9 @@ check-test-surface.py are pure functions over JSON and file trees, and a
 validator that wrongly passes fails open. This file is the cheap-to-carry
 slice of "test the template itself" — the bash orchestration stays covered
 by dry runs until an incident says otherwise (correction-log habit: tighten
-from incidents, do not pre-harden speculatively).
+from incidents, do not pre-harden speculatively). That incident arrived:
+testchat M23's consult dead-ended on a schema-invalid EM diagnosis, so
+consult_em is now exercised here too, via drive-consult.sh (D-71).
 
 Deliberately NOT named test_*.py: orchestrate.sh and refreeze.sh run bare
 `pytest` / `pytest --collect-only` from the repo root, and a default-collected
@@ -235,6 +237,27 @@ def test_smoke_check_valid_command_passes(repo):
     r = run_validate(repo, plan)
     assert r.returncode == 0, r.stderr
     assert "not a valid shell command" not in r.stderr
+
+
+def test_smoke_check_injection_does_not_execute(repo, tmp_path):
+    """A smoke_checks value whose first token is a command-substitution must
+    NOT execute on the host during validation (blocker #2). The token is
+    passed to `command -v` as data, so the payload never runs; the value is
+    still rejected (it is not a real executable)."""
+    canary = tmp_path / "CANARY"
+    contracts = CONTRACTS.copy()
+    # A single whitespace-free token (so split()[0] is the whole payload) that
+    # would `touch` the canary if interpolated into the shell word — ${IFS}
+    # supplies the argument separator without a literal space.
+    contracts["smoke_checks"] = {"src/b.py": "foo;touch${IFS}" + str(canary)}
+    (repo / "scripts" / ".approved" / "contracts.json").write_text(json.dumps(contracts))
+    (repo / "scripts" / ".approved" / "test-nodeids").write_text("tests/test_a.py::test_one\n")
+    plan = good_plan()
+    plan["tasks"][1]["tests"] = []
+    r = run_validate(repo, plan)
+    assert not canary.exists(), "smoke_check payload executed on the host (injection)"
+    assert r.returncode == 1
+    assert "not a valid shell command" in r.stderr
 
 
 def test_brief_over_max_chars_rejected(repo):
@@ -873,3 +896,370 @@ def test_swallow_js_handled_catch_passes(tmp_path):
 def test_swallow_other_filetype_ignored(tmp_path):
     r = run_swallow(tmp_path, "m.css", "catch (e) {}\n")
     assert r.returncode == 0
+
+
+# --- consult_em: D-71 diagnosis hardening (bash, via drive-consult.sh) -------
+# The M23 incident this covers: the EM's one production diagnosis came back
+# schema-invalid (empty task_id) and the run dead-ended with no retry. D-71
+# removes task_id from the reply surface (shell stamps it) and grants one
+# retry carrying the validator's errors. These drive the REAL consult_em
+# extracted from orchestrate.sh against a scripted fake EM.
+
+DRIVE_CONSULT = SCRIPTS / "selftest" / "drive-consult.sh"
+
+VALID_DIAG = {"verdict": "decomposition_wrong", "reason": "T2 split is wrong"}
+
+
+def run_consult(tmp_path, replies, task_id="T7"):
+    rdir = tmp_path / "replies"
+    rdir.mkdir()
+    for i, reply in enumerate(replies, 1):
+        raw = reply if isinstance(reply, str) else json.dumps(reply)
+        (rdir / str(i)).write_text(raw)
+    return subprocess.run(
+        ["bash", str(DRIVE_CONSULT), str(tmp_path), task_id,
+         "failed 2 attempts on src/x.py"],
+        capture_output=True, text=True,
+    )
+
+
+def consult_calls(tmp_path):
+    return int((tmp_path / ".calls").read_text())
+
+
+def consult_artifact(tmp_path, task_id="T7"):
+    p = tmp_path / ".pipeline-state" / f"diagnosis-{task_id}.json"
+    return json.loads(p.read_text())
+
+
+def test_consult_valid_first_reply_one_call(tmp_path):
+    r = run_consult(tmp_path, [VALID_DIAG])
+    assert r.returncode == 0, r.stderr
+    assert consult_calls(tmp_path) == 1
+    assert "VERDICT=decomposition_wrong" in r.stdout
+    # task_id was never asked of the model; the shell stamped it
+    assert consult_artifact(tmp_path)["task_id"] == "T7"
+
+
+def test_consult_schema_invalid_then_valid_recovers(tmp_path):
+    r = run_consult(tmp_path, [{"verdict": "bogus", "reason": "x"}, VALID_DIAG])
+    assert r.returncode == 0, r.stderr
+    assert consult_calls(tmp_path) == 2
+    # the retry prompt carries the validator's exact complaint back to the EM
+    retry_prompt = (tmp_path / "prompts" / "2").read_text()
+    assert "verdict must be one of" in retry_prompt
+    assert consult_artifact(tmp_path)["task_id"] == "T7"
+
+
+def test_consult_non_json_then_valid_recovers(tmp_path):
+    r = run_consult(
+        tmp_path, ["I think the brief is wrong, because...", VALID_DIAG])
+    assert r.returncode == 0, r.stderr
+    assert consult_calls(tmp_path) == 2
+    assert "not parseable JSON" in (tmp_path / "prompts" / "2").read_text()
+
+
+def test_consult_two_invalid_replies_halt_bounded(tmp_path):
+    # a third scripted reply proves the loop never takes a third bite
+    r = run_consult(
+        tmp_path, [{"verdict": "bogus"}, {"reason": "still bad"}, VALID_DIAG])
+    assert r.returncode != 0
+    assert consult_calls(tmp_path) == 2
+    assert "after one retry" in r.stderr
+
+
+def test_consult_model_task_id_overwritten(tmp_path):
+    r = run_consult(tmp_path, [dict(VALID_DIAG, task_id="T99")])
+    assert r.returncode == 0, r.stderr
+    assert consult_artifact(tmp_path)["task_id"] == "T7"
+
+
+def test_plan_prompt_names_every_required_schema_key():
+    # linkbox M1 (2026-07-16): the EM omitted the required top-level
+    # "version" key on BOTH fresh-plan emissions — the prompt's checklist
+    # named erd_version but not version, and with no plan-being-revised to
+    # copy the key from, the local EM follows the checklist literally.
+    # Prompt-schema drift: every key the schema requires must be named in
+    # the emission prompt.
+    orch = (SCRIPTS / "orchestrate.sh").read_text()
+    prompt = re.search(
+        r'"Decompose the frozen ERD into atomic ONE-FILE tasks.*?"',
+        orch, re.S).group(0)
+    schema = json.loads((SCRIPTS / "schemas" / "plan.schema.json").read_text())
+    for key in schema["required"]:
+        # word-boundary match: "version" must not be satisfied by the
+        # "erd_version" mention (the exact vacuity that hid this defect)
+        assert re.search(rf"(?<![A-Za-z_]){re.escape(key)}(?![A-Za-z_])", prompt), (
+            f"plan.schema.json requires top-level '{key}' but the "
+            f"ensure_plan emission prompt never names it")
+
+
+# --- phase-gate.sh manifest phase (fixes c139cbc) ----------------------------
+# Frozen-integrity gate for the pre-commit / conductor path. Three failure
+# modes the review found (2026-07-16) and c139cbc fixed:
+#   #3 an absent frozen-manifest silently skipped the check (fail-open)
+#   #4 a hand-added test file escaped the pin yet ran in the full suite
+#   plus a regression pin: gitignored bytecode caches must not false-positive
+PHASE_GATE = SCRIPTS / "phase-gate.sh"
+
+
+def _init_git(repo):
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "add", "-A"],
+        cwd=repo, check=True,
+    )
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t",
+         "commit", "-qm", "fixture"],
+        cwd=repo, check=True,
+    )
+
+
+@pytest.fixture()
+def frozen_repo(tmp_path):
+    """A post-refreeze child: control-plane manifests, a frozen VERSION,
+    one pinned test file on disk. Just enough for phase-gate to run."""
+    (tmp_path / "scripts" / ".approved").mkdir(parents=True)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "scripts" / "phase-gate.sh").write_bytes(PHASE_GATE.read_bytes())
+    (tmp_path / "scripts" / "phase-gate.sh").chmod(0o755)
+
+    (tmp_path / "tests" / "test_x.py").write_text("def test_ok(): pass\n")
+    (tmp_path / "scripts" / ".approved" / "VERSION").write_text("1\n")
+    frozen_hash = subprocess.check_output(
+        ["sha256sum", "tests/test_x.py"], cwd=tmp_path, text=True,
+    )
+    (tmp_path / "scripts" / ".approved" / "frozen-manifest").write_text(frozen_hash)
+
+    cp_hash = subprocess.check_output(
+        ["sha256sum", "scripts/phase-gate.sh"], cwd=tmp_path, text=True,
+    )
+    (tmp_path / "scripts" / ".manifest-template").write_text(cp_hash)
+    (tmp_path / "scripts" / ".manifest-project").write_text("")
+
+    _init_git(tmp_path)
+    return tmp_path
+
+
+def _run_gate(repo, phase="manifest"):
+    return subprocess.run(
+        ["bash", "scripts/phase-gate.sh", phase, "HEAD"],
+        cwd=repo, capture_output=True, text=True,
+    )
+
+
+def test_phase_gate_manifest_baseline_passes(frozen_repo):
+    r = _run_gate(frozen_repo)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+
+
+def test_phase_gate_frozen_manifest_absent_but_version_present_fails(frozen_repo):
+    """The whole check used to be wrapped in `[ -f FROZEN ]`, which turned
+    deleting the manifest itself into a silent skip. c139cbc fixed the
+    trigger to VERSION presence."""
+    (frozen_repo / "scripts" / ".approved" / "frozen-manifest").unlink()
+    r = _run_gate(frozen_repo)
+    assert r.returncode == 1
+    assert "frozen-manifest is missing" in r.stdout
+
+
+def test_phase_gate_pinned_file_tampered_fails(frozen_repo):
+    (frozen_repo / "tests" / "test_x.py").write_text("def test_ok(): return 42\n")
+    r = _run_gate(frozen_repo)
+    assert r.returncode == 1
+    assert "frozen spec tampered" in r.stdout
+
+
+def test_phase_gate_unpinned_test_file_fails(frozen_repo):
+    """INV-1 addition coverage — the hash loop catches modification and
+    deletion of pinned files, but a fresh tests/test_y.py was invisible
+    to the manifest yet ran in the full frozen suite."""
+    (frozen_repo / "tests" / "test_stowaway.py").write_text("def test_x(): pass\n")
+    r = _run_gate(frozen_repo)
+    assert r.returncode == 1
+    assert "unpinned test file" in r.stdout
+    assert "test_stowaway.py" in r.stdout
+
+
+def test_phase_gate_gitignored_bytecode_does_not_trip(frozen_repo):
+    """Regression pin: the fix uses git ls-files (gitignore-respecting) on
+    the disk side so pytest's __pycache__/.pytest_cache don't flag as
+    unpinned on any child that has ever run tests."""
+    (frozen_repo / ".gitignore").write_text("__pycache__/\n")
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t",
+         "add", ".gitignore"],
+        cwd=frozen_repo, check=True,
+    )
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t",
+         "commit", "-qm", "gitignore"],
+        cwd=frozen_repo, check=True,
+    )
+    (frozen_repo / "tests" / "__pycache__").mkdir()
+    (frozen_repo / "tests" / "__pycache__" / "test_x.cpython-314.pyc").write_bytes(b"\x00")
+    r = _run_gate(frozen_repo)
+    assert r.returncode == 0, r.stdout
+
+
+# --- refreeze.sh REMOVED whitelist (fixes 64535e3) --------------------------
+# The `case "$f" in tests/*.py)` whitelist accepted `tests/../scripts/foo.py`
+# because bash case-globs match '/'. 64535e3 rejects traversal before the
+# pattern check. We exercise refreeze in --diff mode: it runs the same
+# staging validation (including the REMOVED check) but applies nothing —
+# so we can test the freeze door without a real interactive terminal.
+REFREEZE = SCRIPTS / "refreeze.sh"
+
+
+@pytest.fixture()
+def stageable_repo(tmp_path):
+    """A repo with the machinery refreeze needs to reach the REMOVED
+    validation: an existing frozen spec (v1), plus a staging dir. We
+    keep the staging minimal (just a REMOVED file) because we want the
+    REMOVED validation to fire, not the delta plumbing beyond it."""
+    (tmp_path / "scripts" / ".approved" / "incoming").mkdir(parents=True)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "scripts").mkdir(exist_ok=True)
+    for name in ("refreeze.sh", "phase-gate.sh"):
+        target = tmp_path / "scripts" / name
+        target.write_bytes((SCRIPTS / name).read_bytes())
+        target.chmod(0o755)
+
+    # A prior freeze exists (VERSION>0), so REMOVED entries can refer to
+    # files that must be present in the tree.
+    (tmp_path / "scripts" / ".approved" / "VERSION").write_text("1\n")
+    (tmp_path / "tests" / "test_real.py").write_text("def test_ok(): pass\n")
+    # frozen-manifest is regenerated by refreeze, so any content is fine
+    # for the pre-apply validation phase we're exercising.
+    (tmp_path / "scripts" / ".approved" / "frozen-manifest").write_text("")
+
+    _init_git(tmp_path)
+    return tmp_path
+
+
+def _run_refreeze_diff(repo):
+    return subprocess.run(
+        ["bash", "scripts/refreeze.sh", "--diff", "scripts/.approved/incoming"],
+        cwd=repo, capture_output=True, text=True,
+    )
+
+
+def test_refreeze_removed_rejects_traversal(stageable_repo):
+    """The specific defeat the review found: `tests/../scripts/x.py`
+    matched the `tests/*.py` case-glob (bash case-globs match '/') and
+    would have `rm -f`'d the traversed path at apply. The fix rejects
+    traversal *before* the pattern, with a distinct 'no traversal'
+    message — a generic "not tests/*.py" reject at some later stage
+    isn't the invariant we want to pin (unfixed code failed later for a
+    different reason, which a looser assertion would have passed)."""
+    # A "victim" file at the traversed target so the pre-fix code would
+    # have passed the [ -f "$f" ] existence check and continued into the
+    # apply path. Reproduces the exact vulnerability shape.
+    (stageable_repo / "scripts" / "x_victim.py").write_text("victim\n")
+    (stageable_repo / "scripts" / ".approved" / "incoming" / "REMOVED").write_text(
+        "tests/../scripts/x_victim.py\n"
+    )
+    r = _run_refreeze_diff(stageable_repo)
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    combined = r.stdout + r.stderr
+    assert "no traversal" in combined, combined
+
+
+@pytest.mark.parametrize("bad_path", [
+    "/etc/passwd",                 # absolute
+    "../scripts/refreeze.sh",      # simple parent-escape
+    "tests/../../etc/passwd",      # not tests/*.py at all
+])
+def test_refreeze_removed_rejects_non_tests_paths(stageable_repo, bad_path):
+    """Base whitelist — both pre-fix and post-fix reject these. Kept as
+    a regression pin so a future rewrite doesn't loosen the whitelist."""
+    (stageable_repo / "scripts" / ".approved" / "incoming" / "REMOVED").write_text(
+        bad_path + "\n"
+    )
+    r = _run_refreeze_diff(stageable_repo)
+    assert r.returncode != 0
+    combined = r.stdout + r.stderr
+    assert "REMOVED entries must be" in combined, combined
+
+
+def test_refreeze_removed_accepts_plain_tests_path(stageable_repo):
+    """The tightening must not break the legitimate case."""
+    (stageable_repo / "scripts" / ".approved" / "incoming" / "REMOVED").write_text(
+        "tests/test_real.py\n"
+    )
+    r = _run_refreeze_diff(stageable_repo)
+    # --diff mode may still fail late (delta plumbing needs more staging),
+    # but it must NOT fail at the REMOVED whitelist.
+    combined = r.stdout + r.stderr
+    assert "REMOVED entries must be" not in combined, combined
+
+
+# --- run_coder: gate-failure propagation (review blocker #1, drive-coder.sh) -
+# The 2026-07-16 pre-publish review's worst finding: run_coder is always
+# invoked as an if-condition, which suppresses `set -e` for its whole body,
+# and the task lane gate at its tail had no explicit failure handling — a
+# failing gate was silently ignored and the caller committed the file anyway.
+# Fixed with an explicit `|| die` (hard halt, D-15/D-22). The same bug class
+# had already been fixed once in em_call (D-71) and recurred here; these
+# tests are the mechanical guard against a third occurrence. The harness
+# reproduces the exact calling shape (if-condition + commit-on-success).
+
+DRIVE_CODER = SCRIPTS / "selftest" / "drive-coder.sh"
+
+CODER_GOOD_REPLY = (
+    "=== FILE: src/x.py ===\n"
+    "def f():\n"
+    "    return 1\n"
+    "=== END FILE ===\n"
+)
+
+
+def run_coder_drive(tmp_path, reply, gate_rc, task_file="src/x.py"):
+    rdir = tmp_path / "replies"
+    rdir.mkdir()
+    (rdir / "1").write_text(reply)
+    return subprocess.run(
+        ["bash", str(DRIVE_CODER), str(tmp_path), "T7", task_file, str(gate_rc)],
+        capture_output=True, text=True,
+    )
+
+
+def coder_commit_count(tmp_path):
+    return int(subprocess.run(
+        ["git", "rev-list", "--count", "HEAD"],
+        cwd=tmp_path, capture_output=True, text=True,
+    ).stdout.strip())
+
+
+def test_coder_gate_pass_writes_and_commits(tmp_path):
+    r = run_coder_drive(tmp_path, CODER_GOOD_REPLY, gate_rc=0)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "RC=0" in r.stdout
+    assert coder_commit_count(tmp_path) == 2  # fixture + [task T7]
+    assert (tmp_path / "src" / "x.py").read_text().startswith("def f():")
+
+
+def test_coder_gate_failure_is_hard_halt_and_nothing_committed(tmp_path):
+    """THE blocker-#1 pin. A failing lane gate must kill the run via die
+    (exit, which escapes the set -e suppression) BEFORE the call site can
+    commit. Pre-fix behavior: run_coder returned 0, the file was committed,
+    and the harness would print RC=0 COMMITS=2 — every assertion below
+    fails against that code."""
+    r = run_coder_drive(tmp_path, CODER_GOOD_REPLY, gate_rc=1)
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    assert "hard halt" in r.stderr
+    assert "RC=" not in r.stdout          # die fired before the call site resumed
+    assert coder_commit_count(tmp_path) == 1  # fixture only — no [task] commit
+
+
+def test_coder_wrong_path_reply_is_strike_not_commit(tmp_path):
+    """Reply naming a different path than the task = coder FAILURE (return 1,
+    strike evidence), never a write and never a commit."""
+    wrong = CODER_GOOD_REPLY.replace("src/x.py", "src/other.py")
+    r = run_coder_drive(tmp_path, wrong, gate_rc=0)
+    assert r.returncode == 0, (r.stdout, r.stderr)   # harness survives; strike path
+    assert "RC=1" in r.stdout
+    assert coder_commit_count(tmp_path) == 1
+    assert not (tmp_path / "src" / "x.py").exists()
+    assert not (tmp_path / "src" / "other.py").exists()

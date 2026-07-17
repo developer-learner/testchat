@@ -65,6 +65,16 @@ mkdir -p "$STATE_DIR" "$TASK_STATE" "$BRIEF_DIR" "$LOG_DIR" "$ESC_DIR"
 
 die() { echo "FAIL: $*" >&2; exit 1; }
 
+# Single-writer lock on the state dir. Every counter in .pipeline-state/
+# (strikes, plan_revisions, phase, task_target, spec_version) is a plain
+# file with a write-then-read pattern that assumes no concurrent runs.
+# flock -n fails immediately if another orchestrate is already holding
+# the lock, so a second run halts with a clear message instead of
+# silently corrupting the state files of the run in progress.
+exec 200> "$STATE_DIR/.lock"
+flock -n 200 \
+  || die "another scripts/orchestrate.sh is already running (holds $STATE_DIR/.lock) — wait for it to finish or kill it, then retry"
+
 # --- state helpers (files, not shell vars: crash checkpoint per D-24) ---
 read_state()  { [ -f "$STATE_DIR/$1" ] && cat "$STATE_DIR/$1" || true; }
 write_state() { printf '%s\n' "$2" > "$STATE_DIR/$1"; }
@@ -103,7 +113,7 @@ mark "run start (budget ${SWBP_RUN_BUDGET}s)"
 
 # Constraint 3: conductors live inside the VM; running on macOS is a structural error.
 [ "$(uname -s)" != "Darwin" ] \
-  || die "orchestrate.sh must run inside the Linux dev VM, not on the macOS host — see tasks/HANDOFF-dev-vm.md constraint 3"
+  || die "orchestrate.sh must run inside the Linux dev VM, not on the macOS host — see docs/DEV-VM-SETUP.md constraint 3"
 
 python3 --version >/dev/null 2>&1 || die "python3 required"
 git --version >/dev/null 2>&1    || die "git required"
@@ -128,6 +138,12 @@ curl -s --max-time 5 -o /dev/null "http://$SANDBOX_LLM_HOST:$SANDBOX_LLM_PORT/v1
 # Fail closed here, same as the manifest check below.
 [ "$(git config core.hooksPath || true)" = ".githooks" ] \
   || die "core.hooksPath is not '.githooks' — run scripts/bootstrap.sh first (the pre-commit lane gate is mandatory, not optional)"
+# The orchestrator's own [plan]/[task] commits swallow failures on purpose
+# (nothing-to-commit is normal) — which also swallows a missing git identity,
+# so every commit silently no-ops (scratch-rung drill 2026-07-16: the dev VM
+# had no identity and the plan commit vanished). Fail closed here instead.
+{ [ -n "$(git config user.email || true)" ] && [ -n "$(git config user.name || true)" ]; } \
+  || die "git identity missing — [plan]/[task] commits would silently no-op (their failures are deliberately swallowed): git config --global user.email <addr> && git config --global user.name <name>"
 # A dirty tree poisons the lane gate: phase-gate diffs the working tree
 # against a phase-start ref, so pre-existing uncommitted changes get blamed
 # on whichever tier runs first (testchat M2: the EM was accused of touching
@@ -236,10 +252,20 @@ em_call() {
         --schema "$schema" --max-time "$AGENT_TIMEOUT" \
     > "$LOG_DIR/em-last.raw" 2> "$LOG_DIR/em-last.err" \
     || { cat "$LOG_DIR/em-last.err" >&2; die "EM call failed (see $LOG_DIR/em-last.err)"; }
-  python3 -c "import json; json.load(open('$LOG_DIR/em-last.raw'))" 2>/dev/null \
-    || die "EM returned invalid JSON (see $LOG_DIR/em-last.raw)"
+  if ! python3 -c "import json; json.load(open('$LOG_DIR/em-last.raw'))" 2>/dev/null; then
+    # EM_JSON_SOFT=1 (consult_em's D-71 retry loop): report failure to the
+    # caller instead of halting — a malformed reply there earns one retry.
+    [ "${EM_JSON_SOFT:-0}" = "1" ] \
+      || die "EM returned invalid JSON (see $LOG_DIR/em-last.raw)"
+    echo "  EM reply was not valid JSON (see $LOG_DIR/em-last.raw)" >&2
+    write_state phase ""
+    mark "em-call invalid-json -> $out"
+    return 1
+  fi
   cp "$LOG_DIR/em-last.raw" "$out"
-  bash scripts/phase-gate.sh em "$phase_start"
+  # Explicit die: em_call may run inside an if-condition (D-71), where set -e
+  # is suppressed for the whole function body — the lane gate must stay fatal.
+  bash scripts/phase-gate.sh em "$phase_start" || die "EM lane/integrity gate failed"
   write_state phase ""
   mark "em-call done -> $out"
 }
@@ -357,7 +383,12 @@ PYEOF
     write_state phase ""
     return 1
   fi
-  bash scripts/phase-gate.sh task "$phase_start" "$file"   # violation = hard halt (D-15/D-22)
+  # Explicit die: run_coder always runs inside an if-condition, where set -e
+  # is suppressed for the whole function body — without this the gate's exit
+  # code was silently discarded and the task committed anyway (same class as
+  # em_call's D-71 fix). Violation = hard halt (D-15/D-22), never a strike.
+  bash scripts/phase-gate.sh task "$phase_start" "$file" \
+    || die "task lane/integrity gate failed ($file) — hard halt (D-15/D-22)"
   write_state phase ""
   write_state task_target ""
   return 0
@@ -426,13 +457,20 @@ ensure_plan() {
     write_state plan_revisions $((revs + 1))
     echo "=== EM: emit/revise plan (revision $((revs + 1))/$MAX_PLAN_REVISIONS) ==="
     em_call tasks/plan.json scripts/schemas/plan.schema.json \
-      "Decompose the frozen ERD into atomic ONE-FILE tasks and reply with ONLY the plan as JSON matching the schema you were given — no prose, no markdown fence. Requirements: exactly one task per file in contracts.json's files array; every test node-id in test-nodeids that exercises a file in contracts.json's files array mapped to exactly one task (the task after which it should pass, given its depends_on) — node-ids testing only carried-forward files are handled by the shell: do NOT map them and do NOT emit a 'regression' key (the validator rejects it); when unsure, omit the node-id — the validator names any you must map; every task's contracts list uses ids that exist in contracts.json; every brief self-contained per BLUEPRINT.md Rule 8 (exact path, signatures, inputs/outputs, acceptance) — the coder sees only the brief. Do NOT include a smoke_check field — smoke checks are TPM-authored and live in contracts.json. Set erd_version to $FROZEN_V. NO status fields.${verrs:+ The previous plan failed validation with these errors — fix all of them: $verrs}" \
+      "Decompose the frozen ERD into atomic ONE-FILE tasks and reply with ONLY the plan as JSON matching the schema you were given — no prose, no markdown fence. Requirements: exactly one task per file in contracts.json's files array; every test node-id in test-nodeids that exercises a file in contracts.json's files array mapped to exactly one task (the task after which it should pass, given its depends_on) — node-ids testing only carried-forward files are handled by the shell: do NOT map them and do NOT emit a 'regression' key (the validator rejects it); when unsure, omit the node-id — the validator names any you must map; every task's contracts list uses ids that exist in contracts.json; every brief self-contained per BLUEPRINT.md Rule 8 (exact path, signatures, inputs/outputs, acceptance) — the coder sees only the brief. Do NOT include a smoke_check field — smoke checks are TPM-authored and live in contracts.json. Set erd_version to $FROZEN_V. Set the top-level version key to an integer >= 1 (1 for a fresh plan; bump it on every re-emit). NO status fields.${verrs:+ The previous plan failed validation with these errors — fix all of them: $verrs}" \
       "ERD:$APPROVED/ERD.md" "contracts:$APPROVED/contracts.json" "test-nodeids:$APPROVED/test-nodeids" "plan-being-revised:tasks/plan.json"
   done
 }
 
-# --- EM consult: schema-bound diagnosis (D-29) -------------------------------
+# --- EM consult: schema-bound diagnosis (D-29, hardened D-71) ----------------
 # $1 task-id (or DRIFT)  $2 evidence text. Sets DIAG_VERDICT, DIAG_FILE.
+# D-71: the model's reply surface is verdict+reason(+revised_brief) only —
+# task_id is the shell's own knowledge, stamped into the artifact below (the
+# one production consult ever attempted died on an empty task_id echo,
+# testchat M23). An invalid reply — unparseable JSON or failed validation —
+# earns exactly ONE retry carrying the validator's errors, the same feedback
+# loop that demonstrably fixes plans on the second emit (ensure_plan,
+# testchat M6). A second invalid reply halts (Rule 4), as before.
 consult_em() {
   local id="$1" evidence="$2"
   rm -f tasks/diagnosis.json
@@ -441,14 +479,32 @@ consult_em() {
   for f in $(printf '%s' "$evidence" | grep -oE 'tests/[A-Za-z0-9_/]+\.py' | sort -u || true); do
     ctx+=("failing-test:$f")
   done
-  em_call tasks/diagnosis.json scripts/schemas/diagnosis.schema.json \
-    "Task consult. Task '$id' — $evidence. Decide ONE verdict: brief_wrong (the task brief mis-specified the work — include a full revised_brief, Rule 8 discipline), decomposition_wrong (the task split/dependencies are wrong), or contract_or_test_wrong (the frozen contract or test itself is wrong — your reason becomes the evidence a human carries to the TPM, so be specific: name the contract id or test node-id and what about it is wrong). Reply with ONLY the diagnosis JSON matching the schema you were given." \
-    "${ctx[@]}"
-  [ -f tasks/diagnosis.json ] || die "EM produced no diagnosis for $id — halting (Rule 4)"
-  DIAG_VERDICT=$(python3 scripts/validate-plan.py --diagnosis tasks/diagnosis.json) \
-    || die "EM diagnosis for $id failed schema validation — halting (Rule 4)"
-  DIAG_FILE="$STATE_DIR/diagnosis-$id.json"
-  mv tasks/diagnosis.json "$DIAG_FILE"
+  local instr="Task consult. Task '$id' — $evidence. Decide ONE verdict: brief_wrong (the task brief mis-specified the work — include a full revised_brief, Rule 8 discipline), decomposition_wrong (the task split/dependencies are wrong), or contract_or_test_wrong (the frozen contract or test itself is wrong — your reason becomes the evidence a human carries to the TPM, so be specific: name the contract id or test node-id and what about it is wrong). Reply with ONLY the diagnosis JSON matching the schema you were given, shaped exactly like this example: {\"verdict\": \"decomposition_wrong\", \"reason\": \"T2 imports the parser T4 creates but does not depend on T4\"}. Do NOT include a task_id field — the orchestrator records it itself."
+  local attempt verrs=""
+  for attempt in 1 2; do
+    [ -z "$verrs" ] \
+      || echo "=== EM diagnosis for $id rejected (attempt $((attempt - 1))) — one retry with the validator's errors (D-71) ==="
+    if EM_JSON_SOFT=1 em_call tasks/diagnosis.json scripts/schemas/diagnosis.schema.json \
+         "$instr${verrs:+ Your previous reply was rejected — fix exactly these errors and reply again with ONLY the corrected JSON: $verrs}" \
+         "${ctx[@]}"; then
+      python3 -c 'import json, sys
+p = "tasks/diagnosis.json"
+d = json.load(open(p))
+if isinstance(d, dict):
+    d["task_id"] = sys.argv[1]
+    json.dump(d, open(p, "w"), indent=2)
+' "$id"
+      if DIAG_VERDICT=$(python3 scripts/validate-plan.py --diagnosis tasks/diagnosis.json 2> "$LOG_DIR/diag-last.err"); then
+        DIAG_FILE="$STATE_DIR/diagnosis-$id.json"
+        mv tasks/diagnosis.json "$DIAG_FILE"
+        return 0
+      fi
+      verrs=$(tr '\n' ' ' < "$LOG_DIR/diag-last.err")
+    else
+      verrs="the reply was not parseable JSON at all"
+    fi
+  done
+  die "EM diagnosis for $id still invalid after one retry — halting (Rule 4): $verrs"
 }
 
 # --- Escalation bundle for the web-chat TPM (D-29) ---------------------------
@@ -612,8 +668,14 @@ while :; do
   id="$NEXT"
   check_budget "task $id"
   file=$(python3 scripts/validate-plan.py --task "$id" --field file)
-  mapped=$(python3 scripts/validate-plan.py --task "$id" --field tests)
-  smoke=$(python3 -c "import json; cs=json.load(open('scripts/.approved/contracts.json')).get('smoke_checks',{}); print(cs.get('$file',''))")
+  # Read into an array so parametrized node-ids (containing spaces or '['..']')
+  # aren't word-split or glob-expanded by an unquoted expansion.
+  mapped_out=$(python3 scripts/validate-plan.py --task "$id" --field tests)
+  mapped=()
+  while IFS= read -r line; do
+    [ -n "$line" ] && mapped+=("$line")
+  done <<< "$mapped_out"
+  smoke=$(python3 -c "import json,sys; cs=json.load(open('scripts/.approved/contracts.json')).get('smoke_checks',{}); print(cs.get(sys.argv[1],''))" "$file")
   brief=$(cat "$BRIEF_DIR/$id" 2>/dev/null || python3 scripts/validate-plan.py --task "$id" --field brief)
   strikes=$(counter "$id" strikes)
   echo "--- Task $id -> $file (strike $((strikes + 1))/$MAX_TASK_STRIKES) ---"
@@ -633,7 +695,7 @@ The previous attempt failed with: $last_fail. Fix the cause, do not just retry t
   # lives in frozen contracts.no_edit_files (human-approved at refreeze), so
   # the skipped file's provenance is the spec, not luck. Acceptance below
   # (mapped tests + smoke_check) still runs in full.
-  no_edit=$(python3 -c "import json; c=json.load(open('scripts/.approved/contracts.json')); print(1 if '$file' in c.get('no_edit_files', []) else 0)")
+  no_edit=$(python3 -c "import json,sys; c=json.load(open('scripts/.approved/contracts.json')); print(1 if sys.argv[1] in c.get('no_edit_files', []) else 0)" "$file")
 
   # acceptance = projection of the frozen oracle (D-28) + optional smoke.
   # A coder call can now fail before any file exists (bad/missing sentinel
@@ -651,9 +713,8 @@ The previous attempt failed with: $last_fail. Fix the cause, do not just retry t
   fi
   if [ "$coder_ok" = "1" ]; then
     git add "$file" && git commit -m "[task $id] attempt $((strikes + 1))" 2>/dev/null || true
-    if [ -n "$mapped" ]; then
-      # shellcheck disable=SC2086
-      run_tests $mapped
+    if [ "${#mapped[@]}" -gt 0 ]; then
+      run_tests "${mapped[@]}"
       [ "$TESTS_RC" -eq 0 ] || { pass=0; }
       evidence="mapped tests failing: ${FAILING:-no verdict (rc=$TESTS_RC)}"
     else

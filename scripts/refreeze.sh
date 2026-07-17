@@ -85,7 +85,11 @@ REMOVED_FILES=""
 if [ -f "$IN/REMOVED" ]; then
   REMOVED_FILES=$(grep -vE '^\s*(#|$)' "$IN/REMOVED" || true)
   for f in $REMOVED_FILES; do
+    # Bash case-globs match '/', so a literal `tests/*.py` accepts
+    # `tests/../scripts/foo.py` — a whitelist the TPM could bypass to
+    # rm -f arbitrary paths at apply. Reject traversal before the pattern.
     case "$f" in
+      /*|*/../*|../*|*/..|..) die "REMOVED entries must be repo-relative tests/*.py paths (no traversal), got: $f" ;;
       tests/*.py) ;;
       *) die "REMOVED entries must be tests/*.py paths, got: $f" ;;
     esac
@@ -475,7 +479,11 @@ rm -f "$TMP/refreeze-old-nodeids" "$TMP/refreeze-changed-files" "$TMP/refreeze-c
   for f in PRD.md ERD.md contracts.json test-nodeids; do
     [ -f "$APPROVED/$f" ] && sha256sum "$APPROVED/$f"
   done
-  find tests -type f -name "*.py" | sort | while read -r f; do sha256sum "$f"; done
+  # Pin every file under tests/ (not only .py): non-.py fixtures a TPM
+  # could stage would otherwise install unpinned, and the phase-gate
+  # cross-check (INV-1 addition coverage) requires the disk set and
+  # pinned set to be equal.
+  find tests -type f | sort | while read -r f; do sha256sum "$f"; done
   if [ -d "$APPROVED/captures" ]; then
     find "$APPROVED/captures" -type f | sort | while read -r f; do sha256sum "$f"; done
   fi

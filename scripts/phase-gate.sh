@@ -55,7 +55,11 @@ for MANIFEST in scripts/.manifest-template scripts/.manifest-project; do
   while IFS='  ' read -r expected_hash path; do
     [ -z "$expected_hash" ] && continue
     [ -z "$path" ] && continue
-    actual=$(sha256sum "$path" 2>/dev/null | cut -d' ' -f1 || echo "MISSING")
+    if actual=$(sha256sum -- "$path" 2>/dev/null); then
+      actual="${actual%% *}"
+    else
+      actual="MISSING"
+    fi
     if [ "$actual" != "$expected_hash" ]; then
       echo "GATE FAIL: control plane tampered — $path (expected $expected_hash, got $actual)"
       exit 1
@@ -66,17 +70,45 @@ done
 # Frozen-spec integrity (D-31). The frozen TPM artifacts (PRD/ERD/contracts/
 # tests) may only change via scripts/refreeze.sh, which regenerates this
 # manifest under an interactive human approval. Any other change fails closed.
+#
+# Trigger: once a spec has been frozen (VERSION exists), the manifest is
+# required. `[ -f FROZEN ]` alone silently skipped the whole check when the
+# manifest itself was the artifact deleted — the wrong direction for a
+# fail-closed gate.
 FROZEN="scripts/.approved/frozen-manifest"
-if [ -f "$FROZEN" ]; then
+FROZEN_VERSION="scripts/.approved/VERSION"
+if [ -f "$FROZEN_VERSION" ]; then
+  [ -f "$FROZEN" ] || {
+    echo "GATE FAIL: frozen spec present ($FROZEN_VERSION) but $FROZEN is missing — integrity cannot be verified (D-31)"
+    exit 1
+  }
   while IFS='  ' read -r expected_hash path; do
     [ -z "$expected_hash" ] && continue
     [ -z "$path" ] && continue
-    actual=$(sha256sum "$path" 2>/dev/null | cut -d' ' -f1 || echo "MISSING")
+    if actual=$(sha256sum -- "$path" 2>/dev/null); then
+      actual="${actual%% *}"
+    else
+      actual="MISSING"
+    fi
     if [ "$actual" != "$expected_hash" ]; then
       echo "GATE FAIL: frozen spec tampered — $path changed outside scripts/refreeze.sh"
       exit 1
     fi
   done < "$FROZEN"
+  # INV-1 addition coverage: the hash loop catches modification and deletion
+  # of pinned files, but a hand-added new tests/test_x.py is invisible to it
+  # and would run in the full frozen suite. Cross-check: every git-visible
+  # file (tracked + untracked, gitignore-respecting) under tests/ must be
+  # pinned. gitignored bytecode caches (__pycache__/*, .pytest_cache/*) are
+  # runtime artifacts and correctly excluded here.
+  pinned_tests=$(awk '{print $2}' "$FROZEN" | grep '^tests/' | sort -u || true)
+  disk_tests=$( ( git ls-files -- tests; git ls-files --others --exclude-standard -- tests ) 2>/dev/null | sort -u )
+  unpinned=$(comm -23 <(printf '%s\n' "$disk_tests") <(printf '%s\n' "$pinned_tests"))
+  if [ -n "$unpinned" ]; then
+    echo "GATE FAIL: unpinned test file(s) — added outside scripts/refreeze.sh (INV-1):"
+    printf '  %s\n' $unpinned
+    exit 1
+  fi
 fi
 
 # Collect all changes since phase-start ref: committed + staged + working + untracked

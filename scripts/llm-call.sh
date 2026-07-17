@@ -54,15 +54,19 @@ MODEL="${!VAR:-}"
 : "${SANDBOX_LLM_PORT:=1234}"
 URL="http://$SANDBOX_LLM_HOST:$SANDBOX_LLM_PORT/v1/chat/completions"
 
-# Read user prompt from stdin BEFORE the heredoc — stdin and heredoc both
-# compete for fd 0, so the piped content must be captured first.
-SWBP_LLM_USER="$(cat)"
+# Read user prompt from stdin into a tempfile BEFORE the heredoc — stdin and
+# heredoc both compete for fd 0, so the piped content must be captured first.
+# Linux caps a single env-var string at ~128 KB; large contexts (all frozen
+# tests, a big ERD) would die on E2BIG. Passing via file removes the ceiling.
+USER_FILE="$(mktemp -t swbp-user-XXXXXX)"
+trap 'rm -f "$USER_FILE"' EXIT
+cat > "$USER_FILE"
 
 PROFILES="$HOME/.config/sw-dev-blueprint/model-profiles.toml"
 
 SWBP_LLM_URL="$URL" SWBP_LLM_MODEL="$MODEL" SWBP_LLM_SYS="$SYS_FILE" \
 SWBP_LLM_SCHEMA="$SCHEMA" SWBP_LLM_MAXTIME="$MAX_TIME" SWBP_LLM_ROLE="$ROLE" \
-SWBP_LLM_USER="$SWBP_LLM_USER" SWBP_LLM_PROFILES="$PROFILES" \
+SWBP_LLM_USER_FILE="$USER_FILE" SWBP_LLM_PROFILES="$PROFILES" \
 python3 - <<'PYEOF'
 import json
 import os
@@ -77,7 +81,7 @@ role = os.environ["SWBP_LLM_ROLE"]
 max_time = int(os.environ["SWBP_LLM_MAXTIME"])
 system = open(os.environ["SWBP_LLM_SYS"]).read()
 schema_path = os.environ.get("SWBP_LLM_SCHEMA") or ""
-user = os.environ["SWBP_LLM_USER"]
+user = open(os.environ["SWBP_LLM_USER_FILE"]).read()
 profiles_path = os.environ.get("SWBP_LLM_PROFILES") or ""
 
 # Load model profile (settings from model-profiles.toml override defaults)
@@ -118,7 +122,11 @@ body = {
     # replies are legitimately small — a tighter edit-mode budget halves
     # the wall-clock cost of every failed attempt, since a local model
     # generates its whole allowance before the applier can reject it).
-    "max_tokens": int(os.environ.get("SWBP_MAX_OUTPUT", 0))
+    # `or 0`, not a .get() default: orchestrate.sh legitimately exports
+    # SWBP_MAX_OUTPUT="" for create-mode ("no per-call override"), and
+    # int('') raises — which killed every create-mode coder call from the
+    # M17 budget change until the 2026-07-16 ladder drill exposed it.
+    "max_tokens": int(os.environ.get("SWBP_MAX_OUTPUT") or 0)
                   or profile.get("max_output_tokens", 8192),
 }
 if profile.get("extra_body"):
