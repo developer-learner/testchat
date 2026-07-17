@@ -7,11 +7,17 @@ from src.services.storage import load_snapshot, quarantine_files, save_snapshot
 router = APIRouter()
 
 
+class SourceLink(BaseModel):
+    title: str
+    url: str
+
+
 class HistoryEntry(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     ts: float = 0
     model: str = ""
+    sources: list[SourceLink] | None = None
 
 
 class ThreadSnapshot(BaseModel):
@@ -33,7 +39,7 @@ def get_threads():
 
 @router.put("/api/v1/threads")
 def put_threads(payload: ThreadsPayload):
-    save_snapshot([t.model_dump() for t in payload.threads])
+    save_snapshot([t.model_dump(exclude_none=True) for t in payload.threads])
     return {"status": "ok"}
 
 
