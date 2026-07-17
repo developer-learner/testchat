@@ -5,6 +5,45 @@
 
 ---
 
+## State at 2026-07-17 session end
+
+**Frozen spec:** v47 (M25 "Web-Informed Answers", `[success]` `5bb036c`,
+133/133). v46 froze the feature; v47 was a same-day ERD-only recut after
+the plan gate caught an overweight T7 brief (TPM defect, D-60 class).
+Feature: per-message globe toggle -> one Tavily search -> at most 4
+numbered sources injected (2000-char cap each) -> reply cites; sources
+persist and re-render; search failure falls back to offline reply with
+"web search unavailable"; toggle disabled when TAVILY_API_KEY unset.
+External capture frozen (captures/tavily-search.json, live-probed
+2026-07-17). AWAITING CEO DEMO (D-44).
+
+**MLX seat trial (CEO-directed):** `ddalcu/Qwen3.6-27B-4bit-MTP-MLX-Serve`
+via mlx-serve on host:11234 held BOTH seats for the whole run. Verdict so
+far: coder excellent (7 files, all first-application-correct, incl. an
+85-line new file whole; only gate-hygiene retries); EM good (first-try
+valid plan; first-ever schema-valid production diagnosis — D-71 live-fired
+and worked — though the diagnosis prose rambles); speed: coder 9-23s/task,
+EM plan ~190-210s/emission, comparable to MTPLX band. MTPLX mapping backed
+up at ~/.config/sw-dev-blueprint/models.env.mtplx-backup (VM).
+
+**Session incident ledger (all resolved, template debts queued):**
+1. v46 plan halt — TPM ERD overweight (fixed by v47 recut).
+2. D-68 gate first-scan of app.js flagged 4 legacy empty catches the coder
+   could not touch — cleared by CEO-approved live-fix `1eb4054` (comments
+   only). Template debt: D-68 whole-file scan means any legacy file's
+   first post-gate edit needs a justification sweep.
+3. Consult lane gate mis-blamed the EM: T7's failed attempt was left
+   uncommitted when consult ran. Template debt: strike cleanup must reset
+   the tree before consult.
+4. frozen-manifest had hashed 47 tests/__pycache__ .pyc files at freeze
+   time -> false "spec tampered". CEO-approved strip `c72bb05`. Template
+   debt: refreeze.sh must exclude __pycache__.
+5. Two one-off full-suite flakes (markdown-readability, then a
+   fixture-settle timeout) — each unreproducible in isolation AND in a
+   manual full sandbox run; existing 2026-07-15 flake class. Watch: if a
+   third timing flake lands, bump the 8GB dev-VM allocation before
+   touching the spec.
+
 ## State at 2026-07-15 session end (handoff)
 
 **Frozen spec:** v45 (M24 "History Never Dies", frozen 2026-07-15,
