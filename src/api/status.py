@@ -6,6 +6,7 @@ import subprocess
 from fastapi import APIRouter
 
 from src.services import models as models_service
+from src.services import websearch
 
 router = APIRouter()
 
@@ -128,4 +129,5 @@ def get_status() -> dict:
         "ram_used_gb": round(used_gb, 1),
         "ram_total_gb": round(total_gb, 1),
         "loadable_gb": round(_loadable_gb(), 1),
+        "web_configured": websearch.is_configured(),
     }
