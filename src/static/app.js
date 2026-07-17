@@ -197,6 +197,9 @@
       }
 
       function renderReply(bubble, text, live) {
+        // Qwen/Alibaba models emit citations as 【N†anchor】; normalize to [N]
+        // so users see plain numbers matching the source list under the reply.
+        text = text.replace(/【(\d+)[†‡]?[^】]*】/g, '[$1]');
         var html = MD.renderThink(text);
         var visible = html.replace(/<span class=\"think-content\"[^>]*>[\s\S]*?<\/span>/g, '').replace(/<[^>]+>/g, '').trim();
         bubble.innerHTML = visible === '' ? 'thinking...' : html;

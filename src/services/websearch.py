@@ -75,7 +75,11 @@ def search_web(query: str) -> list[dict]:
 
 
 def build_prompt(message: str, sources: list[dict]) -> str:
-    lines = ['Web search results (cite sources by number, like [1]):\n\n']
+    lines = [
+        'Web search results below. Cite as [1] or [2] — plain square brackets '
+        'with a number, nothing else. Prefer the most specific/recent number '
+        'from any source; if sources disagree, list both with citations.\n\n'
+    ]
     for i, src in enumerate(sources, 1):
         lines.append(f'[{i}] {src["title"]}\n{src["url"]}\n{src["content"]}\n\n')
     lines.append(f'Using the results above when relevant, answer:\n{message}')
