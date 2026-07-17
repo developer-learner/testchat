@@ -234,53 +234,36 @@ File inventory (M25 build) — DAG order
     persistThreads: persistThreads,
    ```
 
-7. src/static/app.js — EDIT (five anchored edits) — the DAG's FINAL
-   task: depends_on MUST list EVERY other task id (1-6 and all three
-   no_edit tasks). D-64: browser tests are accepted only downstream of
-   the whole inventory.
+7. src/static/app.js — EDIT (five anchored edits; keep the brief terse,
+   edits only, 2500-char cap) — the DAG's FINAL task: depends_on MUST
+   list EVERY other task id (1-6 and all three no_edit tasks; D-64).
 
-   Edit A — element handle + armed state. The file currently contains
-   exactly:
+   Edit A — anchor (exact): `      var thinkToggle = document.getElementById('think-toggle');`
+   Append directly below:
    ```
-      var thinkToggle = document.getElementById('think-toggle');
-   ```
-   Replace with:
-   ```
-      var thinkToggle = document.getElementById('think-toggle');
       var webToggle = document.getElementById('web-toggle');
       var webArmed = false;
       webToggle.addEventListener('click', function () {
-        if (webToggle.disabled) return;
         webArmed = !webArmed;
         webToggle.classList.toggle('active', webArmed);
       });
    ```
 
-   Edit B — status-driven enablement (AC-90). pollStatus currently
-   contains exactly:
+   Edit B — anchor (exact): `            statusRam.textContent = ram;`
+   Append directly below:
    ```
-            statusRam.textContent = ram;
-   ```
-   Replace with:
-   ```
-            statusRam.textContent = ram;
             webToggle.disabled = !d.web_configured;
-            webToggle.title = d.web_configured ? 'Search the web for this message' : 'Web search not configured (set TAVILY_API_KEY)';
-            if (webToggle.disabled && webArmed) { webArmed = false; webToggle.classList.remove('active'); }
+            if (webToggle.disabled) { webArmed = false; webToggle.classList.remove('active'); }
    ```
 
-   Edit C — request flag + per-message reset (AC-84/86). The submit
-   handler currently contains exactly:
+   Edit C — anchor (exact, three lines):
    ```
         if (modelSelect.value) {
           bodyObj.model = modelSelect.value;
         }
    ```
-   Replace with:
+   Append directly below:
    ```
-        if (modelSelect.value) {
-          bodyObj.model = modelSelect.value;
-        }
         if (webArmed) bodyObj.web = true;
         webArmed = false;
         webToggle.classList.remove('active');
@@ -288,38 +271,28 @@ File inventory (M25 build) — DAG order
         var pendingNotice = '';
    ```
 
-   Edit D — consume the sources event. processFrame currently contains
-   exactly:
-   ```
-            if (eventType === 'token') {
-   ```
+   Edit D — anchor (exact): `            if (eventType === 'token') {`
    Replace with:
    ```
             if (eventType === 'sources') {
               try {
-                var srcData = JSON.parse(dataStr);
-                pendingSources = srcData.sources || [];
-                pendingNotice = srcData.notice || '';
-              } catch (err) { pendingSources = []; pendingNotice = ''; }
+                var sd = JSON.parse(dataStr);
+                pendingSources = sd.sources || [];
+                pendingNotice = sd.notice || '';
+              } catch (err) {}
             } else if (eventType === 'token') {
    ```
 
-   Edit E — store + render on done (AC-88/91). The done branch currently
-   contains exactly:
-   ```
-              currentThread.messages.push({ role: 'assistant', content: replyText, ts: now, model: modelSelect.value || '' });
-              renderReply(replyBubble, replyText);
-              Threads.addBubbleChrome(replyBubble, MD.stripThink(replyText), now, modelSelect.value || '', currentThread.messages.length - 1);
-   ```
+   Edit E — anchor (exact): `              currentThread.messages.push({ role: 'assistant', content: replyText, ts: now, model: modelSelect.value || '' });`
    Replace with:
    ```
-              var assistantMsg = { role: 'assistant', content: replyText, ts: now, model: modelSelect.value || '' };
-              if (pendingSources.length) assistantMsg.sources = pendingSources.map(function (s) { return { title: s.title, url: s.url }; });
-              currentThread.messages.push(assistantMsg);
-              renderReply(replyBubble, replyText);
-              Threads.addBubbleChrome(replyBubble, MD.stripThink(replyText), now, modelSelect.value || '', currentThread.messages.length - 1);
-              if (pendingSources.length || pendingNotice) Threads.addSources(replyBubble, pendingSources, pendingNotice);
+              var am = { role: 'assistant', content: replyText, ts: now, model: modelSelect.value || '' };
+              if (pendingSources.length) am.sources = pendingSources.map(function (s) { return { title: s.title, url: s.url }; });
+              currentThread.messages.push(am);
+              if (pendingSources.length || pendingNotice) setTimeout(function () { Threads.addSources(replyBubble, pendingSources, pendingNotice); }, 0);
    ```
+   (setTimeout defers addSources past the done-branch's later renderReply,
+   which replaces innerHTML and would erase an eager append.)
 
 no_edit_files (D-65 — never sent to the coder, acceptance still runs):
 src/static/markdown.js, src/static/rain.js, src/static/style.css
