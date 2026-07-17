@@ -52,7 +52,7 @@
         document.body.classList.remove('zen');
         if (!fullscreenEl()) return;
         if (document.exitFullscreen) {
-          document.exitFullscreen().catch(function () {});
+          document.exitFullscreen().catch(function () { /* already out of fullscreen — nothing to exit */ });
         } else if (document.webkitExitFullscreen) {
           document.webkitExitFullscreen();
         }
@@ -67,7 +67,7 @@
           ' | via: ' + (method || '?') +
           ', gestureActive: ' + activation +
           ', fullscreenEnabled: ' + (d.fullscreenEnabled !== undefined ? d.fullscreenEnabled : (d.webkitFullscreenEnabled !== undefined ? d.webkitFullscreenEnabled : 'unknown'));
-        try { console.warn('fullscreen failed:', info); } catch (e) {}
+        try { console.warn('fullscreen failed:', info); } catch (e) { /* console unavailable — diag is best-effort */ }
         if (statusTps) statusTps.textContent = 'fullscreen: ' + msg;
         appendBubble('Browser fullscreen failed — ' + info, 'error');
       }
@@ -420,7 +420,7 @@
           ta.value = text;
           document.body.appendChild(ta);
           ta.select();
-          try { if (document.execCommand('copy')) flash(); } catch (err) {}
+          try { if (document.execCommand('copy')) flash(); } catch (err) { /* legacy-copy fallback failed — no flash is the honest signal */ }
           document.body.removeChild(ta);
         };
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -446,7 +446,7 @@
           ta.value = text;
           document.body.appendChild(ta);
           ta.select();
-          try { if (document.execCommand('copy')) copied(); } catch (err) {}
+          try { if (document.execCommand('copy')) copied(); } catch (err) { /* legacy-copy fallback failed — no copied-state is the honest signal */ }
           document.body.removeChild(ta);
         };
         if (navigator.clipboard && navigator.clipboard.writeText) {
