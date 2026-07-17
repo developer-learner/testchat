@@ -9,6 +9,12 @@
       var container = document.getElementById('chat-container');
       var sendBtn = document.getElementById('send-btn');
       var thinkToggle = document.getElementById('think-toggle');
+      var webToggle = document.getElementById('web-toggle');
+      var webArmed = false;
+      webToggle.addEventListener('click', function () {
+        webArmed = !webArmed;
+        webToggle.classList.toggle('active', webArmed);
+      });
       var modelSelect = document.getElementById('model-select');
       var loadNemotronBtn = document.getElementById('load-nemotron');
       var unloadNemotronBtn = document.getElementById('unload-nemotron');
@@ -125,6 +131,8 @@
               ram += ' · ~' + d.loadable_gb + ' GB loadable';
             }
             statusRam.textContent = ram;
+            webToggle.disabled = !d.web_configured;
+            if (webToggle.disabled) { webArmed = false; webToggle.classList.remove('active'); }
           })
           .catch(function () { statusRam.textContent = ''; });
       }
@@ -268,6 +276,11 @@
         if (modelSelect.value) {
           bodyObj.model = modelSelect.value;
         }
+        if (webArmed) bodyObj.web = true;
+        webArmed = false;
+        webToggle.classList.remove('active');
+        var pendingSources = [];
+        var pendingNotice = '';
 
         fetch('/api/v1/chat', {
           method: 'POST',
@@ -300,7 +313,13 @@
 
             if (!eventType) return;
 
-            if (eventType === 'token') {
+            if (eventType === 'sources') {
+              try {
+                var sd = JSON.parse(dataStr);
+                pendingSources = sd.sources || [];
+                pendingNotice = sd.notice || '';
+              } catch (err) { /* sources JSON parse failure — ignore, sources stay empty */ }
+            } else if (eventType === 'token') {
               try {
                 var parsed = JSON.parse(dataStr);
                 replyText += parsed.content;
@@ -323,7 +342,10 @@
               userStored = true;
               var now = Date.now() / 1000;
               currentThread.messages.push({ role: 'user', content: message, ts: now });
-              currentThread.messages.push({ role: 'assistant', content: replyText, ts: now, model: modelSelect.value || '' });
+              var am = { role: 'assistant', content: replyText, ts: now, model: modelSelect.value || '' };
+              if (pendingSources.length) am.sources = pendingSources.map(function (s) { return { title: s.title, url: s.url }; });
+              currentThread.messages.push(am);
+              if (pendingSources.length || pendingNotice) setTimeout(function () { Threads.addSources(replyBubble, pendingSources, pendingNotice); }, 0);
               renderReply(replyBubble, replyText);
               Threads.addBubbleChrome(replyBubble, MD.stripThink(replyText), now, modelSelect.value || '', currentThread.messages.length - 1);
               Threads.maybeRetitle(currentThread);
