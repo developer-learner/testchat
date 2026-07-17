@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, StrictStr
 
 import src.services.llm as llm_mod
+from src.services import websearch
 from src.services.models import is_nemotron_loaded, NEMOTRON_CHAT_ENDPOINT
 
 
@@ -18,6 +19,7 @@ class ChatRequest(BaseModel):
     message: str
     model: StrictStr | None = None
     history: list[HistoryEntry] = []
+    web: bool = False
 
 
 router = APIRouter()
@@ -32,8 +34,18 @@ async def chat(request: ChatRequest) -> StreamingResponse:
 
     async def event_generator():
         history_dicts = [{"role": e.role, "content": e.content} for e in request.history]
+        prompt_message = request.message
+        if request.web:
+            try:
+                sources = websearch.search_web(request.message)
+                numbered = [{"n": i + 1, "title": s["title"], "url": s["url"]} for i, s in enumerate(sources)]
+                payload = json.dumps({"sources": numbered})
+                yield f'event: sources\ndata: {payload}\n\n'.encode()
+                prompt_message = websearch.build_prompt(request.message, sources)
+            except websearch.WebSearchError:
+                yield b'event: sources\ndata: {"sources": [], "notice": "web search unavailable"}\n\n'
         try:
-            for item in llm_mod.stream_reply(request.message, history_dicts, endpoint_override, model=request.model):
+            for item in llm_mod.stream_reply(prompt_message, history_dicts, endpoint_override, model=request.model):
                 if item[0] == "token":
                     content = json.dumps(item[1])
                     yield f'event: token\ndata: {{"content": {content}}}\n\n'.encode()
