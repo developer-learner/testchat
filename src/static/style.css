@@ -978,13 +978,15 @@
       color: var(--accent);
     }
 
-    .input-area input {
+    .input-area input,
+    .input-area textarea {
       flex: 1;
       padding: 0.7rem 1rem;
       border: 1px solid var(--input-border);
-      border-radius: 2rem;
+      border-radius: 1.2rem;
       font-size: 1rem;
       font-family: inherit;
+      line-height: 1.4;
       outline: none;
       background: var(--input-bg);
       color: var(--input-text);
@@ -992,7 +994,15 @@
       transition: border-color 0.15s, box-shadow 0.15s;
     }
 
-    .input-area input:focus {
+    .input-area textarea {
+      resize: none;
+      overflow-y: auto;
+      min-height: 2.5rem;
+      max-height: 40vh;
+    }
+
+    .input-area input:focus,
+    .input-area textarea:focus {
       border-color: var(--accent);
       box-shadow: 0 0 0 3px var(--focus-ring);
     }

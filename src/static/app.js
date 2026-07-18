@@ -218,6 +218,23 @@
         el.appendChild(c);
       }
 
+      // Enter submits, Shift+Enter inserts newline. Also auto-grow the
+      // textarea up to ~40vh so a multi-line paste (markdown blocks, code)
+      // is readable without hiding the messages behind a scrolling wall.
+      function autogrow() {
+        input.style.height = 'auto';
+        var cap = Math.round(window.innerHeight * 0.4);
+        input.style.height = Math.min(input.scrollHeight, cap) + 'px';
+      }
+      input.addEventListener('input', autogrow);
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+          e.preventDefault();
+          form.requestSubmit();
+        }
+      });
+      autogrow();
+
       // Stop button
       sendBtn.addEventListener('click', function () {
         if (TC.streaming && TC.currentController) TC.currentController.abort();
@@ -239,6 +256,7 @@
         var userBubble = appendBubble(message, 'user');
         Threads.addBubbleChrome(userBubble, message, Date.now() / 1000, '');
         input.value = '';
+        autogrow();
         TC.streaming = true;
         TC.currentController = new AbortController();
         sendBtn.type = 'button';
