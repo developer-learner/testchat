@@ -5,6 +5,56 @@
 
 ---
 
+## State at 2026-07-19 session end (post-M28 CEO live-fix sessions)
+
+**Frozen spec:** v54 unchanged — no pipeline runs today; all work was
+CEO-session live-fixes on top of the M28 manual close-out. main pushed
+through `150dc22` (+ this note).
+
+**Dropdown hardening — 11 post-`[success]` live-fixes total:**
+- Morning batch (`6857d70`..`9da00ff`): load-cancel actually reverts the
+  dropdown; status bar reflects actual loaded state; Send disabled
+  without a loaded model / Eject greyed without a selection; redundant
+  ✓ prefix dropped (native select already marks selection on macOS).
+- Full-app bug-scan batch `b4c108b` (6 fixes, app.js): duplicate change
+  listener corrupted thread.model on load-cancel (deleted); reload now
+  restores a thread's saved model regardless of the hydrate/models
+  fetch race; failed load can no longer leave a stale 🟢 glyph;
+  pollStatus fires on modal open/cancel (status lagged up to 5s);
+  unload id via dataset.modelId + encodeURIComponent instead of
+  display-text parsing; error-path user push gains ts. Suite 150/150
+  green at commit time; cancel + reload-restore paths browser-verified.
+- Markdown code-span fix `e96a4e7`: renderInline placeholder-extracts
+  code spans before the bold/em/link passes, so backtick content with
+  ** or * renders literally. 7-case node harness + in-browser
+  renderThink path verified.
+
+**M28 postmortem filed:** `docs/POSTMORTEM-2026-07-19-m28.md`
+(`14e2260`, placement rationale corrected `7cb3ceb`). Finding: all four
+M28 recuts (v51→v54) were spec-layer TPM defects; the two local-EM
+"failures" were an unimplementable v51 spec (catalog route frozen
+without its files in contracts.files — validate-plan bijection), so
+both EM model swaps chased the wrong variable. Placement rule (CEO):
+incident docs stay in the project repo; blueprint gets only generic
+process changes (parked in tasks/HANDOFF-blueprint-items.md), CEO
+handles blueprint separately.
+
+**AC-42 escalated:** on BACKLOG.md as P1 (`14e2260` — promised at
+close-out, never added). New evidence (`150dc22`): reproduces IN
+ISOLATION under memory load (nemotron + an LM Studio model resident) —
+4/4 consecutive failures including at a clean commit, from the A/B run
+that exonerated the markdown fix. Failure detail: by first expect()
+attach the full reply had already streamed; the ~1.2s hold window was
+missed. "Passes in isolation" only holds on an unloaded machine.
+Suite verdict for `e96a4e7`: 149/150 with only that known node red,
+manual-bypass guard from the correction log applied (isolation A/B +
+delta check).
+
+**Hand-fix ledger, honest:** M28 is the first materially non-zero
+hand-fix milestone since M7 — 11 post-success live-fixes, all UI
+interaction detail the frozen ACs never pinned. The UI-quality gap and
+per-milestone hand-fix tracking are called out in the postmortem.
+
 ## State at 2026-07-17 session end
 
 **Frozen spec:** v47 (M25 "Web-Informed Answers", `[success]` `5bb036c`,
