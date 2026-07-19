@@ -605,9 +605,9 @@
         for (var n = 0; n < opts.length; n++) {
           if (opts[n].value === previous) {
             modelSelect.value = previous;
-            var loaded2 = opts[n].dataset.loaded === 'true';
-            var prefix2 = loaded2 ? '\ud83d\udfe2 ' : '\u25cb ';
-            opts[n].textContent = '\u2713 ' + prefix2 + opts[n].value;
+            // Native OS <select> already marks the selected option (checkmark
+            // on macOS Chrome/Safari, blue highlight elsewhere). Adding our
+            // own \u2713 produced a visible "\u2713 \u2713" duplication on macOS.
             var thread2 = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
             if (thread2) thread2.model = previous;
             break;
