@@ -1,11 +1,16 @@
 import logging
 from typing import Literal, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
-from src.services.models import list_models, load_nemotron, unload_nemotron
+from src.services.models import (
+    SCRIPT_MODELS,
+    list_models,
+    load_script_model,
+    unload_script_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -14,21 +19,26 @@ router = APIRouter(prefix="/api/v1")
 
 class ModelInfo(BaseModel):
     id: str
-    source: Literal["lmstudio", "nemotron"]
+    source: Literal["lmstudio", "nemotron", "deepseek-v4-flash"]
 
 
 class ModelsListResponse(BaseModel):
     models: list[ModelInfo]
 
 
-class NemotronLoadResponse(BaseModel):
+class ScriptModelLoadResponse(BaseModel):
     status: Literal["loaded", "error"]
     message: Optional[str] = None
 
 
-class NemotronUnloadResponse(BaseModel):
+class ScriptModelUnloadResponse(BaseModel):
     status: Literal["unloaded", "error"]
     message: Optional[str] = None
+
+
+# Back-compat aliases for the historical nemotron-specific response names.
+NemotronLoadResponse = ScriptModelLoadResponse
+NemotronUnloadResponse = ScriptModelUnloadResponse
 
 
 @router.get("/models")
@@ -37,15 +47,41 @@ async def get_models() -> ModelsListResponse:
     return ModelsListResponse(models=[ModelInfo(**m) for m in models])
 
 
-@router.post("/nemotron/load", response_model=NemotronLoadResponse)
+def _require_script_model(model_id: str) -> None:
+    if model_id not in SCRIPT_MODELS:
+        raise HTTPException(status_code=404, detail=f"Unknown script model: {model_id}")
+
+
+def _load_response(model_id: str) -> Response:
+    result = load_script_model(model_id)
+    status_code = 503 if result["status"] == "error" else 200
+    return JSONResponse(
+        status_code=status_code, content=ScriptModelLoadResponse(**result).model_dump()
+    )
+
+
+def _unload_response(model_id: str) -> Response:
+    result = unload_script_model(model_id)
+    return JSONResponse(status_code=200, content=ScriptModelUnloadResponse(**result).model_dump())
+
+
+@router.post("/script-models/{model_id}/load", response_model=ScriptModelLoadResponse)
+async def load_script_model_endpoint(model_id: str) -> Response:
+    _require_script_model(model_id)
+    return _load_response(model_id)
+
+
+@router.post("/script-models/{model_id}/unload", response_model=ScriptModelUnloadResponse)
+async def unload_script_model_endpoint(model_id: str) -> Response:
+    _require_script_model(model_id)
+    return _unload_response(model_id)
+
+
+@router.post("/nemotron/load", response_model=ScriptModelLoadResponse)
 async def load_nemotron_model() -> Response:
-    result = load_nemotron()
-    if result["status"] == "error":
-        return JSONResponse(status_code=503, content=NemotronLoadResponse(**result).model_dump())
-    return JSONResponse(status_code=200, content=NemotronLoadResponse(**result).model_dump())
+    return _load_response("nemotron")
 
 
-@router.post("/nemotron/unload", response_model=NemotronUnloadResponse)
+@router.post("/nemotron/unload", response_model=ScriptModelUnloadResponse)
 async def unload_nemotron_model() -> Response:
-    result = unload_nemotron()
-    return JSONResponse(status_code=200, content=NemotronUnloadResponse(**result).model_dump())
+    return _unload_response("nemotron")

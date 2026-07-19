@@ -7,7 +7,7 @@ from pydantic import BaseModel, StrictStr
 
 import src.services.llm as llm_mod
 from src.services import websearch
-from src.services.models import is_nemotron_loaded, NEMOTRON_CHAT_ENDPOINT
+from src.services.models import get_script_model, is_script_model_loaded
 
 
 class HistoryEntry(BaseModel):
@@ -27,10 +27,14 @@ router = APIRouter()
 
 @router.post("/api/v1/chat")
 async def chat(request: ChatRequest) -> StreamingResponse:
-    if request.model == "nemotron" and not is_nemotron_loaded():
-        raise HTTPException(status_code=422, detail="Nemotron model is not loaded")
-
-    endpoint_override = NEMOTRON_CHAT_ENDPOINT if request.model == "nemotron" else None
+    endpoint_override = None
+    script_model = get_script_model(request.model) if request.model else None
+    if script_model is not None:
+        if not is_script_model_loaded(request.model):
+            raise HTTPException(
+                status_code=422, detail=f"Model {request.model} is not loaded"
+            )
+        endpoint_override = script_model["chat_endpoint"]
 
     async def event_generator():
         history_dicts = [{"role": e.role, "content": e.content} for e in request.history]

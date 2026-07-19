@@ -18,6 +18,8 @@
       var modelSelect = document.getElementById('model-select');
       var loadNemotronBtn = document.getElementById('load-nemotron');
       var unloadNemotronBtn = document.getElementById('unload-nemotron');
+      var loadDeepseekBtn = document.getElementById('load-deepseek');
+      var unloadDeepseekBtn = document.getElementById('unload-deepseek');
       var newThreadBtn = document.getElementById('new-thread-btn');
       var themeToggle = document.getElementById('theme-toggle');
 
@@ -580,6 +582,38 @@
           })
           .finally(function () {
             unloadNemotronBtn.disabled = false;
+            pollStatus();
+          });
+      });
+
+      loadDeepseekBtn.addEventListener('click', function () {
+        loadDeepseekBtn.disabled = true;
+        fetch('/api/v1/script-models/deepseek-v4-flash/load', { method: 'POST' })
+          .then(function (response) {
+            if (!response.ok) throw new Error('Failed to load DeepSeek');
+            refreshModels();
+          })
+          .catch(function () {
+            appendBubble('Failed to load DeepSeek', 'error');
+          })
+          .finally(function () {
+            loadDeepseekBtn.disabled = false;
+            pollStatus();
+          });
+      });
+
+      unloadDeepseekBtn.addEventListener('click', function () {
+        unloadDeepseekBtn.disabled = true;
+        fetch('/api/v1/script-models/deepseek-v4-flash/unload', { method: 'POST' })
+          .then(function (response) {
+            if (!response.ok) throw new Error('Failed to unload DeepSeek');
+            refreshModels();
+          })
+          .catch(function () {
+            appendBubble('Failed to unload DeepSeek', 'error');
+          })
+          .finally(function () {
+            unloadDeepseekBtn.disabled = false;
             pollStatus();
           });
       });
