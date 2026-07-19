@@ -195,3 +195,27 @@ Full frozen TPM suite green against spec v49. Feature built and validated.
 ## Results
 
 Full frozen TPM suite green against spec v50. Feature built and validated.
+
+## Results (M28 spec v54, manual close-out)
+
+Full frozen TPM suite green against spec v54 except for one known intermittent
+flake (`tests/test_ui.py::test_thinking_placeholder_shows_then_clears`, AC-42,
+M9 timing-sensitive test). The flake is unrelated to any M28 delta
+(catalog UI / eject button / confirm modals in T5/T7/T11/T12):
+
+- Isolated: passes clean (1/1)
+- Full suite: intermittent — passed 150/150 in an earlier full run this
+  session; failed subsequent full runs at the same node-id
+- Test scope: M9 SLOWPING placeholder behavior, no T7/T11/T12 code path touched
+
+Manual `[success]` per CEO direction — bypasses the DRIFT halt because the
+failing node-id does not observably exercise this delta's inventory. The flake
+belongs on the backlog as a stability defect against M9, not as an M28 blocker.
+
+M28 features live:
+- T5 (index.html): modal markup, eject button
+- T7 (app.js): fetch models + catalog, glyph prefixes, load-confirm/unload-confirm modals, eject always visible
+- T11 (services/models.py): list_model_catalog() with per-model loaded state
+- T12 (api/models.py): GET /api/v1/models/catalog
+
+Feature built and validated (aside from noted flake).
