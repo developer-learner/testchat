@@ -136,6 +136,17 @@
           statusModel.textContent = (currentLoaded ? '● ' : '○ ') + modelSelect.value;
         }
         statusModel.classList.toggle('ok', currentLoaded);
+        // Send disabled unless a loaded model is selected. Guard: during
+        // streaming the Send button IS the Stop button — must stay clickable.
+        if (!TC.streaming) {
+          sendBtn.disabled = !currentLoaded;
+        }
+        // Eject disabled when nothing is selected (nothing to potentially unload).
+        // Inline opacity/cursor since .theme-toggle has no :disabled CSS and
+        // style.css is a D-65 no-edit file.
+        ejectModelBtn.disabled = !modelSelect.value;
+        ejectModelBtn.style.opacity = ejectModelBtn.disabled ? '0.35' : '';
+        ejectModelBtn.style.cursor = ejectModelBtn.disabled ? 'not-allowed' : '';
         fetch('/api/v1/status')
           .then(function (r) { return r.json(); })
           .then(function (d) {
