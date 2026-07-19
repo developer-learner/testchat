@@ -125,8 +125,17 @@
       var statusTps = document.getElementById('status-tps');
 
       function pollStatus() {
-        statusModel.textContent = '● ' + (modelSelect.value || 'no model');
-        statusModel.classList.toggle('ok', !!modelSelect.value);
+        // Status glyph must reflect ACTUAL load state (dataset.loaded on the
+        // selected option), not merely that a dropdown value exists — otherwise
+        // an unloaded script model selected + never confirmed reads as loaded.
+        var currentOpt = modelSelect.options[modelSelect.selectedIndex];
+        var currentLoaded = !!(currentOpt && currentOpt.dataset.loaded === 'true');
+        if (!modelSelect.value) {
+          statusModel.textContent = 'no model';
+        } else {
+          statusModel.textContent = (currentLoaded ? '● ' : '○ ') + modelSelect.value;
+        }
+        statusModel.classList.toggle('ok', currentLoaded);
         fetch('/api/v1/status')
           .then(function (r) { return r.json(); })
           .then(function (d) {
