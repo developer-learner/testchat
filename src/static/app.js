@@ -16,10 +16,15 @@
         webToggle.classList.toggle('active', webArmed);
       });
       var modelSelect = document.getElementById('model-select');
-      var loadNemotronBtn = document.getElementById('load-nemotron');
-      var unloadNemotronBtn = document.getElementById('unload-nemotron');
-      var loadDeepseekBtn = document.getElementById('load-deepseek');
-      var unloadDeepseekBtn = document.getElementById('unload-deepseek');
+      var ejectModelBtn = document.getElementById('eject-model-btn');
+      var loadConfirmModal = document.getElementById('load-confirm-modal');
+      var loadConfirmBtn = document.getElementById('load-confirm');
+      var loadCancelBtn = document.getElementById('load-cancel');
+      var loadConfirmText = document.getElementById('load-confirm-text');
+      var unloadConfirmModal = document.getElementById('unload-confirm-modal');
+      var unloadConfirmBtn = document.getElementById('unload-confirm');
+      var unloadCancelBtn = document.getElementById('unload-cancel');
+      var unloadConfirmText = document.getElementById('unload-confirm-text');
       var newThreadBtn = document.getElementById('new-thread-btn');
       var themeToggle = document.getElementById('theme-toggle');
 
@@ -512,110 +517,175 @@
       });
 
       function fetchModels() {
-        fetch('/api/v1/models')
-          .then(function (response) {
-            if (!response.ok) throw new Error('Failed to fetch models');
-            return response.json();
-          })
-          .then(function (data) {
-            var previous = modelSelect.value;
-            modelSelect.innerHTML = '';
-            var models = data.models || [];
-            if (models.length === 0) {
-              var opt = document.createElement('option');
-              opt.value = '';
-              opt.textContent = 'No models available';
-              modelSelect.appendChild(opt);
-              return;
-            }
-            for (var i = 0; i < models.length; i++) {
-              var opt = document.createElement('option');
-              var id = models[i].id || '';
-              opt.value = id;
-              opt.textContent = id;
-              modelSelect.appendChild(opt);
-            }
-            var opts = modelSelect.options;
-            for (var j = 0; j < opts.length; j++) {
-              if (opts[j].value === previous) {
-                modelSelect.value = previous;
-                var thread2 = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
-                if (thread2) thread2.model = previous;
-                break;
-              }
-            }
+        var lmPromise = fetch('/api/v1/models').then(function (r) {
+          if (!r.ok) throw new Error('Failed to fetch models');
+          return r.json();
+        });
+        var catalogPromise = fetch('/api/v1/models/catalog').then(function (r) {
+          if (!r.ok) throw new Error('Failed to fetch catalog');
+          return r.json();
+        });
+
+        Promise.all([lmPromise, catalogPromise])
+          .then(function (results) {
+            var lmData = results[0];
+            var catalogData = results[1];
+            populateModelOptions(lmData, catalogData);
           })
           .catch(function () {
-            modelSelect.innerHTML = '<option value="">Failed to load models</option>';
+            return lmPromise.then(function (lmData) {
+              populateModelOptions(lmData, null);
+            }).catch(function () {
+              modelSelect.innerHTML = '<option value="">Failed to load models</option>';
+            });
           });
+      }
+
+      function populateModelOptions(lmData, catalogData) {
+        var previous = modelSelect.value;
+        modelSelect.innerHTML = '';
+        var lmModels = lmData.models || [];
+        var catalogModels = catalogData ? (catalogData.models || []) : [];
+
+        var lmMap = {};
+        for (var k = 0; k < lmModels.length; k++) {
+          lmMap[lmModels[k].id] = true;
+        }
+
+        var options = [];
+        for (var i = 0; i < lmModels.length; i++) {
+          options.push({ id: lmModels[i].id, loaded: true });
+        }
+        for (var j = 0; j < catalogModels.length; j++) {
+          if (!lmMap[catalogModels[j].id]) {
+            options.push({ id: catalogModels[j].id, loaded: catalogModels[j].loaded === true });
+          }
+        }
+
+        if (options.length === 0) {
+          var opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = 'No models available';
+          modelSelect.appendChild(opt);
+          return;
+        }
+
+        for (var m = 0; m < options.length; m++) {
+          var o = document.createElement('option');
+          var id = options[m].id;
+          var loaded = options[m].loaded;
+          o.value = id;
+          o.dataset.loaded = loaded ? 'true' : 'false';
+          var prefix = loaded ? '\ud83d\udfe2 ' : '\u25cb ';
+          o.textContent = prefix + id;
+          modelSelect.appendChild(o);
+        }
+
+        var opts = modelSelect.options;
+        for (var n = 0; n < opts.length; n++) {
+          if (opts[n].value === previous) {
+            modelSelect.value = previous;
+            var loaded2 = opts[n].dataset.loaded === 'true';
+            var prefix2 = loaded2 ? '\ud83d\udfe2 ' : '\u25cb ';
+            opts[n].textContent = '\u2713 ' + prefix2 + opts[n].value;
+            var thread2 = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
+            if (thread2) thread2.model = previous;
+            break;
+          }
+        }
       }
 
       function refreshModels() {
         fetchModels();
       }
 
-      loadNemotronBtn.addEventListener('click', function () {
-        loadNemotronBtn.disabled = true;
-        fetch('/api/v1/nemotron/load', { method: 'POST' })
+      ejectModelBtn.hidden = false;
+
+      ejectModelBtn.addEventListener('click', function () {
+        fetch('/api/v1/models/catalog')
           .then(function (response) {
-            if (!response.ok) throw new Error('Failed to load Nemotron');
+            if (!response.ok) throw new Error('Failed to fetch catalog');
+            return response.json();
+          })
+          .then(function (data) {
+            var models = data.models || [];
+            var loadedModel = null;
+            for (var i = 0; i < models.length; i++) {
+              if (models[i].loaded === true) {
+                loadedModel = models[i];
+                break;
+              }
+            }
+            if (!loadedModel) return;
+            unloadConfirmText.textContent = 'Unload ' + loadedModel.id + '?';
+            unloadConfirmModal.hidden = false;
+          })
+          .catch(function () { /* silently ignore catalog fetch failures */ });
+      });
+
+      unloadCancelBtn.addEventListener('click', function () {
+        unloadConfirmModal.hidden = true;
+      });
+
+      unloadConfirmBtn.addEventListener('click', function () {
+        unloadConfirmModal.hidden = true;
+        var id = unloadConfirmText.textContent.replace('Unload ', '').replace('?', '');
+        fetch('/api/v1/script-models/' + id + '/unload', { method: 'POST' })
+          .then(function (response) {
+            if (!response.ok) throw new Error('Failed to unload model');
             refreshModels();
-          })
-          .catch(function () {
-            appendBubble('Failed to load Nemotron', 'error');
-          })
-          .finally(function () {
-            loadNemotronBtn.disabled = false;
             pollStatus();
+          })
+          .catch(function (err) {
+            appendBubble(err.message || 'Failed to unload model', 'error');
           });
       });
 
-      unloadNemotronBtn.addEventListener('click', function () {
-        unloadNemotronBtn.disabled = true;
-        fetch('/api/v1/nemotron/unload', { method: 'POST' })
-          .then(function (response) {
-            if (!response.ok) throw new Error('Failed to unload Nemotron');
-            refreshModels();
-          })
-          .catch(function () {
-            appendBubble('Failed to unload Nemotron', 'error');
-          })
-          .finally(function () {
-            unloadNemotronBtn.disabled = false;
-            pollStatus();
-          });
-      });
-
-      loadDeepseekBtn.addEventListener('click', function () {
-        loadDeepseekBtn.disabled = true;
-        fetch('/api/v1/script-models/deepseek-v4-flash/load', { method: 'POST' })
-          .then(function (response) {
-            if (!response.ok) throw new Error('Failed to load DeepSeek');
-            refreshModels();
-          })
-          .catch(function () {
-            appendBubble('Failed to load DeepSeek', 'error');
-          })
-          .finally(function () {
-            loadDeepseekBtn.disabled = false;
-            pollStatus();
-          });
-      });
-
-      unloadDeepseekBtn.addEventListener('click', function () {
-        unloadDeepseekBtn.disabled = true;
-        fetch('/api/v1/script-models/deepseek-v4-flash/unload', { method: 'POST' })
-          .then(function (response) {
-            if (!response.ok) throw new Error('Failed to unload DeepSeek');
-            refreshModels();
-          })
-          .catch(function () {
-            appendBubble('Failed to unload DeepSeek', 'error');
-          })
-          .finally(function () {
-            unloadDeepseekBtn.disabled = false;
-            pollStatus();
-          });
+      modelSelect.addEventListener('change', function () {
+        var selected = modelSelect.options[modelSelect.selectedIndex];
+        if (selected && selected.dataset.loaded === 'false') {
+          var prior = modelSelect.value;
+          var id = prior;
+          loadConfirmText.textContent = 'Start ' + id + '? Uses significant RAM. ' + statusRam.textContent;
+          loadConfirmModal.hidden = false;
+          loadCancelBtn.onclick = function () {
+            loadConfirmModal.hidden = true;
+            modelSelect.value = prior;
+          };
+          loadConfirmBtn.onclick = function () {
+            loadConfirmModal.hidden = true;
+            modelSelect.disabled = true;
+            var opt = modelSelect.options[modelSelect.selectedIndex];
+            var baseText = opt.value;
+            var interval = setInterval(function () {
+              var current = opt.textContent;
+              if (current.indexOf('\ud83d\udfe2 ') === 0) {
+                opt.textContent = '\u25cb ' + baseText;
+              } else {
+                opt.textContent = '\ud83d\udfe2 ' + baseText;
+              }
+            }, 600);
+            fetch('/api/v1/script-models/' + id + '/load', { method: 'POST' })
+              .then(function (response) {
+                if (!response.ok) throw new Error('Failed to load model');
+                clearInterval(interval);
+                refreshModels();
+              })
+              .catch(function (err) {
+                clearInterval(interval);
+                modelSelect.value = prior;
+                appendBubble(err.message || 'Failed to load model', 'error');
+              })
+              .finally(function () {
+                modelSelect.disabled = false;
+                pollStatus();
+              });
+          };
+        } else {
+          var thread = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
+          if (thread) thread.model = modelSelect.value;
+          pollStatus();
+        }
       });
 
       // Initial load
