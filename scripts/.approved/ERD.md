@@ -220,3 +220,15 @@ src/api/models.py (gains the catalog route delegating to it) join
 contracts.files, each with a smoke check. Their existing frozen tests
 (tests/test_models_service.py, tests/test_models_api.py) map to these
 tasks per the standard oracle projection.
+
+M28c — D-68 remediation in src/services/models.py (T11 escalation)
+
+The ready-poll loop in load_script_model carries a bare
+"except Exception: pass" predating the D-68 swallowed-error gate; any
+coder rewrite of the file now fails the gate regardless of the new
+work. Directive: that handler gains the justification comment
+"# ready-poll: connection errors are expected until the server binds;
+retried until the deadline" inside the except block (behavior
+unchanged). Same for any other bare handler in the file: keep
+behavior, add the why. The T11 brief must state this explicitly —
+the escalation showed both local EMs revising the wrong handler.
