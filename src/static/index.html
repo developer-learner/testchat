@@ -28,10 +28,7 @@
       <div class="top-bar">
         <label for="model-select">Model:</label>
         <select id="model-select" data-testid="model-select"><option value="">Loading models...</option></select>
-        <button type="button" class="nemotron-btn load" id="load-nemotron">Load Nemotron</button>
-        <button type="button" class="nemotron-btn unload" id="unload-nemotron" data-testid="unload-nemotron">Unload Nemotron</button>
-        <button type="button" class="nemotron-btn load" id="load-deepseek" data-testid="load-deepseek">Load DeepSeek</button>
-        <button type="button" class="nemotron-btn unload" id="unload-deepseek" data-testid="unload-deepseek">Unload DeepSeek</button>
+        <button type="button" class="theme-toggle no-auto-margin" id="eject-model-btn" data-testid="eject-model-btn" title="Unload the active model" hidden>⏏</button>
         <button type="button" class="theme-toggle" id="settings-toggle" data-testid="settings-toggle" title="System prompt">⚙</button>
         <button type="button" class="theme-toggle no-auto-margin" id="theme-toggle" data-testid="theme-toggle" title="Switch theme">☀️</button>
         <button type="button" class="theme-toggle no-auto-margin" id="fullscreen-toggle" data-testid="fullscreen-toggle" title="Focus mode (Esc to exit)">⛶</button>
@@ -62,6 +59,28 @@
       <div class="modal-actions">
         <button type="button" id="settings-cancel" data-testid="settings-cancel">Cancel</button>
         <button type="button" id="settings-save" data-testid="settings-save" class="primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="load-confirm-modal" data-testid="load-confirm-modal" hidden>
+    <div class="modal">
+      <div class="modal-title">Load model?</div>
+      <p id="load-confirm-text" class="modal-hint"></p>
+      <div class="modal-actions">
+        <button type="button" id="load-cancel" data-testid="load-cancel">Cancel</button>
+        <button type="button" id="load-confirm" data-testid="load-confirm" class="primary">Load model</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="unload-confirm-modal" data-testid="unload-confirm-modal" hidden>
+    <div class="modal">
+      <div class="modal-title">Unload model?</div>
+      <p id="unload-confirm-text" class="modal-hint"></p>
+      <div class="modal-actions">
+        <button type="button" id="unload-cancel" data-testid="unload-cancel">Cancel</button>
+        <button type="button" id="unload-confirm" data-testid="unload-confirm" class="primary">Unload</button>
       </div>
     </div>
   </div>
