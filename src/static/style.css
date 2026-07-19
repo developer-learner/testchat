@@ -1023,6 +1023,12 @@
       max-height: 40vh;
     }
 
+    .input-area input::placeholder,
+    .input-area textarea::placeholder {
+      color: var(--muted-text);
+      opacity: 0.45;
+    }
+
     .input-area input:focus,
     .input-area textarea:focus {
       border-color: var(--accent);
