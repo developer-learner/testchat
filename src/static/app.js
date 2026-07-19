@@ -141,12 +141,10 @@
         if (!TC.streaming) {
           sendBtn.disabled = !currentLoaded;
         }
-        // Eject disabled when nothing is selected (nothing to potentially unload).
-        // Inline opacity/cursor since .theme-toggle has no :disabled CSS and
-        // style.css is a D-65 no-edit file.
-        ejectModelBtn.disabled = !modelSelect.value;
-        ejectModelBtn.style.opacity = ejectModelBtn.disabled ? '0.35' : '';
-        ejectModelBtn.style.cursor = ejectModelBtn.disabled ? 'not-allowed' : '';
+        // Eject unloads the loaded SCRIPT model, never the selection — so it
+        // is enabled iff the catalog reports one loaded (LM Studio models are
+        // not ours to unload; selecting one must not light the button).
+        ejectModelBtn.disabled = !TC.scriptModelLoaded;
         fetch('/api/v1/status')
           .then(function (r) { return r.json(); })
           .then(function (d) {
@@ -574,6 +572,12 @@
         modelSelect.innerHTML = '';
         var lmModels = lmData.models || [];
         var catalogModels = catalogData ? (catalogData.models || []) : [];
+
+        TC.scriptModelLoaded = false;
+        for (var c = 0; c < catalogModels.length; c++) {
+          if (catalogModels[c].loaded === true) { TC.scriptModelLoaded = true; break; }
+        }
+        ejectModelBtn.disabled = !TC.scriptModelLoaded;
 
         var lmMap = {};
         for (var k = 0; k < lmModels.length; k++) {

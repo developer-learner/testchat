@@ -457,16 +457,38 @@
       gap: 0.6rem;
     }
 
-    .top-bar label {
-      font-size: 0.8rem;
+    .model-field {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .eject-inline {
+      position: absolute;
+      right: 1.7rem;
+      top: 50%;
+      transform: translateY(-50%);
+      background: transparent;
+      border: none;
       color: var(--muted-text);
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
+      font-size: 0.9rem;
+      line-height: 1;
+      padding: 0.1rem 0.25rem;
+      border-radius: 0.3rem;
+      cursor: pointer;
+    }
+
+    .eject-inline:hover:not(:disabled) {
+      color: var(--input-text);
+    }
+
+    .eject-inline:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
     }
 
     .top-bar select {
-      padding: 0.45rem 1.8rem 0.45rem 0.7rem;
+      padding: 0.45rem 3.4rem 0.45rem 0.7rem;
       border: 1px solid var(--input-border);
       border-radius: 0.5rem;
       font-size: 0.875rem;

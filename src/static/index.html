@@ -26,9 +26,10 @@
         <span class="tl-title">testchat — local session</span>
       </div>
       <div class="top-bar">
-        <label for="model-select">Model:</label>
-        <select id="model-select" data-testid="model-select"><option value="">Loading models...</option></select>
-        <button type="button" class="theme-toggle no-auto-margin" id="eject-model-btn" data-testid="eject-model-btn" title="Unload the active model" hidden>⏏</button>
+        <div class="model-field">
+          <select id="model-select" data-testid="model-select"><option value="">Loading models...</option></select>
+          <button type="button" class="eject-inline" id="eject-model-btn" data-testid="eject-model-btn" title="Unload the loaded script model" hidden>⏏</button>
+        </div>
         <button type="button" class="theme-toggle" id="settings-toggle" data-testid="settings-toggle" title="System prompt">⚙</button>
         <button type="button" class="theme-toggle no-auto-margin" id="theme-toggle" data-testid="theme-toggle" title="Switch theme">☀️</button>
         <button type="button" class="theme-toggle no-auto-margin" id="fullscreen-toggle" data-testid="fullscreen-toggle" title="Focus mode (Esc to exit)">⛶</button>
