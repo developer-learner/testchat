@@ -109,3 +109,56 @@ Rollback / risk
   Same shape as nemotron's `~/nemotron-vmlx.py`; this is deliberate for
   the local-first design and revisited only if the deployment target
   changes.
+
+M28 — model-control UI consolidation (dropdown + eject)
+
+Problem: M27 shipped the DeepSeek controls by copying the nemotron
+pattern, leaving four per-model load/unload buttons in the top bar.
+The pattern grows two buttons per registered script model; the
+registry (M27) already made per-model buttons redundant.
+
+Design:
+
+- The model-select dropdown becomes the single load control. It lists
+  loaded LM Studio models (from GET /api/v1/models, contract
+  unchanged) PLUS every script-model registry entry regardless of
+  load state, from a NEW endpoint:
+
+  GET /api/v1/models/catalog ->
+    {"models": [{"id", "source", "loaded": bool}, ...]}
+
+  (script models only; LM Studio discovery stays on /api/v1/models).
+  Options carry the load state in the label ("(loaded)" vs
+  "- click to load") and data-model-id / data-loaded attributes.
+
+- Selecting an unloaded script model POSTs
+  /api/v1/script-models/{id}/load (dropdown disabled while the
+  ready-poll runs; failures surface via the chat error bubble).
+  Mutual exclusion is backend-owned (M27) — the UI never reasons
+  about which model to evict.
+
+- A single eject button (testid eject-model-btn, replaces the four
+  per-model buttons and their testids load-nemotron/unload-nemotron/
+  load-deepseek/unload-deepseek) queries the catalog, finds the
+  loaded script model, POSTs its /unload. No-op when none loaded.
+
+Oracle Mapping
+
+- AC-31 (test_model_selection_survives_models_refresh) re-anchored:
+  the refresh trigger is now the eject button, with the catalog and
+  unload endpoints route-stubbed in-page (the conftest stub keeps
+  serving /api/v1/models untouched).
+
+Smoke checks (replacing the M27 button greps)
+
+- `src/static/index.html`: greps `data-testid="eject-model-btn"`.
+- `src/static/app.js`: greps `ejectModelBtn` and `models/catalog`.
+
+Rollback / risk
+
+- Rollback = restore the four buttons and their testids, drop the
+  catalog route. The /api/v1/models contract is untouched either way,
+  so chat routing and model listing carry zero risk from M28.
+- Risk: the dropdown now triggers a heavyweight action (a 100GB-class
+  server launch) on select. Accepted deliberately (speed-first);
+  the visible loading state is the mitigation.

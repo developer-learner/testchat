@@ -83,6 +83,22 @@ def test_history_sent_to_backend_has_no_think_markup(
 
 # AC-31 [new — selection-stability fix]
 def test_model_selection_survives_models_refresh(page: Page, app_url: str) -> None:
+    page.route(
+        "**/api/v1/models/catalog",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"models":[{"id":"nemotron","source":"nemotron","loaded":true}]}',
+        ),
+    )
+    page.route(
+        "**/api/v1/script-models/nemotron/unload",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"status":"unloaded","message":null}',
+        ),
+    )
     page.goto(app_url)
     select = page.get_by_test_id("model-select")
     expect(select).to_have_value("alpha-model")
@@ -90,7 +106,7 @@ def test_model_selection_survives_models_refresh(page: Page, app_url: str) -> No
     assert stamp, "stub stamps every models response with refresh-N"
     n = int(stamp.group(1))
     select.select_option("beta-model")
-    page.get_by_test_id("unload-nemotron").click()
+    page.get_by_test_id("eject-model-btn").click()
     expect(select).to_contain_text(f"refresh-{n + 1}")
     expect(select).to_have_value("beta-model")
 
