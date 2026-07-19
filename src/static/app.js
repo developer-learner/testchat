@@ -641,11 +641,22 @@
           });
       });
 
+      // Native <select> fires 'change' AFTER value updates, so capture the
+      // pre-change value on focus/mousedown — needed so load-cancel can
+      // actually revert (bug: prior was reading the just-picked value).
+      var previousModelValue = modelSelect.value;
+      modelSelect.addEventListener('focus', function () {
+        previousModelValue = modelSelect.value;
+      });
+      modelSelect.addEventListener('mousedown', function () {
+        previousModelValue = modelSelect.value;
+      });
+
       modelSelect.addEventListener('change', function () {
         var selected = modelSelect.options[modelSelect.selectedIndex];
         if (selected && selected.dataset.loaded === 'false') {
-          var prior = modelSelect.value;
-          var id = prior;
+          var prior = previousModelValue;
+          var id = modelSelect.value;
           loadConfirmText.textContent = 'Start ' + id + '? Uses significant RAM. ' + statusRam.textContent;
           loadConfirmModal.hidden = false;
           loadCancelBtn.onclick = function () {
@@ -669,6 +680,7 @@
               .then(function (response) {
                 if (!response.ok) throw new Error('Failed to load model');
                 clearInterval(interval);
+                previousModelValue = id;
                 refreshModels();
               })
               .catch(function (err) {
@@ -682,6 +694,7 @@
               });
           };
         } else {
+          previousModelValue = modelSelect.value;
           var thread = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
           if (thread) thread.model = modelSelect.value;
           pollStatus();
