@@ -1,5 +1,5 @@
 {
-  "erd_version": 49,
+  "erd_version": 50,
   "files": [
     "src/services/websearch.py",
     "src/api/status.py",
@@ -98,6 +98,16 @@
       "id": "route:GET /api/v1/status",
       "method": "GET",
       "path": "/api/v1/status"
+    },
+    {
+      "id": "route:POST /api/v1/script-models/{model_id}/load",
+      "method": "POST",
+      "path": "/api/v1/script-models/{model_id}/load"
+    },
+    {
+      "id": "route:POST /api/v1/script-models/{model_id}/unload",
+      "method": "POST",
+      "path": "/api/v1/script-models/{model_id}/unload"
     }
   ],
   "schemas": [
@@ -163,7 +173,7 @@
       "id": "schema:ModelInfo",
       "fields": {
         "id": "string",
-        "source": "string, literal 'lmstudio' or 'nemotron'"
+        "source": "string, literal 'lmstudio' or 'nemotron' or 'deepseek-v4-flash'"
       }
     },
     {
@@ -180,10 +190,24 @@
       }
     },
     {
+      "id": "schema:ScriptModelLoadResponse",
+      "fields": {
+        "status": "string, literal 'loaded' or 'error'",
+        "message": "string, optional \u2014 present on 'error'"
+      }
+    },
+    {
       "id": "schema:NemotronUnloadResponse",
       "fields": {
         "status": "string, literal 'unloaded' or 'error'",
         "message": "string, optional"
+      }
+    },
+    {
+      "id": "schema:ScriptModelUnloadResponse",
+      "fields": {
+        "status": "string, literal 'unloaded' or 'error'",
+        "message": "string, optional \u2014 present on 'error'"
       }
     },
     {
@@ -228,6 +252,10 @@
     },
     {
       "id": "error:503-nemotron-unavailable",
+      "status": 503
+    },
+    {
+      "id": "error:503-script-model-unavailable",
       "status": 503
     }
   ],
@@ -416,16 +444,26 @@
       "id": "ui:web-notice",
       "testid": "web-notice",
       "description": "'web search unavailable' span inside msg-sources when the search failed (AC-89); live-render only, never persisted"
+    },
+    {
+      "id": "ui:load-deepseek",
+      "testid": "load-deepseek",
+      "description": "Load DeepSeek button in the composer bar; triggers POST /api/v1/script-models/deepseek-v4-flash/load"
+    },
+    {
+      "id": "ui:unload-deepseek",
+      "testid": "unload-deepseek",
+      "description": "Unload DeepSeek button in the composer bar; triggers POST /api/v1/script-models/deepseek-v4-flash/unload"
     }
   ],
   "smoke_checks": {
     "src/services/websearch.py": "grep -q 'WebSearchError' src/services/websearch.py && grep -q 'TAVILY_ENDPOINT' src/services/websearch.py && grep -q 'def build_prompt' src/services/websearch.py && grep -q 'plain square' src/services/websearch.py",
     "src/api/status.py": "grep -q 'web_configured' src/api/status.py",
-    "src/api/chat.py": "grep -q 'web: bool = False' src/api/chat.py && grep -q 'event: sources' src/api/chat.py",
+    "src/api/chat.py": "grep -q 'web: bool = False' src/api/chat.py && grep -q 'event: sources' src/api/chat.py && grep -q 'get_script_model' src/api/chat.py",
     "src/api/threads.py": "grep -q 'class SourceLink' src/api/threads.py && grep -q 'exclude_none=True' src/api/threads.py",
-    "src/static/index.html": "grep -q 'data-testid=\"web-toggle\"' src/static/index.html",
+    "src/static/index.html": "grep -q 'data-testid=\"web-toggle\"' src/static/index.html && grep -q 'data-testid=\"load-deepseek\"' src/static/index.html",
     "src/static/threads.js": "grep -q 'addSources' src/static/threads.js && grep -q 'msg-sources' src/static/threads.js",
-    "src/static/app.js": "grep -q 'webToggle' src/static/app.js && grep -q 'pendingSources' src/static/app.js && grep -q '\u3010' src/static/app.js",
+    "src/static/app.js": "grep -q 'webToggle' src/static/app.js && grep -q 'pendingSources' src/static/app.js && grep -q '\u3010' src/static/app.js && grep -q 'loadDeepseekBtn' src/static/app.js && grep -q 'deepseek-v4-flash' src/static/app.js",
     "src/static/markdown.js": "grep -q 'renderBlocks' src/static/markdown.js",
     "src/static/rain.js": "grep -q 'prefers-reduced-motion' src/static/rain.js",
     "src/static/style.css": "grep -q 'data-theme=' src/static/style.css"

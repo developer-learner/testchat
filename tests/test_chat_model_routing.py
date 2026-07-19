@@ -26,9 +26,15 @@ def client():
 
 
 def _patch_nemotron_loaded(monkeypatch, value: bool):
-    """is_nemotron_loaded is imported by name in chat.py; patch both refs."""
+    """chat.py routes loaded-checks through the models module's
+    is_script_model_loaded, which delegates nemotron to is_nemotron_loaded."""
     monkeypatch.setattr(models_mod, "is_nemotron_loaded", lambda: value)
-    monkeypatch.setattr(chat_mod, "is_nemotron_loaded", lambda: value)
+
+
+def _patch_deepseek_loaded(monkeypatch, value: bool):
+    monkeypatch.setattr(
+        chat_mod, "is_script_model_loaded", lambda model_id: value
+    )
 
 
 def test_chat_routes_to_nemotron_and_passes_model(client, monkeypatch):
@@ -85,5 +91,37 @@ def test_chat_nemotron_selected_but_not_loaded_is_422(client, monkeypatch):
     _patch_nemotron_loaded(monkeypatch, False)
 
     resp = client.post("/api/v1/chat", json={"message": "hello", "model": "nemotron"})
+
+    assert resp.status_code == 422
+
+
+def test_chat_routes_to_deepseek_and_passes_model(client, monkeypatch):
+    _patch_deepseek_loaded(monkeypatch, True)
+
+    captured = {}
+
+    def fake_stream_reply(message, history=(), endpoint_override=None, model=None):
+        captured["endpoint_override"] = endpoint_override
+        captured["model"] = model
+        yield ("token", "hi")
+        yield ("done",)
+
+    monkeypatch.setattr(llm_mod, "stream_reply", fake_stream_reply)
+
+    resp = client.post(
+        "/api/v1/chat", json={"message": "hello", "model": "deepseek-v4-flash"}
+    )
+
+    assert resp.status_code == 200
+    assert captured["endpoint_override"] == models_mod.DEEPSEEK_CHAT_ENDPOINT
+    assert captured["model"] == "deepseek-v4-flash"
+
+
+def test_chat_deepseek_selected_but_not_loaded_is_422(client, monkeypatch):
+    _patch_deepseek_loaded(monkeypatch, False)
+
+    resp = client.post(
+        "/api/v1/chat", json={"message": "hello", "model": "deepseek-v4-flash"}
+    )
 
     assert resp.status_code == 422

@@ -18,8 +18,10 @@ import src.services.models as models_mod
 @pytest.fixture(autouse=True)
 def _reset_nemotron_state():
     models_mod._nemotron_process = None
+    models_mod._script_processes.clear()
     yield
     models_mod._nemotron_process = None
+    models_mod._script_processes.clear()
 
 
 @pytest.fixture
@@ -157,3 +159,86 @@ def test_unload_nemotron_idempotent_when_not_loaded(client, monkeypatch):
 
     assert resp.status_code == 200
     assert resp.json()["status"] == "unloaded"
+
+
+# ---------------------------------------------------------------------------
+# Generic script-model endpoints
+# ---------------------------------------------------------------------------
+
+def test_load_unknown_script_model_is_404(client):
+    resp = client.post("/api/v1/script-models/not-a-model/load")
+    assert resp.status_code == 404
+
+
+def test_unload_unknown_script_model_is_404(client):
+    resp = client.post("/api/v1/script-models/not-a-model/unload")
+    assert resp.status_code == 404
+
+
+def test_load_deepseek_via_generic_endpoint(client, monkeypatch):
+    monkeypatch.setattr(
+        models_mod, "is_script_model_loaded", lambda model_id: False
+    )
+    monkeypatch.setattr(models_mod, "is_nemotron_loaded", lambda: False)
+
+    fake_proc = MagicMock()
+    fake_proc.poll.return_value = None
+    monkeypatch.setattr(models_mod.subprocess, "Popen", MagicMock(return_value=fake_proc))
+
+    ready_response = MagicMock()
+    ready_response.status_code = 200
+    monkeypatch.setattr(models_mod.httpx, "get", MagicMock(return_value=ready_response))
+
+    resp = client.post("/api/v1/script-models/deepseek-v4-flash/load")
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "loaded"
+    assert models_mod._script_processes["deepseek-v4-flash"] is fake_proc
+
+
+def test_load_deepseek_timeout_returns_503(client, monkeypatch):
+    monkeypatch.setattr(
+        models_mod, "is_script_model_loaded", lambda model_id: False
+    )
+
+    fake_proc = MagicMock()
+    fake_proc.poll.return_value = None
+    monkeypatch.setattr(models_mod.subprocess, "Popen", MagicMock(return_value=fake_proc))
+    monkeypatch.setattr(models_mod, "DEEPSEEK_READY_TIMEOUT_SECONDS", 0.05)
+
+    def _raise(*args, **kwargs):
+        raise models_mod.httpx.ConnectError("not ready")
+
+    monkeypatch.setattr(models_mod.httpx, "get", _raise)
+
+    resp = client.post("/api/v1/script-models/deepseek-v4-flash/load")
+
+    assert resp.status_code == 503
+    assert resp.json()["status"] == "error"
+    fake_proc.send_signal.assert_called_once_with(models_mod.signal.SIGINT)
+
+
+def test_unload_deepseek_via_generic_endpoint(client, monkeypatch):
+    monkeypatch.setattr(
+        models_mod, "is_script_model_loaded", lambda model_id: True
+    )
+
+    fake_proc = MagicMock()
+    fake_proc.wait.return_value = 0
+    models_mod._script_processes["deepseek-v4-flash"] = fake_proc
+
+    resp = client.post("/api/v1/script-models/deepseek-v4-flash/unload")
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "unloaded"
+    fake_proc.send_signal.assert_called_once_with(models_mod.signal.SIGINT)
+    assert models_mod._script_processes["deepseek-v4-flash"] is None
+
+
+def test_nemotron_load_alias_matches_generic_endpoint(client, monkeypatch):
+    monkeypatch.setattr(models_mod, "is_nemotron_loaded", lambda: True)
+
+    resp = client.post("/api/v1/script-models/nemotron/load")
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "loaded"
