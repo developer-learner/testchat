@@ -7,6 +7,20 @@
 
 ## Up Next
 
+### AC-42 flake hardening — test_thinking_placeholder_shows_then_clears
+**Priority:** P1
+**Why:** M9-era timing-sensitive SLOWPING placeholder test; passes in
+isolation, intermittent in full-suite runs. Flagged for hardening
+2026-07-15 ("harden both at the M23 refreeze") but never done; on
+2026-07-19 it failed three M28 close-out runs and forced a CEO-authorized
+manual `[success]` bypass (`69708e4`). Stability defect against M9, not
+any current milestone.
+**What:** TPM re-cut of the AC-42 test at the next refreeze (test is
+INV-1-frozen; only path is `scripts/refreeze.sh`). The complementary
+pipeline fix (D-77, retry-in-isolation before DRIFT) is blueprint-side,
+parked in `tasks/HANDOFF-blueprint-items.md`.
+**Rough size:** Spec/test-only
+
 ### M13 — app.js module split (spec backfill)
 **Priority:** P2
 **Why:** Split already landed as live-fix (markdown.js, threads.js, app.js);
