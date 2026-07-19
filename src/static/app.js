@@ -400,7 +400,7 @@
               Threads.persistThreads();
             } else if (eventType === 'error') {
               streamEnded = true;
-              if (!userStored) { currentThread.messages.push({ role: 'user', content: message }); userStored = true; Threads.persistThreads(); }
+              if (!userStored) { currentThread.messages.push({ role: 'user', content: message, ts: Date.now() / 1000 }); userStored = true; Threads.persistThreads(); }
               replyBubble.className = 'chat-bubble error';
               try {
                 var errData = JSON.parse(dataStr);
@@ -563,6 +563,14 @@
 
       function populateModelOptions(lmData, catalogData) {
         var previous = modelSelect.value;
+        // Startup race: if the threads hydrate resolves before the first
+        // models response, restoreThreadModelState's value-set silently
+        // no-ops (no matching option yet). Fall back to the active thread's
+        // saved model so the selection still lands once options exist.
+        if (!previous) {
+          var activeThread = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
+          if (activeThread && activeThread.model) previous = activeThread.model;
+        }
         modelSelect.innerHTML = '';
         var lmModels = lmData.models || [];
         var catalogModels = catalogData ? (catalogData.models || []) : [];
@@ -637,6 +645,7 @@
               }
             }
             if (!loadedModel) return;
+            unloadConfirmModal.dataset.modelId = loadedModel.id;
             unloadConfirmText.textContent = 'Unload ' + loadedModel.id + '?';
             unloadConfirmModal.hidden = false;
           })
@@ -649,8 +658,8 @@
 
       unloadConfirmBtn.addEventListener('click', function () {
         unloadConfirmModal.hidden = true;
-        var id = unloadConfirmText.textContent.replace('Unload ', '').replace('?', '');
-        fetch('/api/v1/script-models/' + id + '/unload', { method: 'POST' })
+        var id = unloadConfirmModal.dataset.modelId || '';
+        fetch('/api/v1/script-models/' + encodeURIComponent(id) + '/unload', { method: 'POST' })
           .then(function (response) {
             if (!response.ok) throw new Error('Failed to unload model');
             refreshModels();
@@ -679,9 +688,11 @@
           var id = modelSelect.value;
           loadConfirmText.textContent = 'Start ' + id + '? Uses significant RAM. ' + statusRam.textContent;
           loadConfirmModal.hidden = false;
+          pollStatus();
           loadCancelBtn.onclick = function () {
             loadConfirmModal.hidden = true;
             modelSelect.value = prior;
+            pollStatus();
           };
           loadConfirmBtn.onclick = function () {
             loadConfirmModal.hidden = true;
@@ -696,7 +707,7 @@
                 opt.textContent = '\ud83d\udfe2 ' + baseText;
               }
             }, 600);
-            fetch('/api/v1/script-models/' + id + '/load', { method: 'POST' })
+            fetch('/api/v1/script-models/' + encodeURIComponent(id) + '/load', { method: 'POST' })
               .then(function (response) {
                 if (!response.ok) throw new Error('Failed to load model');
                 clearInterval(interval);
@@ -705,6 +716,9 @@
               })
               .catch(function (err) {
                 clearInterval(interval);
+                // The blink can stop on the 🟢 half-cycle; a failed model
+                // must not sit in the list looking loaded.
+                opt.textContent = '○ ' + baseText;
                 modelSelect.value = prior;
                 appendBubble(err.message || 'Failed to load model', 'error');
               })
@@ -742,12 +756,6 @@
         .catch(function () {
           Threads.createThread();
         });
-      modelSelect.addEventListener('change', function () {
-        var thread = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
-        if (thread) thread.model = modelSelect.value;
-        pollStatus();
-      });
-
       fetchModels();
       input.focus();
     })();
