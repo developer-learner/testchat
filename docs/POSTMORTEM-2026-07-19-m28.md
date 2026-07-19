@@ -5,8 +5,10 @@ status: historical
 authorship: agent-drafted at CEO direction (conductor seat, CEO-session);
 derived from the tree per Operating Rule 1/5 — refreeze deltas, plan
 history, commit co-author trail, tasks/CURRENT.md, tasks/HANDOFF-blueprint-items.md.
-Filed in testchat because blueprint's postmortems/ archive is human-authored
-by its own README; move there only by CEO hand if wanted.
+Placement rule (CEO, 2026-07-19): project incidents are documented in the
+project repo — postmortems stay at project level so no shared repo
+accumulates every project's incidents in one place. Blueprint gets only
+the generic process changes (see "Still open"), via its own lane.
 
 ## What happened
 
