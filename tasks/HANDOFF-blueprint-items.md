@@ -1,45 +1,139 @@
-# HANDOFF — sw-dev-blueprint items surfaced during testchat M28 close-out
+# HANDOFF — sw-dev-blueprint changes proposed from testchat M28
 
-date: 2026-07-19
-status: parked — belongs in the blueprint repo, not testchat. Move this file when the blueprint work is picked up.
+date: 2026-07-19 (M28 close-out + same-day postmortem; supersedes the two-item version)
+status: parked — belongs in the blueprint repo, not testchat. CEO handles blueprint in a separate thread.
+source: docs/POSTMORTEM-2026-07-19-m28.md, tasks/CURRENT.md 2026-07-19 state, CLAUDE.md correction log 2026-07-19.
 
-## Item 1: D-77 candidate — retry-in-isolation before declaring DRIFT
+Ordered by leverage.
 
-**Symptom (observed in testchat M28, spec v54):**
-`scripts/orchestrate.sh` halted with SPEC DRIFT on
-`tests/test_ui.py::test_thinking_placeholder_shows_then_clears` — a timing-sensitive M9-era Playwright test unrelated to the M28 delta (catalog UI / eject / modals). The same test:
-- passed 150/150 in one earlier full-suite run in the same session
-- passed 1/1 in isolation (`sandbox-run.sh -- pytest <nodeid>`)
-- failed intermittently in subsequent full-suite runs at the same node-id
+## 1. Freeze-time satisfiability preflight in refreeze.sh  [highest leverage]
 
-Every M28 task's own projection passed. The delta's inventory (`contracts.files`) did NOT include the file exercised by the failing test — it was a carried-forward regression node. So drift detection triggered on a flake, not real drift, and the CEO manually authorized `[success]` (testchat commit `69708e4`) after documenting the process guard (isolate + inventory-check + CEO consent, testchat correction log 2026-07-19).
+**Defect it prevents:** v51 froze the `GET /api/v1/models/catalog` route with
+no implementing files in `contracts.files`. validate-plan.py's exact
+plan↔inventory bijection made the spec unimplementable by ANY EM — but that
+check only runs downstream, so the defect cost ~75 minutes, two EM model
+swaps, and a seat escalation before the v53 recut named it.
 
-**Proposed fix (blueprint side, `scripts/orchestrate.sh`):**
-Before declaring DRIFT and packaging the escalation, re-run any failing node-id in isolation N times (say N=2). If the isolated run passes AND the failing test's file is outside the delta's `contracts.files` inventory, log a WARNING and treat as flake (not drift). If it reproduces in isolation, or is inside the delta inventory, proceed with DRIFT as today.
+**Change:** before the human approval prompt (y/N or `--approve <hash>`),
+refreeze.sh mechanically verifies every changed/new contract (routes,
+entry_points) has implementing files in the delta's `contracts.files`.
+Fail closed, naming the uncovered contracts. The bijection logic already
+exists in validate-plan.py — extract it to a shared helper or add a
+spec-only mode; do not duplicate it.
 
-**Grounding (existing precedent):**
-- D-58 determinism gate — this class of "same suite, different outcome" already has repo-level plumbing.
-- D-57 auto-regression bookkeeping — the shell already knows which nodes are carried-forward vs delta-mapped; the check is just "is this file in `contracts.files`?"
-- Rule 6 corollary (CLAUDE.md): "'nothing went wrong' ≠ 'safeguard works'" — currently the reverse also holds: "something went wrong" ≠ "safeguard tripped for the right reason". The flake path proves the second half.
+## 2. Escalation-ladder diagnosis rung: audit the puzzle before swapping the solver
 
-**Scope estimate:** ~30-50 lines in `orchestrate.sh` around the DRIFT branch, one new DECISIONS.md entry (D-77), possible selftest to lock the behavior.
+**Defect it prevents:** the ladder interprets every gate failure as evidence
+about the actor (retry → consult → swap model → escalate seat). It has no
+branch for "the upstream artifact is impossible." Two different EM models
+failing identically at the same gate is evidence about the artifact, not
+the actors — a maximally capable EM still fails against v51. This is
+capability-independent, i.e. not fixable by better models.
 
-**After the blueprint fix ships:** `update-template.sh --dry-run` in testchat → `--approve <sha>` → the retry gate lands automatically.
+**Change:** in orchestrate.sh (which owns the counters): after the second
+plan-gate rejection — regardless of whether the model was swapped — run the
+item-1 spec self-consistency check. If it fails, halt as SPEC DEFECT and
+route to the TPM bundle without consuming further EM strikes or inviting
+model swaps. Document the rung in docs/ESCALATION.md.
+
+## 3. D-77 — flake-vs-drift discrimination before the DRIFT halt
+
+**Defect it prevents:** M28's final full suite tripped SPEC DRIFT on
+`test_thinking_placeholder_shows_then_clears` (AC-42, M9-era timing test,
+unrelated to the delta); 3 orchestrate retries failed on the same node;
+CEO manually bypassed with `[success]` `69708e4`.
+
+**Change (orchestrate.sh, ~30-50 lines around the DRIFT branch + D-77 in
+DECISIONS.md + selftest):** when the full suite fails after all tasks
+passed, check whether the failing test's exercised file(s) are inside the
+delta's `contracts.files`. Outside the delta → log WARNING, treat as
+carried-forward flake, do not declare DRIFT. Optionally also re-run the
+node in isolation for evidence.
+
+**Design correction from 2026-07-19 evidence:** the original proposal made
+isolation-retry the primary signal. It cannot be: the same test later
+failed 4/4 IN ISOLATION under memory load (nemotron + an LM Studio model
+resident — the browser attaches after the stub's ~1.2s hold has passed).
+The **delta-inventory check must be the primary discriminator**;
+isolation-retry is corroborating evidence only.
+
+## 4. D-68 debt sweep at freeze time
+
+**Defect it prevents:** a legacy file's first post-D-68 edit fails the gate
+on pre-existing unjustified handlers regardless of the new work. Fired
+twice: app.js (2026-07-17 incident #2, cleared by live-fix `1eb4054`) and
+models.py T11 (M28 — forced the v54 recut, and both local EMs revised the
+wrong handler during the escalation). The 07-17 template-debt note already
+named this; it was recorded, not mechanized.
+
+**Change:** refreeze.sh scans the delta's `contracts.files` for bare/
+unjustified exception handlers (the D-68 pattern) and prints the list at
+freeze time, so remediation directives (like M28c) enter the spec on day
+one instead of surfacing mid-run.
+
+## 5. Gate-symmetry doctrine (BLUEPRINT.md design rule / DECISIONS.md entry)
+
+**The inherent template flaw M28 exposed:** gate density is inversely
+proportional to seat capability. The local coder's output is checked four
+ways within seconds (phase gate, D-68, lint, mapped tests); the TPM's
+frozen spec — the artifact with the largest blast radius — gets only
+integrity checks (hashes, INV-4, D-67), zero semantic-validity checks.
+Defects enter ungated at the top and are discovered by burning the bottom
+of the ladder. M23's cost ledger ("ALL THREE spec bugs the TPM's") and all
+four M28 recuts fit the same pattern.
+
+**Change:** codify the rule — every seat's output artifact receives a
+mechanical validity check at handoff; gate strength proportional to blast
+radius, never inversely to seat capability. Items 1 and 4 are the first
+two instances. Precedents to cite: the M4 conductor postmortem ("never
+rely on compliance for any invariant — constraints must be structural")
+and the 2026-06-04 correction ("mechanical gates over doc guards").
+Capability changes the failure class, not the need for gates: weak models
+fail loudly downstream where gates exist; strong models fail quietly
+upstream where they don't.
+
+## 6. EM diagnosis hardening (open since M23)
+
+M23 exposed mid-tier diagnosis as the weak rung (schema-invalid diagnosis,
+empty task_id — gate refused correctly, halt); 07-17 mlx-serve produced
+the first schema-valid production diagnosis but with rambling prose.
+Candidate: one bounded schema-retry that echoes the validation error back
+to the EM, and/or a denser diagnosis brief. Carried from the 07-15 open
+items; still unaddressed.
+
+## 7. Hand-fix ledger as a close-out metric + UI-AC guidance (TPM role doc)
+
+M28 broke the zero-hand-fix streak held since M7: 11 post-`[success]`
+live-fixes, all UI interaction detail the frozen ACs never pinned
+(cancel-path reverts, status honesty, gating, a races-on-reload class).
+Two small changes: (a) the close-out ritual records the post-success
+live-fix count per milestone so the trend is visible; (b) docs/TPM-ROLE.md
+gains a note that UI milestones need interaction-path ACs (cancel paths,
+status truthfulness, refresh/reload races), not only happy-path
+assertions.
+
+## 8. Freeze hygiene (advisory, CEO-PLAYBOOK/TPM-ROLE)
+
+Both defect-bearing M28 freezes (v51 23:34, v52 23:49) were authored
+minutes after closing M27 (22:50), at the end of a long day, across a
+pause/resume and multiple model changes. Advisory line: a new milestone's
+spec is next-session work by default; at minimum, refreeze could warn
+when the previous `[success]` landed under an hour ago in the same
+session. Keep advisory — this is a human-rhythm issue, not a gate.
+
+## 9. Housekeeping
+
+`sw-dev-blueprint/tasks/HANDOFF-2026-07-16-state.md.bak` is an untracked
+editor backup (predates its sibling by ~24 min; nothing depends on it).
+`rm` it; optionally add `*.bak` to blueprint's `.gitignore`.
 
 ---
 
-## Item 2: Stray `.bak` file in blueprint tasks/
+## Not blueprint work (stays in testchat)
 
-**Path:** `sw-dev-blueprint/tasks/HANDOFF-2026-07-16-state.md.bak`
-**Timestamps:** the `.bak` is dated Jul 17 19:04; the tracked-name-alike `HANDOFF-2026-07-16-state.md` (also untracked per `0622ec1 chore(tasks): untrack dated session-state handoffs`) is dated Jul 17 19:28.
-**Status:** untracked; appears to be an editor backup made before an edit ~24 minutes later. Both the `.md` and `.bak` are excluded from the frozen manifest by the untrack commit, so nothing depends on it.
-
-**Recommended action:** `rm sw-dev-blueprint/tasks/HANDOFF-2026-07-16-state.md.bak`. It's noise in `git status`.
-
-**Optional:** add `*.bak` to blueprint's `.gitignore` so future editor backups don't accumulate as untracked cruft.
-
----
-
-## Not-pending in testchat itself
-
-The flake documentation lives in testchat's [CLAUDE.md](../CLAUDE.md) correction log (2026-07-19 row) with the process guard. That's all testchat can do — the test file is TPM-frozen (INV-1) and the mechanical fix belongs upstream in blueprint.
+- AC-42 test re-cut/hardening — TPM lane at next refreeze (INV-1-frozen;
+  P1 on tasks/BACKLOG.md with the 2026-07-19 in-isolation evidence).
+- M13 app.js module split spec backfill — testchat pipeline work.
+- All incident documentation — per CEO placement rule (2026-07-19),
+  postmortems stay in the project repo; blueprint receives only the
+  generic process changes above.
