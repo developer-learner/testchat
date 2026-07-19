@@ -204,3 +204,19 @@ eject-model-btn it clicks unload-confirm (the eject path now runs
 through the confirm gate). The eject button remains reachable via
 testid regardless of the focus-reveal styling. The load-confirm
 elements enter the locked surface for future oracles.
+
+M28b — inventory correction (amends M28, spec defect)
+
+v51 froze the GET /api/v1/models/catalog route but never added its
+implementing files to the ERD inventory (contracts.files), making the
+milestone unimplementable: validate-plan.py requires an exact
+bijection between plan tasks and the inventory, so no valid plan
+could contain a task that builds the catalog endpoint. Caught at the
+plan gate after two EM models failed against an impossible spec.
+
+Correction: src/services/models.py (gains list_model_catalog(),
+returning every SCRIPT_MODELS entry as {id, source, loaded}) and
+src/api/models.py (gains the catalog route delegating to it) join
+contracts.files, each with a smoke check. Their existing frozen tests
+(tests/test_models_service.py, tests/test_models_api.py) map to these
+tasks per the standard oracle projection.

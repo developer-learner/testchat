@@ -1,5 +1,5 @@
 {
-  "erd_version": 52,
+  "erd_version": 53,
   "files": [
     "src/services/websearch.py",
     "src/api/status.py",
@@ -10,7 +10,9 @@
     "src/static/app.js",
     "src/static/markdown.js",
     "src/static/rain.js",
-    "src/static/style.css"
+    "src/static/style.css",
+    "src/services/models.py",
+    "src/api/models.py"
   ],
   "entry_points": [
     "src.main:app",
@@ -491,7 +493,9 @@
     "src/static/app.js": "grep -q 'webToggle' src/static/app.js && grep -q 'pendingSources' src/static/app.js && grep -q '\u3010' src/static/app.js && grep -q 'ejectModelBtn' src/static/app.js && grep -q 'models/catalog' src/static/app.js",
     "src/static/markdown.js": "grep -q 'renderBlocks' src/static/markdown.js",
     "src/static/rain.js": "grep -q 'prefers-reduced-motion' src/static/rain.js",
-    "src/static/style.css": "grep -q 'data-theme=' src/static/style.css"
+    "src/static/style.css": "grep -q 'data-theme=' src/static/style.css",
+    "src/services/models.py": "grep -q 'def list_model_catalog' src/services/models.py && grep -q 'SCRIPT_MODELS' src/services/models.py",
+    "src/api/models.py": "grep -q 'models/catalog' src/api/models.py && grep -q 'list_model_catalog' src/api/models.py"
   },
   "no_edit_files": [
     "src/static/markdown.js",
