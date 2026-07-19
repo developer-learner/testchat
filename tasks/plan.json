@@ -1,1 +1,102 @@
-{"version":8,"erd_version":49,"tasks":[{"id":"T1","file":"src/services/websearch.py","depends_on":[],"brief":"Implementation constraints: synchronous Python, stdlib only. No edits — file already carries ratified behavior (AC-93). Carry forward as-is.\n\nBehavioral specification: No changes. The file src/services/websearch.py is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'WebSearchError' src/services/websearch.py && grep -q 'TAVILY_ENDPOINT' src/services/websearch.py && grep -q 'def build_prompt' src/services/websearch.py && grep -q 'plain square' src/services/websearch.py","contracts":[],"tests":["tests/test_websearch_service.py::test_unconfigured_when_key_missing","tests/test_websearch_service.py::test_configured_with_key","tests/test_websearch_service.py::test_search_sends_bearer_and_query","tests/test_websearch_service.py::test_search_returns_at_most_four_sources","tests/test_websearch_service.py::test_source_content_capped","tests/test_websearch_service.py::test_search_http_error_raises","tests/test_websearch_service.py::test_build_prompt_numbers_sources_and_keeps_question","tests/test_websearch_service.py::test_prompt_forbids_full_width_citations"]},{"id":"T2","file":"src/api/status.py","depends_on":[],"brief":"Implementation constraints: synchronous Python, no edits. File already carries ratified behavior (AC-90). Carry forward as-is.\n\nBehavioral specification: No changes. The file src/api/status.py is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'web_configured' src/api/status.py","contracts":[],"tests":[]},{"id":"T3","file":"src/api/chat.py","depends_on":[],"brief":"Implementation constraints: synchronous Python, no edits. File already carries ratified behavior. Carry forward as-is.\n\nBehavioral specification: No changes. The file src/api/chat.py is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'web: bool = False' src/api/chat.py && grep -q 'event: sources' src/api/chat.py","contracts":[],"tests":["tests/test_chat_model_routing.py::test_chat_routes_to_nemotron_and_passes_model","tests/test_chat_model_routing.py::test_chat_routes_to_lmstudio_and_passes_model","tests/test_chat_model_routing.py::test_chat_invalid_model_type_is_422","tests/test_chat_model_routing.py::test_chat_nemotron_selected_but_not_loaded_is_422"]},{"id":"T4","file":"src/api/threads.py","depends_on":[],"brief":"Implementation constraints: synchronous Python, no edits. File already carries ratified behavior. Carry forward as-is.\n\nBehavioral specification: No changes. The file src/api/threads.py is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'class SourceLink' src/api/threads.py && grep -q 'exclude_none=True' src/api/threads.py","contracts":[],"tests":[]},{"id":"T5","file":"src/static/index.html","depends_on":[],"brief":"Implementation constraints: synchronous HTML, no edits. File already carries ratified behavior. Carry forward as-is.\n\nBehavioral specification: No changes. The file src/static/index.html is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'data-testid=\"web-toggle\"' src/static/index.html","contracts":[],"tests":[]},{"id":"T6","file":"src/static/threads.js","depends_on":[],"brief":"Implementation constraints: synchronous JS, no edits. File already carries ratified behavior. Carry forward as-is.\n\nBehavioral specification: No changes. The file src/static/threads.js is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'addSources' src/static/threads.js && grep -q 'msg-sources' src/static/threads.js","contracts":[],"tests":[]},{"id":"T7","file":"src/static/app.js","depends_on":[],"brief":"Implementation constraints: synchronous JS, no edits. File already carries ratified behavior (AC-92). Carry forward as-is.\n\nBehavioral specification: No changes. The file src/static/app.js is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'webToggle' src/static/app.js && grep -q 'pendingSources' src/static/app.js && grep -q '【' src/static/app.js","contracts":[],"tests":[]},{"id":"T8","file":"src/static/markdown.js","depends_on":[],"brief":"Implementation constraints: no code changes. This is a no_edit_file (D-65) — declared unchanged. The file must exist and be carried forward as-is.\n\nBehavioral specification: No edits. The file src/static/markdown.js is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'renderBlocks' src/static/markdown.js","contracts":[],"tests":[]},{"id":"T9","file":"src/static/rain.js","depends_on":[],"brief":"Implementation constraints: no code changes. This is a no_edit_file (D-65) — declared unchanged. The file must exist and be carried forward as-is.\n\nBehavioral specification: No edits. The file src/static/rain.js is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'prefers-reduced-motion' src/static/rain.js","contracts":[],"tests":[]},{"id":"T10","file":"src/static/style.css","depends_on":[],"brief":"Implementation constraints: no code changes. This is a no_edit_file (D-65) — declared unchanged. The file must exist and be carried forward as-is.\n\nBehavioral specification: No edits. The file src/static/style.css is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'data-theme=' src/static/style.css","contracts":[],"tests":[]}]}
+{
+  "version": 9,
+  "erd_version": 50,
+  "tasks": [
+    {
+      "id": "T1",
+      "file": "src/services/websearch.py",
+      "depends_on": [],
+      "brief": "Implementation constraints: synchronous Python, stdlib only. No edits \u2014 file already carries ratified behavior (AC-93). Carry forward as-is.\n\nBehavioral specification: No changes. The file src/services/websearch.py is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'WebSearchError' src/services/websearch.py && grep -q 'TAVILY_ENDPOINT' src/services/websearch.py && grep -q 'def build_prompt' src/services/websearch.py && grep -q 'plain square' src/services/websearch.py",
+      "contracts": [],
+      "tests": [
+        "tests/test_websearch_service.py::test_unconfigured_when_key_missing",
+        "tests/test_websearch_service.py::test_configured_with_key",
+        "tests/test_websearch_service.py::test_search_sends_bearer_and_query",
+        "tests/test_websearch_service.py::test_search_returns_at_most_four_sources",
+        "tests/test_websearch_service.py::test_source_content_capped",
+        "tests/test_websearch_service.py::test_search_http_error_raises",
+        "tests/test_websearch_service.py::test_build_prompt_numbers_sources_and_keeps_question",
+        "tests/test_websearch_service.py::test_prompt_forbids_full_width_citations"
+      ]
+    },
+    {
+      "id": "T2",
+      "file": "src/api/status.py",
+      "depends_on": [],
+      "brief": "Implementation constraints: synchronous Python, no edits. File already carries ratified behavior (AC-90). Carry forward as-is.\n\nBehavioral specification: No changes. The file src/api/status.py is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'web_configured' src/api/status.py",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T3",
+      "file": "src/api/chat.py",
+      "depends_on": [],
+      "brief": "Implementation constraints: synchronous Python, no edits. File already carries ratified behavior including DeepSeek V4 Flash routing (get_script_model + is_script_model_loaded). Carry forward as-is.\n\nBehavioral specification: No changes. The file src/api/chat.py already implements script-model routing for both nemotron and deepseek-v4-flash.\n\nAcceptance: grep -q \"get_script_model\" src/api/chat.py && grep -q \"event: sources\" src/api/chat.py",
+      "contracts": [],
+      "tests": [
+        "tests/test_chat_model_routing.py::test_chat_routes_to_nemotron_and_passes_model",
+        "tests/test_chat_model_routing.py::test_chat_routes_to_lmstudio_and_passes_model",
+        "tests/test_chat_model_routing.py::test_chat_invalid_model_type_is_422",
+        "tests/test_chat_model_routing.py::test_chat_nemotron_selected_but_not_loaded_is_422",
+        "tests/test_chat_model_routing.py::test_chat_routes_to_deepseek_and_passes_model",
+        "tests/test_chat_model_routing.py::test_chat_deepseek_selected_but_not_loaded_is_422"
+      ]
+    },
+    {
+      "id": "T4",
+      "file": "src/api/threads.py",
+      "depends_on": [],
+      "brief": "Implementation constraints: synchronous Python, no edits. File already carries ratified behavior. Carry forward as-is.\n\nBehavioral specification: No changes. The file src/api/threads.py is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'class SourceLink' src/api/threads.py && grep -q 'exclude_none=True' src/api/threads.py",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T5",
+      "file": "src/static/index.html",
+      "depends_on": [],
+      "brief": "Implementation constraints: synchronous HTML, no edits. File already carries ratified behavior. Carry forward as-is.\n\nBehavioral specification: No changes. The file src/static/index.html is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'data-testid=\"web-toggle\"' src/static/index.html",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T6",
+      "file": "src/static/threads.js",
+      "depends_on": [],
+      "brief": "Implementation constraints: synchronous JS, no edits. File already carries ratified behavior. Carry forward as-is.\n\nBehavioral specification: No changes. The file src/static/threads.js is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'addSources' src/static/threads.js && grep -q 'msg-sources' src/static/threads.js",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T7",
+      "file": "src/static/app.js",
+      "depends_on": [],
+      "brief": "Implementation constraints: synchronous JS, no edits. File already carries ratified behavior (AC-92). Carry forward as-is.\n\nBehavioral specification: No changes. The file src/static/app.js is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'webToggle' src/static/app.js && grep -q 'pendingSources' src/static/app.js && grep -q '\u3010' src/static/app.js",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T8",
+      "file": "src/static/markdown.js",
+      "depends_on": [],
+      "brief": "Implementation constraints: no code changes. This is a no_edit_file (D-65) \u2014 declared unchanged. The file must exist and be carried forward as-is.\n\nBehavioral specification: No edits. The file src/static/markdown.js is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'renderBlocks' src/static/markdown.js",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T9",
+      "file": "src/static/rain.js",
+      "depends_on": [],
+      "brief": "Implementation constraints: no code changes. This is a no_edit_file (D-65) \u2014 declared unchanged. The file must exist and be carried forward as-is.\n\nBehavioral specification: No edits. The file src/static/rain.js is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'prefers-reduced-motion' src/static/rain.js",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T10",
+      "file": "src/static/style.css",
+      "depends_on": [],
+      "brief": "Implementation constraints: no code changes. This is a no_edit_file (D-65) \u2014 declared unchanged. The file must exist and be carried forward as-is.\n\nBehavioral specification: No edits. The file src/static/style.css is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'data-theme=' src/static/style.css",
+      "contracts": [],
+      "tests": []
+    }
+  ]
+}
