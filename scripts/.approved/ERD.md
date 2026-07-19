@@ -162,3 +162,45 @@ Rollback / risk
 - Risk: the dropdown now triggers a heavyweight action (a 100GB-class
   server launch) on select. Accepted deliberately (speed-first);
   the visible loading state is the mitigation.
+
+M28a — wordless model states + confirm gates (amends M28, pre-implementation)
+
+CEO corrections to the M28 UI before any code lands. Model state is
+communicated by glyphs, not words (native selects render color emoji
+but not CSS), and both heavyweight actions get a confirmation gate.
+
+Dropdown option labels:
+
+- "○ {id}"        — unloaded; selecting it opens load-confirm-modal
+- "○/🟢 blinking"  — loading: after confirm, the selected option's
+                    glyph alternates ○↔🟢 (~600ms) while the ready-
+                    poll runs; dropdown disabled. Settles to solid 🟢
+                    on ready, reverts to ○ on failure (the existing
+                    chat error bubble carries the reason).
+- "🟢 {id}"        — loaded (resident in RAM)
+- "✓ 🟢 {id}"      — loaded AND the model the current chat thread is
+                    using (a model can be 🟢 without ✓)
+
+Confirm gates (both reuse the settings-modal overlay pattern):
+
+- load-confirm-modal: opens on selecting an unloaded script model;
+  shows the model name and the live RAM line from /api/v1/status
+  (ram_used/ram_total/loadable_gb). Confirm (load-confirm) POSTs the
+  load; cancel (load-cancel) reverts the dropdown selection, sends
+  nothing. Rationale: a stray dropdown click launching a 100GB-class
+  server can push the machine into memory pressure; loading must be
+  a deliberate two-step action.
+- unload-confirm-modal: opened by eject-model-btn, names the loaded
+  model. Confirm (unload-confirm) POSTs the unload; cancel
+  (unload-cancel) sends nothing.
+
+Eject visibility: eject-model-btn is right-aligned beside the
+dropdown and hidden by default; it is revealed while the dropdown
+has focus (closest native-select approximation of "visible while
+the model menu is open") and hides on blur.
+
+Oracle Mapping: AC-31 gains one step — after clicking
+eject-model-btn it clicks unload-confirm (the eject path now runs
+through the confirm gate). The eject button remains reachable via
+testid regardless of the focus-reveal styling. The load-confirm
+elements enter the locked surface for future oracles.

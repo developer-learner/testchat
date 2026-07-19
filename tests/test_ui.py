@@ -107,6 +107,7 @@ def test_model_selection_survives_models_refresh(page: Page, app_url: str) -> No
     n = int(stamp.group(1))
     select.select_option("beta-model")
     page.get_by_test_id("eject-model-btn").click()
+    page.get_by_test_id("unload-confirm").click()
     expect(select).to_contain_text(f"refresh-{n + 1}")
     expect(select).to_have_value("beta-model")
 

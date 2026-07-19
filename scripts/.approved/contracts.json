@@ -1,5 +1,5 @@
 {
-  "erd_version": 51,
+  "erd_version": 52,
   "files": [
     "src/services/websearch.py",
     "src/api/status.py",
@@ -333,7 +333,37 @@
     {
       "id": "ui:eject-model-btn",
       "testid": "eject-model-btn",
-      "description": "single unload control next to the model dropdown; looks up the currently loaded script model via GET /api/v1/models/catalog and POSTs /api/v1/script-models/{id}/unload; no-op when no script model is loaded (M28)"
+      "description": "single unload control right-aligned next to the model dropdown; hidden by default, revealed while the dropdown has focus (approximates 'visible while the model menu is open' \u2014 native selects expose no open event); click opens unload-confirm-modal; no-op when no script model is loaded (M28a)"
+    },
+    {
+      "id": "ui:load-confirm-modal",
+      "testid": "load-confirm-modal",
+      "description": "confirmation dialog shown when an unloaded script model is selected in the dropdown; shows the model name and the live RAM figures from /api/v1/status; nothing is launched until confirmed (M28a)"
+    },
+    {
+      "id": "ui:load-confirm",
+      "testid": "load-confirm",
+      "description": "confirm button inside load-confirm-modal; closes the modal and POSTs /api/v1/script-models/{id}/load (M28a)"
+    },
+    {
+      "id": "ui:load-cancel",
+      "testid": "load-cancel",
+      "description": "cancel button inside load-confirm-modal; closes the modal and reverts the dropdown to the previous selection - no load request is sent (M28a)"
+    },
+    {
+      "id": "ui:unload-confirm-modal",
+      "testid": "unload-confirm-modal",
+      "description": "confirmation dialog opened by eject-model-btn, naming the loaded script model; nothing is stopped until confirmed (M28a)"
+    },
+    {
+      "id": "ui:unload-confirm",
+      "testid": "unload-confirm",
+      "description": "confirm button inside unload-confirm-modal; closes the modal and POSTs /api/v1/script-models/{id}/unload (M28a)"
+    },
+    {
+      "id": "ui:unload-cancel",
+      "testid": "unload-cancel",
+      "description": "cancel button inside unload-confirm-modal; closes the modal, nothing is sent (M28a)"
     },
     {
       "id": "ui:settings-toggle",
