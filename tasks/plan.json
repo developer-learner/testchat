@@ -1,6 +1,6 @@
 {
-  "version": 10,
-  "erd_version": 53,
+  "version": 11,
+  "erd_version": 54,
   "tasks": [
     {
       "id": "T1",
@@ -148,7 +148,7 @@
       "id": "T11",
       "file": "src/services/models.py",
       "depends_on": [],
-      "brief": "Modify src/services/models.py. KEEP every existing symbol unchanged (SCRIPT_MODELS registry, is_script_model_loaded, load_script_model, unload_script_model, list_models, nemotron wrappers). ADD one new function at module level after list_models:\n\ndef list_model_catalog() -> list[dict]:\n    return [\n        {'id': model_id, 'source': model_id, 'loaded': is_script_model_loaded(model_id)}\n        for model_id in SCRIPT_MODELS\n    ]\n\nIt returns EVERY registry entry regardless of load state (list_models stays loaded-only; do not change it). Type hints required, no print(), no new imports.\n\nSelf-verify before answering: the file still defines SCRIPT_MODELS and now defines list_model_catalog; no other function's body changed.",
+      "brief": "Modify src/services/models.py. Two changes ONLY.\n\nCHANGE 1 \u2014 D-68 compliance in the EXISTING code: inside load_script_model there is a ready-poll loop:\n        try:\n            response = httpx.get(entry['ready_url'], timeout=5)\n            if response.status_code == 200:\n                return {'status': 'loaded'}\n        except Exception:\n            pass\nRewrite ONLY that except block as:\n        except Exception:\n            # ready-poll: connection errors are expected until the server binds;\n            # retried until the deadline\n            pass\nBehavior identical \u2014 comment only. Keep every other line of the existing file byte-identical (SCRIPT_MODELS, is_script_model_loaded, load_script_model, unload_script_model, list_models, nemotron wrappers).\n\nCHANGE 2 \u2014 ADD one new function at module level after list_models:\ndef list_model_catalog() -> list[dict]:\n    return [\n        {'id': model_id, 'source': model_id, 'loaded': is_script_model_loaded(model_id)}\n        for model_id in SCRIPT_MODELS\n    ]\nIt returns EVERY registry entry regardless of load state (list_models stays loaded-only). No try/except in this new function. Type hints required, no print(), no new imports.\n\nSelf-verify before answering: the except block in the ready-poll loop contains the two comment lines then pass; the file defines list_model_catalog; every except block in the file contains either real handling or a comment; no other line changed.",
       "contracts": [],
       "tests": [
         "tests/test_models_service.py::test_list_models_includes_lmstudio_loaded_instances",
