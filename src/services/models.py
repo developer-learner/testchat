@@ -132,6 +132,8 @@ def load_script_model(model_id: str) -> dict:
             if response.status_code == 200:
                 return {'status': 'loaded'}
         except Exception:
+            # ready-poll: connection errors are expected until the server
+            # binds; retried until the deadline
             pass
         time.sleep(1)
 
@@ -173,6 +175,13 @@ def list_models() -> list[dict]:
             models.append({'id': model_id, 'source': model_id})
 
     return models
+
+
+def list_model_catalog() -> list[dict]:
+    return [
+        {'id': model_id, 'source': model_id, 'loaded': is_script_model_loaded(model_id)}
+        for model_id in SCRIPT_MODELS
+    ]
 
 
 def is_nemotron_loaded() -> bool:
