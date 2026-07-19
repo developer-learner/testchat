@@ -1,10 +1,17 @@
 window.MD = (function () {
   function renderInline(escaped) {
-    return escaped
-      .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+    // Code spans are extracted to placeholders first so the bold/em/link
+    // passes cannot reformat their contents (`a**b**c` must stay literal).
+    var codes = [];
+    var out = escaped.replace(/`([^`\n]+)`/g, function (m, body) {
+      codes.push('<code>' + body + '</code>');
+      return '\u0000' + (codes.length - 1) + '\u0000';
+    });
+    out = out
       .replace(/\*\*([^*\n][^*]*?)\*\*/g, '<strong>$1</strong>')
       .replace(/(^|[\s(])\*([^*\s][^*\n]*?)\*(?=[\s.,;:!?)]|$)/g, '$1<em>$2</em>')
       .replace(/\[([^\]]+)\]\((https?:[^)\s"]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return out.replace(/\u0000(\d+)\u0000/g, function (m, i) { return codes[i]; });
   }
 
   function renderListItems(items) {
