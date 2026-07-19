@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from src.services.models import (
     SCRIPT_MODELS,
+    list_model_catalog,
     list_models,
     load_script_model,
     unload_script_model,
@@ -36,6 +37,16 @@ class ScriptModelUnloadResponse(BaseModel):
     message: Optional[str] = None
 
 
+class CatalogEntry(BaseModel):
+    id: str
+    source: Literal['nemotron', 'deepseek-v4-flash']
+    loaded: bool
+
+
+class ModelCatalogResponse(BaseModel):
+    models: list[CatalogEntry]
+
+
 # Back-compat aliases for the historical nemotron-specific response names.
 NemotronLoadResponse = ScriptModelLoadResponse
 NemotronUnloadResponse = ScriptModelUnloadResponse
@@ -45,6 +56,11 @@ NemotronUnloadResponse = ScriptModelUnloadResponse
 async def get_models() -> ModelsListResponse:
     models = list_models()
     return ModelsListResponse(models=[ModelInfo(**m) for m in models])
+
+
+@router.get('/models/catalog')
+async def get_model_catalog() -> ModelCatalogResponse:
+    return ModelCatalogResponse(models=[CatalogEntry(**m) for m in list_model_catalog()])
 
 
 def _require_script_model(model_id: str) -> None:
