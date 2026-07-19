@@ -648,6 +648,17 @@
       background: var(--accent-hover);
     }
 
+    .modal-actions button.danger {
+      background: var(--danger);
+      color: var(--accent-contrast);
+      border-color: transparent;
+      font-weight: 600;
+    }
+
+    .modal-actions button.danger:hover {
+      background: var(--danger-hover);
+    }
+
     .nemotron-btn {
       padding: 0.45rem 0.9rem;
       border: 1px solid transparent;

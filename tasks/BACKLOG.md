@@ -26,6 +26,18 @@ pipeline fix (D-77, retry-in-isolation before DRIFT) is blueprint-side,
 parked in `tasks/HANDOFF-blueprint-items.md`.
 **Rough size:** Spec/test-only
 
+### AC-47 recut — thread-delete confirm off native window.confirm
+**Priority:** P2 (bundle with the AC-42 refreeze above)
+**Why:** CEO wants all confirms themed (2026-07-19). Message-pair delete
+now uses the themed delete-confirm-modal (live-fix), but thread delete
+must stay `window.confirm` because frozen AC-47
+(`test_thread_delete_removes_thread`) drives it via `page.once("dialog")`
+— a custom modal leaves the thread undeleted and fails the suite.
+**What:** TPM recuts AC-47 to click the modal's confirm button; then
+`deleteThread` switches to the same `confirmDelete()` helper in
+threads.js (one-line swap, code path already exists).
+**Rough size:** Spec/test + one-line code change
+
 ### M13 — app.js module split (spec backfill)
 **Priority:** P2
 **Why:** Split already landed as live-fix (markdown.js, threads.js, app.js);

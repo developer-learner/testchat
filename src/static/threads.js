@@ -201,10 +201,31 @@ function addSources(bubble, sources, notice) {
     return 1;
   }
 
+  function confirmDelete(text, onConfirm) {
+    var modal = el('delete-confirm-modal');
+    el('delete-confirm-text').textContent = text;
+    modal.hidden = false;
+    // onclick assignment (not addEventListener) so repeat opens replace the
+    // previous callbacks instead of stacking them.
+    el('delete-cancel').onclick = function () { modal.hidden = true; };
+    el('delete-confirm').onclick = function () {
+      modal.hidden = true;
+      onConfirm();
+    };
+  }
+
   function deleteMessagePair(idx) {
     var thread = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
     if (!thread || idx < 0 || idx >= thread.messages.length) return;
-    if (!window.confirm('Delete this message' + (pairSpan(thread, idx) === 2 ? ' pair' : '') + '?')) return;
+    confirmDelete(
+      'Delete this message' + (pairSpan(thread, idx) === 2 ? ' pair' : '') + '?',
+      function () { doDeleteMessagePair(idx); }
+    );
+  }
+
+  function doDeleteMessagePair(idx) {
+    var thread = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
+    if (!thread || idx < 0 || idx >= thread.messages.length) return;
     var span = pairSpan(thread, idx);
     var start = idx;
     if (span === 2 && thread.messages[idx].role === 'assistant') start = idx - 1;
