@@ -617,9 +617,9 @@
         for (var n = 0; n < opts.length; n++) {
           if (opts[n].value === previous) {
             modelSelect.value = previous;
-            // Native OS <select> already marks the selected option (checkmark
-            // on macOS Chrome/Safari, blue highlight elsewhere). Adding our
-            // own \u2713 produced a visible "\u2713 \u2713" duplication on macOS.
+            // Prefix the restored selection with \u2713 so it is visually
+            // distinguishable in the dropdown list.
+            opts[n].textContent = '\u2713 ' + opts[n].textContent;
             var thread2 = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
             if (thread2) thread2.model = previous;
             break;
@@ -630,8 +630,6 @@
       function refreshModels() {
         fetchModels();
       }
-
-      ejectModelBtn.hidden = false;
 
       ejectModelBtn.addEventListener('click', function () {
         fetch('/api/v1/models/catalog')
@@ -678,8 +676,17 @@
       // pre-change value on focus/mousedown — needed so load-cancel can
       // actually revert (bug: prior was reading the just-picked value).
       var previousModelValue = modelSelect.value;
+      var ejectHideTimer = null;
       modelSelect.addEventListener('focus', function () {
         previousModelValue = modelSelect.value;
+        ejectModelBtn.hidden = false;
+        if (ejectHideTimer) { clearTimeout(ejectHideTimer); ejectHideTimer = null; }
+      });
+      modelSelect.addEventListener('blur', function () {
+        ejectHideTimer = setTimeout(function () {
+          ejectModelBtn.hidden = true;
+          ejectHideTimer = null;
+        }, 200);
       });
       modelSelect.addEventListener('mousedown', function () {
         previousModelValue = modelSelect.value;
