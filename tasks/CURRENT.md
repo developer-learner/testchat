@@ -269,3 +269,7 @@ M28 features live:
 - T12 (api/models.py): GET /api/v1/models/catalog
 
 Feature built and validated (aside from noted flake).
+
+## Results
+
+Full frozen TPM suite green against spec v56. Feature built and validated.
