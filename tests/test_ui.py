@@ -432,3 +432,25 @@ def test_bubble_meta_includes_date_for_past_messages(page: Page, app_url: str) -
     expect(meta).to_have_attribute(
         "data-meta", re.compile(rf"^\S.+ {expected_time}$")
     )
+
+
+# AC-100 [v57 — the thread's model is marked by native selection only: labels
+# never carry a "✓" (the OS select renders its own checkmark; a label glyph
+# duplicated it — "✓ ✓" on macOS, CEO-rejected 2026-07-19)]
+def test_model_option_labels_never_carry_checkmark(page: Page, app_url: str) -> None:
+    page.route(
+        "**/api/v1/models/catalog",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"models":[{"id":"nemotron","source":"nemotron","loaded":true}]}',
+        ),
+    )
+    page.goto(app_url)
+    select = page.get_by_test_id("model-select")
+    expect(select).to_have_value("alpha-model")  # options are populated
+    expect(select).not_to_contain_text("✓")      # at rest
+    _send(page, "bind this thread")
+    _await_reply(page)
+    expect(select).to_be_disabled()              # thread bound to its model (AC-28)
+    expect(select).not_to_contain_text("✓")      # bound state: still no label glyph

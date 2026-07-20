@@ -49,7 +49,7 @@ Dropdown option labels:
 * "○ {id}" — unloaded; selecting it opens load-confirm-modal
 * "○/🟢 blinking" — loading: after confirm, the selected option's glyph alternates ○↔🟢 (~600ms) while the ready- poll runs; dropdown disabled. Settles to solid 🟢 on ready, reverts to ○ on failure (the existing chat error bubble carries the reason).
 * "🟢 {id}" — loaded (resident in RAM)
-* "✓ 🟢 {id}" — loaded AND the model the current chat thread is using (a model can be 🟢 without ✓)
+* The thread's current model carries NO extra glyph (v57 recut — this bullet previously defined a fourth state "✓ 🟢 {id}"): it is simply the dropdown's selected option. Native selects render their own checkmark for the selection, so a "✓" label prefix duplicated it ("✓ ✓" on macOS; CEO-rejected 2026-07-19). AC-100 pins the absence.
 Confirm gates (both reuse the settings-modal overlay pattern):
 * load-confirm-modal: opens on selecting an unloaded script model; shows the model name and the live RAM line from /api/v1/status (ram_used/ram_total/loadable_gb). Confirm (load-confirm) POSTs the load; cancel (load-cancel) reverts the dropdown selection, sends nothing. Rationale: a stray dropdown click launching a 100GB-class server can push the machine into memory pressure; loading must be a deliberate two-step action.
 * unload-confirm-modal: opened by eject-model-btn, names the loaded model. Confirm (unload-confirm) POSTs the unload; cancel (unload-cancel) sends nothing.
@@ -76,3 +76,13 @@ Smoke checks: index.html gains grep for data-testid="delete-confirm-modal".
 
 Build inventory: UNCHANGED from v54 (12 files).
 no_edit_files: UNCHANGED from v54 (markdown.js, rain.js, style.css).
+M28e — drop the "✓" selection prefix from option labels (amends M28a)
+
+What changes v56 → v57:
+UI-label recut plus one new frozen test. No inventory change, no route change, no contract change (AC-100 observes only already-locked testids: model-select, message-input, send-btn, msg-assistant).
+* src/static/app.js: option labels lose the "✓ " prefix in every state; M28a's fourth label state ("✓ 🟢 {id}") is retired. Load-state glyphs (○ / ○↔🟢 blinking / 🟢) are unchanged, as are both confirm gates and the eject focus-reveal behavior.
+* Rationale: the ✓ duplicated the native select's own selected-option checkmark ("✓ ✓" on macOS). The 2026-07-19 evening hand-fix removed it; the v56 run then correctly regressed the hand-fix back to spec — this recut moves the SPEC to the CEO's decision so code and spec agree, per D-82's lesson that unpinned UI detail breeds hand-fix wars.
+* New frozen test: tests/test_ui.py::test_model_option_labels_never_carry_checkmark (AC-100) — no option label contains "✓", at rest and after a thread binds its model, with a loaded script-model catalog entry route-stubbed in (AC-31's stub pattern).
+Oracle Mapping: the new node lives in tests/test_ui.py and rides its standard projection — the D-64 validator routes playwright-importing files to the task whose dependency closure spans the plan; map it there. With src/static/app.js the only real edit, every other task is a carry-forward no-op per the v49/v50 ratify shape.
+Smoke checks: unchanged from v55.
+Build inventory: UNCHANGED (12 files). no_edit_files: UNCHANGED (markdown.js, rain.js, style.css).

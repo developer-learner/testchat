@@ -36,3 +36,5 @@ The thinking-placeholder test is re-anchored from a wall-clock hold window to a 
 
 AC-47 (recut — native dialog replaced by themed modal):
 WHEN the user clicks thread-delete-btn, the delete-confirm-modal SHALL appear. The thread SHALL be removed only WHEN delete-confirm is clicked. IF delete-cancel is clicked, the modal SHALL close and the thread SHALL remain. The delete-confirm-modal is the same modal already used for message-pair delete; it gains three locked testids: delete-confirm-modal, delete-confirm, delete-cancel.
+v57 — model dropdown: drop the "✓" selection prefix
+* AC-100: The model-select option labels SHALL never contain "✓". The current thread's model SHALL be indicated solely by the native select's selected option — the OS renders its own checkmark, and the label glyph duplicated it ("✓ ✓" on macOS; CEO-rejected 2026-07-19). Load-state glyphs (○ / blinking / 🟢) and both confirm gates are unchanged.
