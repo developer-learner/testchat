@@ -578,6 +578,7 @@
           if (catalogModels[c].loaded === true) { TC.scriptModelLoaded = true; break; }
         }
         ejectModelBtn.disabled = !TC.scriptModelLoaded;
+        ejectModelBtn.hidden = !TC.scriptModelLoaded;
 
         var lmMap = {};
         for (var k = 0; k < lmModels.length; k++) {
