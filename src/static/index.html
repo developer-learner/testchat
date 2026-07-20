@@ -75,13 +75,13 @@
     </div>
   </div>
 
-  <div class="modal-overlay" id="delete-confirm-modal" hidden>
+  <div class="modal-overlay" id="delete-confirm-modal" data-testid="delete-confirm-modal" hidden>
     <div class="modal">
-      <div class="modal-title">Delete message?</div>
+      <div class="modal-title">Delete?</div>
       <p id="delete-confirm-text" class="modal-hint"></p>
       <div class="modal-actions">
-        <button type="button" id="delete-cancel">Cancel</button>
-        <button type="button" id="delete-confirm" class="danger">Delete</button>
+        <button type="button" id="delete-cancel" data-testid="delete-cancel">Cancel</button>
+        <button type="button" id="delete-confirm" data-testid="delete-confirm" class="danger">Delete</button>
       </div>
     </div>
   </div>

@@ -319,18 +319,19 @@ function addSources(bubble, sources, notice) {
   }
 
   function deleteThread(id) {
-    if (!window.confirm('Delete this chat?')) return;
-    TC.threads = TC.threads.filter(function (t) { return t.id !== id; });
-    persistThreads();
-    if (TC.activeThreadId === id) {
-      if (TC.threads.length) {
-        switchThread(TC.threads[0].id);
+    confirmDelete('Delete this chat?', function () {
+      TC.threads = TC.threads.filter(function (t) { return t.id !== id; });
+      persistThreads();
+      if (TC.activeThreadId === id) {
+        if (TC.threads.length) {
+          switchThread(TC.threads[0].id);
+        } else {
+          createThread();
+        }
       } else {
-        createThread();
+        renderSidebar();
       }
-    } else {
-      renderSidebar();
-    }
+    });
   }
 
   function updateTitle(thread, firstMessage) {
