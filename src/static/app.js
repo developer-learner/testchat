@@ -634,9 +634,9 @@
         for (var n = 0; n < opts.length; n++) {
           if (opts[n].value === previous) {
             modelSelect.value = previous;
-            // Prefix the restored selection with \u2713 so it is visually
-            // distinguishable in the dropdown list.
-            opts[n].textContent = '\u2713 ' + opts[n].textContent;
+            // AC-100 (v57): no label glyph for the selection \u2014 the native
+            // <select> already marks it, and a "\u2713 " prefix duplicated
+            // the OS checkmark on macOS.
             var thread2 = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
             if (thread2) thread2.model = previous;
             break;
