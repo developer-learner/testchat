@@ -144,9 +144,10 @@ def load_script_model(model_id: str) -> dict:
 
 
 def unload_script_model(model_id: str) -> dict:
-    if not is_script_model_loaded(model_id):
-        return {'status': 'unloaded'}
-
+    # A tracked process is terminated even when its HTTP side is unresponsive:
+    # a hung server still holds RAM, and _unload_other_script_models relies on
+    # this kill for the mutual-exclusion guarantee. Gating on the ready check
+    # here would leak exactly the zombie it exists to evict.
     process = _get_process(model_id)
     if process is not None:
         _terminate_process(process)

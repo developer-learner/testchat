@@ -36,7 +36,10 @@ async def chat(request: ChatRequest) -> StreamingResponse:
             )
         endpoint_override = script_model["chat_endpoint"]
 
-    async def event_generator():
+    # Sync generator on purpose: Starlette iterates it in a threadpool, so the
+    # blocking urllib reads in stream_reply/search_web can't stall the event
+    # loop (status polls and thread saves kept freezing during think gaps).
+    def event_generator():
         history_dicts = [{"role": e.role, "content": e.content} for e in request.history]
         prompt_message = request.message
         if request.web:

@@ -398,14 +398,30 @@
               Threads.persistThreads();
             } else if (eventType === 'error') {
               streamEnded = true;
-              if (!userStored) { currentThread.messages.push({ role: 'user', content: message, ts: Date.now() / 1000 }); userStored = true; Threads.persistThreads(); }
-              replyBubble.className = 'chat-bubble error';
+              if (!userStored) { currentThread.messages.push({ role: 'user', content: message, ts: Date.now() / 1000 }); userStored = true; }
+              var errMsg = FALLBACK_REPLY;
               try {
                 var errData = JSON.parse(dataStr);
-                replyBubble.textContent = errData.message || FALLBACK_REPLY;
+                errMsg = errData.message || FALLBACK_REPLY;
               } catch (err) {
-                replyBubble.textContent = dataStr || FALLBACK_REPLY;
+                errMsg = dataStr || FALLBACK_REPLY;
               }
+              // Mirror the abort path: a stream that dies after content keeps
+              // the partial reply (the backend pins error-after-tokens for a
+              // dropped stream); only a token-less failure becomes a bare
+              // error bubble.
+              var errPartial = MD.stripThink(replyText).replace(/^\s+|\s+$/g, '');
+              if (errPartial) {
+                var errNow = Date.now() / 1000;
+                currentThread.messages.push({ role: 'assistant', content: errPartial, ts: errNow, model: modelSelect.value || '' });
+                renderReply(replyBubble, replyText);
+                Threads.addBubbleChrome(replyBubble, errPartial, errNow, modelSelect.value || '', currentThread.messages.length - 1);
+                appendBubble(errMsg, 'error');
+              } else {
+                replyBubble.className = 'chat-bubble error';
+                replyBubble.textContent = errMsg;
+              }
+              Threads.persistThreads();
             }
           }
 
