@@ -1,12 +1,12 @@
 {
-  "version": 12,
-  "erd_version": 54,
+  "version": 13,
+  "erd_version": 56,
   "tasks": [
     {
       "id": "T1",
       "file": "src/services/websearch.py",
       "depends_on": [],
-      "brief": "Implementation constraints: synchronous Python, stdlib only. No edits \u2014 file already carries ratified behavior (AC-93). Carry forward as-is.\n\nBehavioral specification: No changes. The file src/services/websearch.py is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'WebSearchError' src/services/websearch.py && grep -q 'TAVILY_ENDPOINT' src/services/websearch.py && grep -q 'def build_prompt' src/services/websearch.py && grep -q 'plain square' src/services/websearch.py",
+      "brief": "Implementation constraints: synchronous Python, stdlib only. No edits — file already carries ratified behavior (AC-93). Carry forward as-is.\n\nBehavioral specification: No changes. The file src/services/websearch.py is part of the M26 inventory but requires no modifications in this ratify milestone.\n\nAcceptance: grep -q 'WebSearchError' src/services/websearch.py && grep -q 'TAVILY_ENDPOINT' src/services/websearch.py && grep -q 'def build_prompt' src/services/websearch.py && grep -q 'plain square' src/services/websearch.py",
       "contracts": [],
       "tests": [
         "tests/test_websearch_service.py::test_unconfigured_when_key_missing",
