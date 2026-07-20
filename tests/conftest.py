@@ -92,6 +92,11 @@ TAVILY_RESPONSE = {
 
 _chat_requests: list[dict] = []
 
+# AC-42 recut (M28d): the SLOWPING stub gates answer tokens behind this
+# event — the test controls when the "thinking..." placeholder clears,
+# eliminating the wall-clock race.
+_slowping_gate = threading.Event()
+
 
 class _StubHandler(BaseHTTPRequestHandler):
     def log_message(self, *args) -> None:
@@ -108,6 +113,9 @@ class _StubHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path == "/api/v1/models":
             self._json(200, _models_response())
+        elif self.path == "/release-slowping":
+            _slowping_gate.set()
+            self._json(200, {"released": True})
         elif self.path == "/last-chat-request":
             if _chat_requests:
                 self._json(200, _chat_requests[-1])
@@ -134,15 +142,12 @@ class _StubHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream")
         self.end_headers()
         if "SLOWPING" in (body.get("message") or ""):
-            # think first, flush, hold, THEN answer — makes the pre-answer
-            # "thinking..." window real and observable by Playwright auto-wait.
+            _slowping_gate.clear()
             for delta in [{"content": "<think>"}, {"content": "musing"}, {"content": "</think>"}]:
                 chunk = {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]}
                 self.wfile.write(b"data: " + json.dumps(chunk).encode() + b"\n\n")
                 self.wfile.flush()
-            # 3.0s (was 1.2): a slow CI runner missed the 1.2s window once
-            # (2026-07-15 flake record) — the hold must dwarf scheduler jitter.
-            time.sleep(3.0)
+            _slowping_gate.wait(timeout=30)
             for delta in [{"content": "Hello"}, {"content": " there"}]:
                 chunk = {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]}
                 self.wfile.write(b"data: " + json.dumps(chunk).encode() + b"\n\n")

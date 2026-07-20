@@ -167,16 +167,15 @@ def test_failed_reply_keeps_user_message(page: Page, app_url: str) -> None:
 
 
 # AC-42 [M9 — "thinking..." placeholder before visible answer text]
-def test_thinking_placeholder_shows_then_clears(page: Page, app_url: str) -> None:
+# Recut M28d: gated stub replaces the wall-clock hold window.
+def test_thinking_placeholder_shows_then_clears(page: Page, app_url: str, llm_stub: str) -> None:
     page.goto(app_url)
-    # SLOWPING routes the stub to: think tokens, flush, hold ~1.2s, then the
-    # visible answer. Auto-wait observes the placeholder window without any
-    # timing assertion in the test (D-58 determinism).
     _send(page, "SLOWPING please think first")
     reply = page.get_by_test_id("msg-assistant").last
-    expect(reply).to_contain_text("thinking...")        # visible during the hold
-    expect(reply).to_contain_text("Hello there")        # answer replaces it
-    expect(reply).not_to_contain_text("thinking...")    # placeholder is gone
+    expect(reply).to_contain_text("thinking...")
+    page.request.get(f"{llm_stub}/release-slowping")
+    expect(reply).to_contain_text("Hello there")
+    expect(reply).not_to_contain_text("thinking...")
 
 
 # AC-44 [M10 ratify — markdown rendering]
@@ -217,7 +216,8 @@ def test_thread_rename_via_sidebar_control(page: Page, app_url: str) -> None:
     expect(page.get_by_test_id("thread-item").first).to_contain_text("Renamed by test")
 
 
-# AC-47 [M10 ratify — thread delete]
+# AC-47 [M10 ratify — thread delete via themed modal]
+# Recut M28d: native dialog replaced by delete-confirm-modal.
 def test_thread_delete_removes_thread(page: Page, app_url: str) -> None:
     page.goto(app_url)
     _send(page, "first thread message")
@@ -225,9 +225,9 @@ def test_thread_delete_removes_thread(page: Page, app_url: str) -> None:
     page.get_by_test_id("new-thread-btn").click()
     items = page.get_by_test_id("thread-item")
     expect(items).to_have_count(2)
-    page.once("dialog", lambda dialog: dialog.accept())
     items.first.hover()
     page.get_by_test_id("thread-delete-btn").first.click()
+    page.get_by_test_id("delete-confirm").click()
     expect(page.get_by_test_id("thread-item")).to_have_count(1)
     page.reload()
     expect(page.get_by_test_id("thread-item")).to_have_count(1)
