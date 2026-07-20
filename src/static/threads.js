@@ -3,6 +3,8 @@ window.TC = {
   activeThreadId: null,
   threadCounter: 0,
   streaming: false,
+  streamingThreadId: null,
+  liveBubbles: null,
   currentController: null,
   showThinking: false
 };
@@ -217,6 +219,9 @@ function addSources(bubble, sources, notice) {
   function deleteMessagePair(idx) {
     var thread = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
     if (!thread || idx < 0 || idx >= thread.messages.length) return;
+    // A delete re-renders the container, which would orphan the live stream
+    // bubbles and shift the indices the done-handler is about to use.
+    if (TC.streaming && thread.id === TC.streamingThreadId) return;
     confirmDelete(
       'Delete this message' + (pairSpan(thread, idx) === 2 ? ' pair' : '') + '?',
       function () { doDeleteMessagePair(idx); }
@@ -320,6 +325,11 @@ function addSources(bubble, sources, notice) {
 
   function deleteThread(id) {
     confirmDelete('Delete this chat?', function () {
+      // Deleting the thread a stream is writing into: stop the stream so the
+      // reply doesn't keep landing in an object that's about to be dropped.
+      if (TC.streaming && id === TC.streamingThreadId && TC.currentController) {
+        TC.currentController.abort();
+      }
       TC.threads = TC.threads.filter(function (t) { return t.id !== id; });
       persistThreads();
       if (TC.activeThreadId === id) {
@@ -390,6 +400,14 @@ function addSources(bubble, sources, notice) {
     var thread = TC.threads.find(function (t) { return t.id === id; });
     if (thread) {
       renderThreadMessages(thread);
+      // Returning to the thread with a live stream: its in-flight pair is not
+      // in messages yet, so re-attach the live bubbles the stream renders into.
+      if (TC.streaming && id === TC.streamingThreadId && TC.liveBubbles) {
+        for (var b = 0; b < TC.liveBubbles.length; b++) {
+          container.appendChild(TC.liveBubbles[b]);
+        }
+        container.scrollTop = container.scrollHeight;
+      }
       restoreThreadModelState(thread);
       highlightSearchHits();
     }
@@ -433,6 +451,13 @@ function addSources(bubble, sources, notice) {
       var thread = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
       if (thread && !thread.locked) {
         thread.locked = true;
+        el('model-select').disabled = true;
+      }
+    },
+    lockThread: function (thread) {
+      if (!thread || thread.locked) return;
+      thread.locked = true;
+      if (thread.id === TC.activeThreadId) {
         el('model-select').disabled = true;
       }
     }

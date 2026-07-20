@@ -149,7 +149,11 @@
           .then(function (r) { return r.json(); })
           .then(function (d) {
             var ram = 'RAM ' + d.ram_used_gb + '/' + d.ram_total_gb + ' GB';
-            if (d.nemotron_loaded && d.nemotron_rss_gb) {
+            if (d.models && d.models.length) {
+              d.models.forEach(function (m) {
+                if (m.loaded && m.rss_gb) ram += ' · ' + m.id + ' ' + m.rss_gb + ' GB';
+              });
+            } else if (d.nemotron_loaded && d.nemotron_rss_gb) {
               ram += ' · nemotron ' + d.nemotron_rss_gb + ' GB';
             }
             if (typeof d.loadable_gb === 'number') {
@@ -283,7 +287,11 @@
         input.value = '';
         autogrow();
         TC.streaming = true;
+        TC.streamingThreadId = currentThread.id;
         TC.currentController = new AbortController();
+        // The stream outlives UI state: capture the model now so a mid-stream
+        // thread switch (which rewrites the selector) can't mislabel the reply.
+        var streamModel = modelSelect.value;
         sendBtn.type = 'button';
         sendBtn.textContent = 'Stop';
         sendBtn.classList.add('stop');
@@ -300,6 +308,9 @@
         replyBubble.setAttribute('data-testid', 'msg-assistant');
         container.appendChild(replyBubble);
         replyBubble.textContent = 'thinking...';
+        // Switching away wipes the container; keep handles so switching back
+        // mid-stream can re-attach the live pair instead of orphaning it.
+        TC.liveBubbles = [userBubble, replyBubble];
         replyText = '';
         var userStored = false;
 
@@ -388,12 +399,12 @@
               userStored = true;
               var now = Date.now() / 1000;
               currentThread.messages.push({ role: 'user', content: message, ts: now });
-              var am = { role: 'assistant', content: replyText, ts: now, model: modelSelect.value || '' };
+              var am = { role: 'assistant', content: replyText, ts: now, model: streamModel || '' };
               if (pendingSources.length) am.sources = pendingSources.map(function (s) { return { title: s.title, url: s.url }; });
               currentThread.messages.push(am);
               if (pendingSources.length || pendingNotice) setTimeout(function () { Threads.addSources(replyBubble, pendingSources, pendingNotice); }, 0);
               renderReply(replyBubble, replyText);
-              Threads.addBubbleChrome(replyBubble, MD.stripThink(replyText), now, modelSelect.value || '', currentThread.messages.length - 1);
+              Threads.addBubbleChrome(replyBubble, MD.stripThink(replyText), now, streamModel || '', currentThread.messages.length - 1);
               Threads.maybeRetitle(currentThread);
               Threads.persistThreads();
             } else if (eventType === 'error') {
@@ -413,10 +424,12 @@
               var errPartial = MD.stripThink(replyText).replace(/^\s+|\s+$/g, '');
               if (errPartial) {
                 var errNow = Date.now() / 1000;
-                currentThread.messages.push({ role: 'assistant', content: errPartial, ts: errNow, model: modelSelect.value || '' });
+                currentThread.messages.push({ role: 'assistant', content: errPartial, ts: errNow, model: streamModel || '' });
                 renderReply(replyBubble, replyText);
-                Threads.addBubbleChrome(replyBubble, errPartial, errNow, modelSelect.value || '', currentThread.messages.length - 1);
-                appendBubble(errMsg, 'error');
+                Threads.addBubbleChrome(replyBubble, errPartial, errNow, streamModel || '', currentThread.messages.length - 1);
+                // Only surface the transient error bubble if the stream's
+                // thread is on screen — never inject it into another thread.
+                if (replyBubble.parentNode) appendBubble(errMsg, 'error');
               } else {
                 replyBubble.className = 'chat-bubble error';
                 replyBubble.textContent = errMsg;
@@ -447,7 +460,9 @@
             });
           }
 
-          Threads.lockSelector();
+          // Lock the thread the stream belongs to, not whichever thread is
+          // active when the headers arrive.
+          Threads.lockThread(currentThread);
           return read();
         })
         .catch(function (err) {
@@ -456,7 +471,7 @@
           if (err && err.name === 'AbortError') {
             var partial = MD.stripThink(replyText).replace(/^\s+|\s+$/g, '');
             if (partial) {
-              currentThread.messages.push({ role: 'assistant', content: partial, ts: Date.now() / 1000, model: modelSelect.value || '' });
+              currentThread.messages.push({ role: 'assistant', content: partial, ts: Date.now() / 1000, model: streamModel || '' });
               renderReply(replyBubble, replyText);
             } else if (replyBubble.parentNode) {
               replyBubble.parentNode.removeChild(replyBubble);
@@ -469,7 +484,21 @@
         })
         .finally(function () {
           TC.streaming = false;
+          TC.streamingThreadId = null;
+          TC.liveBubbles = null;
           TC.currentController = null;
+          // If the stream's thread was deleted mid-stream, its bubbles are
+          // stale DOM in whatever thread is now active — drop them.
+          if (!TC.threads.some(function (t) { return t.id === currentThread.id; })) {
+            if (userBubble.parentNode) userBubble.parentNode.removeChild(userBubble);
+            if (replyBubble.parentNode) replyBubble.parentNode.removeChild(replyBubble);
+          } else if (currentThread.id !== TC.activeThreadId) {
+            // Finished while another thread is on screen: re-render that
+            // thread if the finished bubbles leaked into its container.
+            if (userBubble.parentNode || replyBubble.parentNode) {
+              Threads.switchThread(TC.activeThreadId);
+            }
+          }
           sendBtn.type = 'submit';
           sendBtn.textContent = 'Send';
           sendBtn.classList.remove('stop');
