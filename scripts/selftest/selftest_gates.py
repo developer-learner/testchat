@@ -19,9 +19,11 @@ CI runs this in its own `selftest` job, unconditionally — the skeleton guard
 does not apply because these tests need no project src/ or requirements.
 """
 import json
+import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -1193,6 +1195,362 @@ def test_refreeze_removed_accepts_plain_tests_path(stageable_repo):
     # but it must NOT fail at the REMOVED whitelist.
     combined = r.stdout + r.stderr
     assert "REMOVED entries must be" not in combined, combined
+
+
+# --- validate-plan.py --spec-preflight (D-78) --------------------------------
+# testchat M28 v51: a spec froze GET /api/v1/models/catalog with no
+# implementing file in contracts.files; the plan gate's exact bijection made
+# it unimplementable by ANY EM, discovered ~75 minutes downstream. The
+# preflight proves that from the spec alone, pre-approval. These tests pin
+# the v51 reproduction and each fail-open boundary.
+
+V51_SRC = (
+    "router = APIRouter(prefix='/api/v1')\n"
+    "\n"
+    "@router.get('/models')\n"
+    "def list_models():\n"
+    "    return []\n"
+)
+
+
+def preflight_repo(tmp_path, src=V51_SRC):
+    (tmp_path / "src" / "api").mkdir(parents=True)
+    if src is not None:
+        (tmp_path / "src" / "api" / "models.py").write_text(src)
+    return tmp_path
+
+
+def run_preflight(repo, old, new):
+    old_p = repo / "old-contracts.json"
+    if old is not None:
+        old_p.write_text(json.dumps(old))
+    new_p = repo / "new-contracts.json"
+    new_p.write_text(json.dumps(new))
+    return subprocess.run(
+        [sys.executable, str(VALIDATE_PLAN), "--spec-preflight",
+         str(old_p), str(new_p)],
+        cwd=repo, capture_output=True, text=True,
+    )
+
+
+V51_OLD = {
+    "erd_version": 1,
+    "files": ["src/api/chat.py"],
+    "entry_points": [],
+    "routes": [{"id": "route:GET /api/v1/models",
+                "method": "GET", "path": "/api/v1/models"}],
+}
+
+
+def v51_new(files):
+    return {
+        "erd_version": 2,
+        "files": files,
+        "entry_points": [],
+        "routes": V51_OLD["routes"] + [
+            {"id": "route:GET /api/v1/models/catalog",
+             "method": "GET", "path": "/api/v1/models/catalog"}],
+    }
+
+
+def test_preflight_v51_sibling_file_outside_inventory_fails(tmp_path):
+    """The exact v51 shape: new route, registered nowhere, whose path-sibling
+    (GET /api/v1/models) is registered in a file absent from contracts.files.
+    The failure must name that file — it IS the fix."""
+    repo = preflight_repo(tmp_path)
+    r = run_preflight(repo, V51_OLD, v51_new(["src/api/chat.py"]))
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    assert "v51/M28 class" in r.stderr, r.stderr
+    assert "src/api/models.py" in r.stderr, r.stderr
+
+
+def test_preflight_v51_fix_file_in_inventory_passes(tmp_path):
+    """The v53 recut shape: same delta plus the implementing file."""
+    repo = preflight_repo(tmp_path)
+    r = run_preflight(
+        repo, V51_OLD, v51_new(["src/api/chat.py", "src/api/models.py"]))
+    assert r.returncode == 0, (r.stdout, r.stderr)
+
+
+def test_preflight_sibling_file_no_edit_declared_fails(tmp_path):
+    """In the inventory but no_edit (D-65) is NOT implementable — the
+    orchestrator never invokes the coder for no-edit files."""
+    repo = preflight_repo(tmp_path)
+    new = v51_new(["src/api/chat.py", "src/api/models.py"])
+    new["no_edit_files"] = ["src/api/models.py"]
+    r = run_preflight(repo, V51_OLD, new)
+    assert r.returncode != 0, (r.stdout, r.stderr)
+
+
+def test_preflight_route_already_registered_passes(tmp_path):
+    """A route the source already serves is satisfiable regardless of the
+    inventory — carried-forward surface, not delta work."""
+    repo = preflight_repo(tmp_path, src=V51_SRC.replace(
+        "@router.get('/models')", "@router.get('/models/catalog')"))
+    r = run_preflight(repo, V51_OLD, v51_new(["src/api/chat.py"]))
+    assert r.returncode == 0, (r.stdout, r.stderr)
+
+
+def test_preflight_new_route_family_fails_open_with_editable_py(tmp_path):
+    """A brand-new path family names no natural implementing file — no
+    signal, so an editable .py in the inventory is accepted."""
+    repo = preflight_repo(tmp_path)
+    new = v51_new(["src/api/chat.py"])
+    new["routes"] = [{"id": "route:GET /webhooks/incoming",
+                      "method": "GET", "path": "/webhooks/incoming"}]
+    r = run_preflight(repo, V51_OLD, new)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+
+
+def test_preflight_new_route_no_editable_py_fails(tmp_path):
+    """...but an inventory that could not register ANY route fails closed."""
+    repo = preflight_repo(tmp_path)
+    new = v51_new(["src/static/index.html"])
+    new["routes"] = [{"id": "route:GET /webhooks/incoming",
+                      "method": "GET", "path": "/webhooks/incoming"}]
+    r = run_preflight(repo, V51_OLD, new)
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    assert "no editable .py" in r.stderr, r.stderr
+
+
+def test_preflight_new_entry_point_module_uncreatable_fails(tmp_path):
+    """A new entry_point whose module file is neither on disk nor in the
+    inventory: no task may create it."""
+    repo = preflight_repo(tmp_path)
+    new = v51_new(["src/api/chat.py"])
+    new["routes"] = V51_OLD["routes"]  # isolate the entry-point check
+    new["entry_points"] = ["src.services.catalog"]
+    r = run_preflight(repo, V51_OLD, new)
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    assert "src/services/catalog.py" in r.stderr, r.stderr
+
+
+def test_preflight_new_symbol_on_uninventoried_module_fails(tmp_path):
+    """The one-artifact-smaller v51: a new :symbol on an on-disk module that
+    no task may edit."""
+    repo = preflight_repo(tmp_path)
+    new = v51_new(["src/api/chat.py"])
+    new["routes"] = V51_OLD["routes"]  # isolate the entry-point check
+    new["entry_points"] = ["src.api.models:list_model_catalog"]
+    r = run_preflight(repo, V51_OLD, new)
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    assert "list_model_catalog" in r.stderr, r.stderr
+
+
+def test_preflight_existing_symbol_outside_inventory_passes(tmp_path):
+    """Locking an ALREADY-EXISTING symbol is pure surface declaration —
+    no implementation work needed, inventory irrelevant."""
+    repo = preflight_repo(tmp_path)
+    new = v51_new(["src/api/chat.py"])
+    new["routes"] = V51_OLD["routes"]  # isolate the entry-point check
+    new["entry_points"] = ["src.api.models:list_models"]
+    r = run_preflight(repo, V51_OLD, new)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+
+
+def test_preflight_audit_form_old_empty_catches_v51(tmp_path):
+    """The D-79 form: old={} (whole frozen spec audited against the tree).
+    Sibling evidence must come from the NEW contracts' locatable routes,
+    or the mid-run audit would fail open and miss v51."""
+    repo = preflight_repo(tmp_path)
+    r = run_preflight(repo, {}, v51_new(["src/api/chat.py"]))
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    assert "v51/M28 class" in r.stderr, r.stderr
+
+
+def test_preflight_initial_freeze_fails_open(tmp_path):
+    """v1: no prior contracts, no source tree. Routes with an editable .py
+    in the inventory must pass — everything is buildable from nothing."""
+    (tmp_path / "src").mkdir()
+    new = v51_new(["src/main.py"])
+    new["erd_version"] = 1
+    r = run_preflight(tmp_path, None, new)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+
+
+# --- ensure_plan: D-79 spec-defect rung (bash, via drive-plan.sh) ------------
+# M28: two different EM models failed identically at the plan gate because
+# the spec was unimplementable — the ladder only knew how to escalate the
+# ACTOR. The rung audits the puzzle after the plan budget is exhausted:
+# audit fails -> exit 2 + TPM bundle, no more EM calls; audit passes ->
+# the pre-existing actor-path halt (exit 1), unchanged.
+
+DRIVE_PLAN = SCRIPTS / "selftest" / "drive-plan.sh"
+
+
+def plan_workdir(tmp_path, contracts, replies, src=None):
+    approved = tmp_path / "scripts" / ".approved"
+    approved.mkdir(parents=True)
+    (approved / "contracts.json").write_text(json.dumps(contracts))
+    (approved / "test-nodeids").write_text("\n".join(NODEIDS) + "\n")
+    (approved / "VERSION").write_text(str(contracts["erd_version"]) + "\n")
+    (tmp_path / "replies").mkdir()
+    for i, reply in enumerate(replies, 1):
+        (tmp_path / "replies" / str(i)).write_text(reply)
+    if src is not None:
+        (tmp_path / "src" / "api").mkdir(parents=True)
+        (tmp_path / "src" / "api" / "models.py").write_text(src)
+    return tmp_path
+
+
+def run_drive_plan(workdir):
+    return subprocess.run(
+        ["bash", str(DRIVE_PLAN), str(workdir)],
+        capture_output=True, text=True,
+    )
+
+
+def test_plan_spec_defect_routes_to_tpm_bundle(tmp_path):
+    """Unsatisfiable spec + exhausted plan budget -> SPEC DEFECT: exit 2,
+    a spec-defect bundle in the batch, and exactly MAX_PLAN_REVISIONS EM
+    calls consumed — the rung must not invite more attempts."""
+    contracts = dict(v51_new(["src/api/chat.py"]), erd_version=1)
+    work = plan_workdir(tmp_path, contracts, ["{}", "{}"], src=V51_SRC)
+    r = run_drive_plan(work)
+    assert r.returncode == 2, (r.returncode, r.stdout, r.stderr)
+    assert "SPEC DEFECT (D-79)" in r.stdout, r.stdout
+    batch = work / ".pipeline-state" / "escalations" / "BATCH.md"
+    assert batch.is_file(), r.stdout
+    content = batch.read_text()
+    assert "spec-defect — SPEC-DEFECT" in content, content
+    assert "v51/M28 class" in content, content        # audit output embedded
+    assert "no EM consult" in content, content        # honest diagnosis section
+    assert (work / ".calls").read_text().strip() == "2", r.stdout
+
+
+def test_plan_exhaustion_satisfiable_spec_halts_actor_path(tmp_path):
+    """Same exhaustion, but the spec is fine (route already registered in
+    source) -> the pre-existing halt: exit 1, no bundle, and the message
+    says the audit cleared the spec."""
+    contracts = dict(v51_new(["src/api/chat.py"]), erd_version=1)
+    registered = V51_SRC.replace(
+        "@router.get('/models')",
+        "@router.get('/models')\ndef _list():\n    return []\n\n"
+        "@router.get('/models/catalog')")
+    work = plan_workdir(tmp_path, contracts, ["{}", "{}"], src=registered)
+    r = run_drive_plan(work)
+    assert r.returncode == 1, (r.returncode, r.stdout, r.stderr)
+    assert "plan invalid after 2 EM revisions" in r.stderr, r.stderr
+    assert "found no unsatisfiable contract" in r.stderr, r.stderr
+    assert not (work / ".pipeline-state" / "escalations" / "BATCH.md").exists()
+
+
+def test_plan_valid_first_emit_needs_no_rung(tmp_path):
+    """Harness sanity: a valid first plan exits 0 after one EM call and the
+    rung never runs."""
+    work = plan_workdir(tmp_path, dict(CONTRACTS, erd_version=1),
+                        [json.dumps(good_plan())])
+    r = run_drive_plan(work)
+    assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+    assert "CALLS=1 PLAN=ok" in r.stdout, r.stdout
+    assert "SPEC DEFECT" not in r.stdout, r.stdout
+
+
+# --- refreeze.sh wires the preflight before approval (D-78) ------------------
+
+def refreeze_scripts(repo):
+    for name in ("validate-plan.py", "check-test-surface.py",
+                 "check-swallowed-errors.py"):
+        (repo / "scripts" / name).write_bytes((SCRIPTS / name).read_bytes())
+
+
+def test_refreeze_diff_mode_runs_preflight(stageable_repo):
+    """refreeze --diff must reject a v51-shaped delta BEFORE printing a
+    DIFF-SHA — the CEO never reviews a doomed spec."""
+    repo = stageable_repo
+    refreeze_scripts(repo)
+    (repo / "src" / "api").mkdir(parents=True)
+    (repo / "src" / "api" / "models.py").write_text(V51_SRC)
+    (repo / "scripts" / ".approved" / "contracts.json").write_text(
+        json.dumps(V51_OLD))
+    (repo / "scripts" / ".approved" / "incoming" / "contracts.json").write_text(
+        json.dumps(v51_new(["src/api/chat.py"])))
+    r = _run_refreeze_diff(repo)
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    combined = r.stdout + r.stderr
+    assert "D-78" in combined, combined
+    assert "DIFF-SHA" not in combined, combined
+
+
+# --- refreeze.sh D-68 debt sweep at freeze time (D-80) -----------------------
+# M28: models.py's pre-existing unjustified handler failed T11's D-68 gate
+# mid-run, forcing the v54 recut — the debt was on record since 07-17 but
+# nothing surfaced it at spec time. The sweep prints it at the human gate,
+# advisory: the freeze still proceeds (a DIFF-SHA is still offered).
+
+def debt_delta(repo, app_source):
+    """Stage a minimal contracts-only delta whose inventory holds src/app.py
+    with the given source. No routes/entry_points, so the D-78 preflight
+    stays out of the way."""
+    refreeze_scripts(repo)
+    (repo / "src").mkdir()
+    (repo / "src" / "app.py").write_text(app_source)
+    contracts = {"erd_version": 2, "files": ["src/app.py"], "entry_points": []}
+    (repo / "scripts" / ".approved" / "incoming" / "contracts.json").write_text(
+        json.dumps(contracts))
+
+
+def test_refreeze_debt_sweep_warns_and_still_freezes(stageable_repo):
+    debt_delta(stageable_repo,
+               "def f():\n"
+               "    try:\n"
+               "        risky()\n"
+               "    except Exception:\n"
+               "        pass\n")
+    r = _run_refreeze_diff(stageable_repo)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "WARNING (D-80)" in r.stdout, r.stdout
+    assert "src/app.py:4" in r.stdout, r.stdout      # names file AND line
+    assert "DIFF-SHA" in r.stdout, r.stdout          # advisory, not a blocker
+
+
+def test_refreeze_debt_sweep_silent_on_justified_swallow(stageable_repo):
+    debt_delta(stageable_repo,
+               "def f():\n"
+               "    try:\n"
+               "        risky()\n"
+               "    except Exception:\n"
+               "        pass  # best-effort cleanup; failure is safe to drop\n")
+    r = _run_refreeze_diff(stageable_repo)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "WARNING (D-80)" not in r.stdout, r.stdout
+    assert "DIFF-SHA" in r.stdout, r.stdout
+
+
+# --- refreeze.sh freeze-hygiene advisory (D-83) -------------------------------
+# Both defect-bearing M28 freezes were authored minutes after the prior
+# milestone closed. The note fires when the last [success] is under an
+# hour old; it is advisory — the freeze proceeds either way.
+
+CLEAN_APP = "def f():\n    return 1\n"
+
+
+def success_commit(repo, epoch=None):
+    env = dict(os.environ,
+               GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@local",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@local")
+    if epoch is not None:
+        env["GIT_COMMITTER_DATE"] = f"@{epoch} +0000"
+        env["GIT_AUTHOR_DATE"] = f"@{epoch} +0000"
+    subprocess.run(["git", "commit", "--allow-empty", "-m", "[success] spec v1"],
+                   cwd=repo, env=env, check=True, capture_output=True)
+
+
+def test_refreeze_hygiene_note_on_fresh_success(stageable_repo):
+    debt_delta(stageable_repo, CLEAN_APP)
+    success_commit(stageable_repo)
+    r = _run_refreeze_diff(stageable_repo)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "NOTE (D-83)" in r.stdout, r.stdout
+    assert "DIFF-SHA" in r.stdout, r.stdout          # advisory, not a blocker
+
+
+def test_refreeze_hygiene_silent_on_old_success(stageable_repo):
+    debt_delta(stageable_repo, CLEAN_APP)
+    success_commit(stageable_repo, epoch=int(time.time()) - 7200)
+    r = _run_refreeze_diff(stageable_repo)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "NOTE (D-83)" not in r.stdout, r.stdout
 
 
 # --- run_coder: gate-failure propagation (review blocker #1, drive-coder.sh) -

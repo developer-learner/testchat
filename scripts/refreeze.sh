@@ -252,6 +252,19 @@ INV4_CONTRACTS="$APPROVED/contracts.json"
 python3 scripts/check-test-surface.py --tests-dir "$PREVIEW/tests" --contracts "$INV4_CONTRACTS" \
   || die "INV-4 rejected the delta — fix the tests or lock the surface in contracts.json, then restage"
 
+# --- D-78: freeze-time satisfiability preflight ---
+# The plan gate's exact plan↔inventory bijection means a new route or
+# entry_point whose implementing file is outside contracts.files is
+# unimplementable by ANY EM — every plan gets rejected, and the ladder burns
+# EM strikes and model swaps against an impossible spec (testchat v51/M28:
+# ~75 minutes, two EM swaps, one seat escalation). The unsatisfiability is
+# provable from the spec alone, so it is proved HERE, before the human reads
+# the diff — in --diff mode too, so the CEO never reviews a doomed delta.
+if [ -f "$IN/contracts.json" ]; then
+  python3 scripts/validate-plan.py --spec-preflight "$APPROVED/contracts.json" "$IN/contracts.json" \
+    || die "satisfiability preflight rejected the delta (D-78) — add the named implementing file(s) to contracts.files (or fix the entry_point) and restage"
+fi
+
 # --- Build the full diff (deterministic — its hash is the approval token) ---
 DIFF_FILE=".pipeline-state/refreeze-pending.diff"
 mkdir -p .pipeline-state
@@ -315,6 +328,55 @@ if [ "$EXT_COUNT" -eq 0 ]; then
 else
   echo ""
   echo "  D-56: $EXT_COUNT declared external interface(s); captures verified above."
+fi
+
+# --- D-80: D-68 debt sweep on the delta's inventory (advisory) ---------------
+# The D-68 gate fires on a file's FIRST post-D-68 pipeline edit, so
+# pre-existing unjustified handlers in a legacy inventory file fail the gate
+# mid-run regardless of the new work. Fired twice: app.js (2026-07-17,
+# cleared by live-fix) and models.py T11 (M28 — forced the v54 recut, and
+# both local EMs revised the WRONG handler during the escalation). The
+# 07-17 template-debt note recorded the class; recording is not mechanizing.
+# Surface the debt HERE, at spec time, so remediation directives (M28c
+# style) enter the spec on day one. Advisory by design: the right response
+# may be a justification comment, a remediation directive, or acceptance —
+# a TPM/CEO call, not a freeze blocker.
+SWEEP_FILES=$(SWBP_C="$INV4_CONTRACTS" python3 -c "
+import json, os, pathlib
+c = json.load(open(os.environ['SWBP_C']))
+print('\n'.join(f for f in c.get('files', []) if pathlib.Path(f).is_file()))" 2>/dev/null || true)
+if [ -n "$SWEEP_FILES" ]; then
+  SWEEP_ARGS=()
+  while IFS= read -r _f; do [ -n "$_f" ] && SWEEP_ARGS+=("$_f"); done <<< "$SWEEP_FILES"
+  if ! SWEEP_OUT=$(python3 scripts/check-swallowed-errors.py "${SWEEP_ARGS[@]}"); then
+    echo ""
+    echo "  WARNING (D-80): pre-existing D-68 debt in this delta's inventory —"
+    echo "  each file's first pipeline edit will FAIL the swallowed-error gate"
+    echo "  on these OLD handlers regardless of the new work (M28 v54 recut"
+    echo "  class). Get remediation directives into THIS spec, or bounce it:"
+    echo "$SWEEP_OUT" | sed 's/^/    /'
+  fi
+fi
+
+# --- D-83: freeze-hygiene advisory -------------------------------------------
+# Both defect-bearing M28 freezes (v51 23:34, v52 23:49) were authored
+# minutes after the prior milestone closed at 22:50, at the end of a long
+# day — and each sailed through its human approval. A new milestone's spec
+# is next-session work by default (CEO-PLAYBOOK); this note is that rule
+# firing at the moment it matters. Advisory only, human-rhythm issue, never
+# a gate: same-milestone fix deltas legitimately freeze minutes after a
+# close.
+LAST_SUCCESS_TS=$(git log -1 --grep='\[success\]' --format=%ct 2>/dev/null || true)
+if [ -n "$LAST_SUCCESS_TS" ]; then
+  SUCCESS_AGE=$(( $(date +%s) - LAST_SUCCESS_TS ))
+  if [ "$SUCCESS_AGE" -ge 0 ] && [ "$SUCCESS_AGE" -lt 3600 ]; then
+    echo ""
+    echo "  NOTE (D-83): the previous [success] landed $((SUCCESS_AGE / 60)) minute(s) ago."
+    echo "  If this delta specs a NEW milestone, consider making it next-session"
+    echo "  work — both defect-bearing M28 freezes were authored minutes after a"
+    echo "  close, and both passed human approval. A same-milestone fix delta is"
+    echo "  fine to proceed."
+  fi
 fi
 
 if [ "$MODE" = "diff" ]; then

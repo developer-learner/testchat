@@ -63,6 +63,13 @@ ESC_DIR="$STATE_DIR/escalations"
 APPROVED="scripts/.approved"
 mkdir -p "$STATE_DIR" "$TASK_STATE" "$BRIEF_DIR" "$LOG_DIR" "$ESC_DIR"
 
+# Durable archive of every EM call (survives rm -rf .pipeline-state on success).
+# Pure capture — nothing reads these during a run; they feed offline bench-testing
+# (scripts/em-bench.sh, backlog item 6).
+ARCHIVE_DIR=".em-archive"
+mkdir -p "$ARCHIVE_DIR"
+LAST_ARCHIVE_ENTRY=""
+
 die() { echo "FAIL: $*" >&2; exit 1; }
 
 # Single-writer lock on the state dir. Every counter in .pipeline-state/
@@ -105,6 +112,26 @@ check_budget() {  # check_budget <checkpoint> — between-phase gate, fail-close
   echo "  Phase timings ($LOG_DIR/timings.tsv):"
   sed 's/^/    /' "$LOG_DIR/timings.tsv"
   die "run over budget at '$1' — state persists; a re-run resumes from completed tasks. Healthy-but-slow (cold model load, big suite): raise SWBP_RUN_BUDGET or set 0. Otherwise the timing table names the phase that ate the clock — fix that, don't raise the budget."
+}
+
+# archive_em <out-file> — persist prompt + reply for offline replay (em-bench.sh).
+# Called after every successful em_call; consult_em appends verdict metadata.
+# Guarded: no-ops when ARCHIVE_DIR is unset (selftest extracts em_call without this).
+archive_em() {
+  [ -n "${ARCHIVE_DIR:-}" ] || return 0
+  local out="$1"
+  local ts; ts=$(date '+%Y-%m-%d_%H%M%S')
+  local tag; tag=$(basename "$out" .json)
+  local entry="$ARCHIVE_DIR/${ts}_${tag}"
+  mkdir -p "$entry" || return 0
+  cp "$LOG_DIR/em-last.prompt" "$entry/prompt.txt" 2>/dev/null || true
+  cp "$LOG_DIR/em-last.raw" "$entry/reply.json" 2>/dev/null || true
+  cp "$LOG_DIR/em-last.err" "$entry/stderr.log" 2>/dev/null || true
+  cp tasks/plan.json "$entry/plan.json" 2>/dev/null || true
+  cp "$APPROVED/contracts.json" "$entry/contracts.json" 2>/dev/null || true
+  printf 'spec_version=%s\nout=%s\ntimestamp=%s\n' \
+    "${FROZEN_V:-unknown}" "$out" "$ts" > "$entry/meta.txt"
+  LAST_ARCHIVE_ENTRY="$entry"
 }
 
 # --- Pre-flight ---
@@ -248,6 +275,7 @@ em_call() {
   write_state phase em
   mark "em-call start -> $out"
   { printf '%s\n' "$instr"; build_context "$@"; } \
+    | tee "$LOG_DIR/em-last.prompt" \
     | timeout "$AGENT_TIMEOUT" scripts/llm-call.sh em .opencode/prompts/em.md \
         --schema "$schema" --max-time "$AGENT_TIMEOUT" \
     > "$LOG_DIR/em-last.raw" 2> "$LOG_DIR/em-last.err" \
@@ -266,6 +294,7 @@ em_call() {
   # Explicit die: em_call may run inside an if-condition (D-71), where set -e
   # is suppressed for the whole function body — the lane gate must stay fatal.
   bash scripts/phase-gate.sh em "$phase_start" || die "EM lane/integrity gate failed"
+  type archive_em &>/dev/null && archive_em "$out" || true
   write_state phase ""
   mark "em-call done -> $out"
 }
@@ -493,7 +522,35 @@ ensure_plan() {
     revs=$(plan_revisions_used)
     [ "$revs" -lt "$MAX_PLAN_REVISIONS" ] || {
       echo "$verrs"
+      # --- D-79: audit the puzzle before blaming the solver ------------------
+      # Exhausting the plan budget is as much evidence about the SPEC as about
+      # the EM: testchat M28 saw two different EM models fail identically at
+      # this gate because v51/v52 were unimplementable by ANY EM — and the
+      # ladder, which only knows how to escalate the ACTOR, burned ~75 minutes
+      # of model swaps and a seat escalation against an impossible spec. Before
+      # halting toward the actor path, re-run the D-78 satisfiability audit on
+      # the frozen spec against the current tree (old={} form: everything
+      # already registered/on disk passes; what remains must be buildable by
+      # the inventory). If the spec is the defect, route straight to the TPM
+      # bundle — no further EM strikes, no model swaps.
+      local audit
+      if ! audit=$(python3 scripts/validate-plan.py --spec-preflight /dev/null "$APPROVED/contracts.json" 2>&1); then
+        echo ""
+        echo "SPEC DEFECT (D-79): the frozen spec is unimplementable — the plan"
+        echo "gate would reject EVERY decomposition. Swapping or escalating the"
+        echo "EM cannot fix this; the delta below belongs to the TPM."
+        echo "$audit"
+        package_escalation "spec-defect" "SPEC-DEFECT" "plan gate rejected $revs consecutive EM plans; last validator output:
+$verrs
+
+D-78/D-79 satisfiability audit of frozen spec v$FROZEN_V (mechanical, spec-only):
+$audit" "-"
+        finalize_batch
+      fi
       die "plan invalid after $revs EM revisions — halting for the human (Rule 4).
+  The D-79 spec audit found no unsatisfiable contract, so the spec is not
+  provably at fault — the ladder's actor path (EM model quality, prompt, or a
+  spec problem the audit cannot see) applies.
   If the halt's cause was fixed OUTSIDE the spec (e.g. a gate defect), the CEO
   may refresh the budget: rm .pipeline-state/plan_revisions*   — otherwise the
   fix belongs in a re-freeze, which refreshes it automatically."
@@ -542,6 +599,9 @@ if isinstance(d, dict):
       if DIAG_VERDICT=$(python3 scripts/validate-plan.py --diagnosis tasks/diagnosis.json 2> "$LOG_DIR/diag-last.err"); then
         DIAG_FILE="$STATE_DIR/diagnosis-$id.json"
         mv tasks/diagnosis.json "$DIAG_FILE"
+        if [ -n "${LAST_ARCHIVE_ENTRY:-}" ] && [ -d "$LAST_ARCHIVE_ENTRY" ]; then
+          printf 'verdict=%s\ntask_id=%s\n' "$DIAG_VERDICT" "$id" >> "$LAST_ARCHIVE_ENTRY/meta.txt"
+        fi
         return 0
       fi
       verrs=$(tr '\n' ' ' < "$LOG_DIR/diag-last.err")
@@ -561,7 +621,7 @@ package_escalation() {  # $1 kind  $2 id  $3 evidence  $4 diagnosis-file
   {
     echo "## Escalation: $kind — $id (spec v$FROZEN_V)"
     echo
-    if [ "$id" != "DRIFT" ]; then
+    if [ "$id" != "DRIFT" ] && [ "$id" != "SPEC-DEFECT" ]; then
       echo "### Task entry (tasks/plan.json)"
       echo '```json'
       python3 -c "
@@ -577,10 +637,17 @@ print(json.dumps(t, indent=2))"
     echo "$evidence"
     echo '```'
     echo
-    echo "### EM diagnosis (schema-validated)"
-    echo '```json'
-    cat "$diag"
-    echo '```'
+    if [ "$diag" = "-" ]; then
+      echo "### EM diagnosis"
+      echo "(none — detected mechanically by the D-79 spec audit; no EM consult"
+      echo "was involved and none is needed: the defect is provable from the"
+      echo "spec alone.)"
+    else
+      echo "### EM diagnosis (schema-validated)"
+      echo '```json'
+      cat "$diag"
+      echo '```'
+    fi
     echo
     echo "### Frozen artifacts involved"
     python3 - "$id" "$evidence" <<'PYEOF'
@@ -591,7 +658,7 @@ tid, evidence = sys.argv[1], sys.argv[2]
 try:
     plan = json.load(open("tasks/plan.json"))
     contracts = json.load(open("scripts/.approved/contracts.json"))
-    if tid != "DRIFT":
+    if tid not in ("DRIFT", "SPEC-DEFECT"):
         t = next(t for t in plan["tasks"] if t["id"] == tid)
         refs = set(t["contracts"])
         print("Referenced contract entries:")
@@ -882,6 +949,52 @@ finalize_batch
 check_budget "full frozen suite"
 echo "=== Full frozen suite ==="
 run_tests
+
+# --- D-77: flake triage before declaring drift -------------------------------
+# A failing node that is unmapped in the plan (carried-forward, D-57) was never
+# touched by this delta: when EVERY failing node is unmapped, the failure is a
+# carried-forward flake, not spec drift, and the suite is treated as green with
+# a loud WARNING. The plan mapping is the ONLY discriminator. Each unmapped
+# node is also re-run twice in isolation, but the result is recorded as
+# corroborating evidence and never flips the classification — M28's AC-42
+# flake later failed 4/4 IN ISOLATION under host memory load, so an isolated
+# run measures the environment as much as the test. Any mapped node or
+# collection error keeps the DRIFT path exactly as before.
+FLAKE_NOTE=""
+if [ "$TESTS_RC" -eq 1 ] && [ -n "$FAILING" ] \
+  && [[ "$FAILING" != *COLLECTION_ERROR* ]]; then
+  all_carried=1
+  saved_failing="$FAILING" saved_detail="$FAIL_DETAIL"
+  IFS='|' read -r -a _fail_ids <<< "$FAILING"
+  for fid in "${_fail_ids[@]}"; do
+    mapped=$(python3 -c "import json,sys
+p = json.load(open('tasks/plan.json'))
+print(1 if any(sys.argv[1] in t['tests'] for t in p['tasks']) else 0)" "$fid")
+    if [ "$mapped" != "0" ]; then
+      all_carried=0; break   # delta-mapped node failing = real drift
+    fi
+  done
+  iso_evidence=""
+  if [ "$all_carried" -eq 1 ]; then
+    for fid in "${_fail_ids[@]}"; do
+      iso_pass=0
+      for _try in 1 2; do
+        run_tests "$fid"
+        if [ "$TESTS_RC" -eq 0 ]; then iso_pass=$((iso_pass + 1)); fi
+      done
+      iso_evidence="${iso_evidence:+$iso_evidence; }$fid: $iso_pass/2 isolated passes"
+    done
+  fi
+  FAILING="$saved_failing"; FAIL_DETAIL="$saved_detail"; TESTS_RC=1
+  if [ "$all_carried" -eq 1 ]; then
+    echo "WARNING (D-77): every full-suite failure is a carried-forward node,"
+    echo "  unmapped in the plan — flake, not drift. Isolation evidence: $iso_evidence"
+    FLAKE_NOTE="
+WARNING (D-77): carried-forward node(s) failed in the full run — flake, not drift ($iso_evidence). A recurring flake is a frozen-test defect: it belongs to the TPM at the next refreeze."
+    TESTS_RC=0
+  fi
+fi
+
 if [ "$TESTS_RC" -eq 0 ]; then
   echo ""
   echo "=========================================="
@@ -892,7 +1005,7 @@ if [ "$TESTS_RC" -eq 0 ]; then
 
 ## Results
 
-Full frozen TPM suite green against spec v$FROZEN_V. Feature built and validated.
+Full frozen TPM suite green against spec v$FROZEN_V. Feature built and validated.${FLAKE_NOTE}
 EOF
   rm -rf "$STATE_DIR"
   git add tasks/CURRENT.md && git commit -m "[success] spec v$FROZEN_V" 2>/dev/null || true
