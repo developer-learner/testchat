@@ -201,10 +201,30 @@
       settingsModal.addEventListener('click', function (e) {
         if (e.target === settingsModal) closeSettings();
       });
+      // Confirm-modal dismissals: click on the overlay backdrop = cancel.
+      // Each modal keeps its cancel button as the primary dismiss path;
+      // this is a convenience mirror, so it just triggers that button.
+      loadConfirmModal.addEventListener('click', function (e) {
+        if (e.target === loadConfirmModal) loadCancelBtn.click();
+      });
+      unloadConfirmModal.addEventListener('click', function (e) {
+        if (e.target === unloadConfirmModal) unloadCancelBtn.click();
+      });
+      var deleteConfirmModal = document.getElementById('delete-confirm-modal');
+      var deleteCancelBtn = document.getElementById('delete-cancel');
+      deleteConfirmModal.addEventListener('click', function (e) {
+        if (e.target === deleteConfirmModal) deleteCancelBtn.click();
+      });
       document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape') return;
         if (!settingsModal.hidden) {
           closeSettings();
+        } else if (!loadConfirmModal.hidden) {
+          loadCancelBtn.click();
+        } else if (!unloadConfirmModal.hidden) {
+          unloadCancelBtn.click();
+        } else if (!deleteConfirmModal.hidden) {
+          deleteCancelBtn.click();
         } else if (document.body.classList.contains('zen')) {
           exitZen();
         }
@@ -471,8 +491,15 @@
           if (err && err.name === 'AbortError') {
             var partial = MD.stripThink(replyText).replace(/^\s+|\s+$/g, '');
             if (partial) {
-              currentThread.messages.push({ role: 'assistant', content: partial, ts: Date.now() / 1000, model: streamModel || '' });
+              var abortMsg = { role: 'assistant', content: partial, ts: Date.now() / 1000, model: streamModel || '' };
+              if (pendingSources.length) {
+                abortMsg.sources = pendingSources.map(function (s) { return { title: s.title, url: s.url }; });
+              }
+              currentThread.messages.push(abortMsg);
               renderReply(replyBubble, replyText);
+              if (pendingSources.length || pendingNotice) {
+                setTimeout(function () { Threads.addSources(replyBubble, pendingSources, pendingNotice); }, 0);
+              }
             } else if (replyBubble.parentNode) {
               replyBubble.parentNode.removeChild(replyBubble);
             }
@@ -660,6 +687,7 @@
         }
 
         var opts = modelSelect.options;
+        var matched = false;
         for (var n = 0; n < opts.length; n++) {
           if (opts[n].value === previous) {
             modelSelect.value = previous;
@@ -668,8 +696,16 @@
             // the OS checkmark on macOS.
             var thread2 = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
             if (thread2) thread2.model = previous;
+            matched = true;
             break;
           }
+        }
+        // Saved model vanished from the dropdown: native <select> silently
+        // shows the first option, but thread.model kept the stale id until
+        // the next send. Sync it now so the UI and stored state agree.
+        if (!matched && previous) {
+          var thread3 = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
+          if (thread3) thread3.model = modelSelect.value || '';
         }
       }
 
