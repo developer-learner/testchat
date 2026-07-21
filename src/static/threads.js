@@ -35,7 +35,6 @@ window.Threads = (function () {
     var thread = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
     if (thread) {
       thread.model = el('model-select').value;
-      thread.locked = el('model-select').disabled;
     }
   }
 
@@ -122,6 +121,11 @@ function addSources(bubble, sources, notice) {
       addBubbleChrome(bubble, msg.content, msg.ts || 0, msg.role === 'assistant' ? (msg.model || '') : '', i);
       if (msg.role === 'assistant' && msg.sources && msg.sources.length) addSources(bubble, msg.sources, '');
       container.appendChild(bubble);
+    }
+    if (TC.streaming && thread.id === TC.streamingThreadId && TC.liveBubbles) {
+      for (var b = 0; b < TC.liveBubbles.length; b++) {
+        container.appendChild(TC.liveBubbles[b]);
+      }
     }
     container.scrollTop = container.scrollHeight;
   }
@@ -400,14 +404,6 @@ function addSources(bubble, sources, notice) {
     var thread = TC.threads.find(function (t) { return t.id === id; });
     if (thread) {
       renderThreadMessages(thread);
-      // Returning to the thread with a live stream: its in-flight pair is not
-      // in messages yet, so re-attach the live bubbles the stream renders into.
-      if (TC.streaming && id === TC.streamingThreadId && TC.liveBubbles) {
-        for (var b = 0; b < TC.liveBubbles.length; b++) {
-          container.appendChild(TC.liveBubbles[b]);
-        }
-        container.scrollTop = container.scrollHeight;
-      }
       restoreThreadModelState(thread);
       highlightSearchHits();
     }

@@ -780,7 +780,8 @@
                 appendBubble(err.message || 'Failed to load model', 'error');
               })
               .finally(function () {
-                modelSelect.disabled = false;
+                var active = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
+                modelSelect.disabled = active ? !!active.locked : false;
                 pollStatus();
               });
           };
