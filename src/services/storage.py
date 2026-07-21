@@ -23,6 +23,17 @@ def load_snapshot() -> list[dict]:
             return []
         return data
     except FileNotFoundError:
+        # save_snapshot has a brief window between renaming path→.bak and
+        # tmp→path; a crash there leaves only .bak. Recover automatically.
+        bak = f"{path}.bak"
+        try:
+            with open(bak, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                logger.warning("Recovered snapshot from %s (path missing)", bak)
+                return data
+        except (FileNotFoundError, json.JSONDecodeError, ValueError, OSError):
+            pass  # no usable backup either — fall through to empty
         return []
     except (json.JSONDecodeError, ValueError) as exc:
         quarantine = f"{path}.corrupt-{int(time.time())}"
