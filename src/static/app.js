@@ -730,7 +730,7 @@
       });
       modelSelect.addEventListener('blur', function () {
         ejectHideTimer = setTimeout(function () {
-          ejectModelBtn.hidden = true;
+          ejectModelBtn.hidden = !TC.scriptModelLoaded;
           ejectHideTimer = null;
         }, 200);
       });
