@@ -68,6 +68,13 @@ mkdir -p "$STATE_DIR" "$TASK_STATE" "$BRIEF_DIR" "$LOG_DIR" "$ESC_DIR"
 # (scripts/em-bench.sh, backlog item 6).
 ARCHIVE_DIR=".em-archive"
 mkdir -p "$ARCHIVE_DIR"
+# Self-ignoring: the archive must never surface in the clean-tree pre-flight
+# or the lane gates — including in children whose repo .gitignore predates
+# this feature (.gitignore is not template-owned and never syncs, the same
+# gap class as ci.yml). The directory carries its own ignore rule instead of
+# depending on one. testchat 2026-07-19 needed a hand-applied ignore line;
+# this removes that class.
+[ -f "$ARCHIVE_DIR/.gitignore" ] || printf '*\n' > "$ARCHIVE_DIR/.gitignore"
 LAST_ARCHIVE_ENTRY=""
 
 die() { echo "FAIL: $*" >&2; exit 1; }
@@ -114,23 +121,30 @@ check_budget() {  # check_budget <checkpoint> — between-phase gate, fail-close
   die "run over budget at '$1' — state persists; a re-run resumes from completed tasks. Healthy-but-slow (cold model load, big suite): raise SWBP_RUN_BUDGET or set 0. Otherwise the timing table names the phase that ate the clock — fix that, don't raise the budget."
 }
 
-# archive_em <out-file> — persist prompt + reply for offline replay (em-bench.sh).
-# Called after every successful em_call; consult_em appends verdict metadata.
+# archive_em <out-file> [<outcome>] — persist prompt + reply for offline
+# replay (em-bench.sh). Called after every em_call attempt, success AND
+# failure — the failed attempts (outcome=invalid_json, or a later
+# validation=schema_invalid append) are the corpus the diagnosis-brief work
+# (backlog item 6) needs most. consult_em / ensure_plan append verdict and
+# gate metadata afterwards.
 # Guarded: no-ops when ARCHIVE_DIR is unset (selftest extracts em_call without this).
 archive_em() {
   [ -n "${ARCHIVE_DIR:-}" ] || return 0
-  local out="$1"
+  local out="$1" outcome="${2:-ok}"
   local ts; ts=$(date '+%Y-%m-%d_%H%M%S')
   local tag; tag=$(basename "$out" .json)
-  local entry="$ARCHIVE_DIR/${ts}_${tag}"
+  # Same-second entries must not share a directory (a collision overwrites
+  # the earlier record silently) — suffix until unique.
+  local entry="$ARCHIVE_DIR/${ts}_${tag}" n=2
+  while [ -e "$entry" ]; do entry="$ARCHIVE_DIR/${ts}_${tag}_$n"; n=$((n + 1)); done
   mkdir -p "$entry" || return 0
   cp "$LOG_DIR/em-last.prompt" "$entry/prompt.txt" 2>/dev/null || true
   cp "$LOG_DIR/em-last.raw" "$entry/reply.json" 2>/dev/null || true
   cp "$LOG_DIR/em-last.err" "$entry/stderr.log" 2>/dev/null || true
   cp tasks/plan.json "$entry/plan.json" 2>/dev/null || true
   cp "$APPROVED/contracts.json" "$entry/contracts.json" 2>/dev/null || true
-  printf 'spec_version=%s\nout=%s\ntimestamp=%s\n' \
-    "${FROZEN_V:-unknown}" "$out" "$ts" > "$entry/meta.txt"
+  printf 'spec_version=%s\nout=%s\ntimestamp=%s\noutcome=%s\n' \
+    "${FROZEN_V:-unknown}" "$out" "$ts" "$outcome" > "$entry/meta.txt"
   LAST_ARCHIVE_ENTRY="$entry"
 }
 
@@ -279,8 +293,17 @@ em_call() {
     | timeout "$AGENT_TIMEOUT" scripts/llm-call.sh em .opencode/prompts/em.md \
         --schema "$schema" --max-time "$AGENT_TIMEOUT" \
     > "$LOG_DIR/em-last.raw" 2> "$LOG_DIR/em-last.err" \
-    || { cat "$LOG_DIR/em-last.err" >&2; die "EM call failed (see $LOG_DIR/em-last.err)"; }
+    || { cat "$LOG_DIR/em-last.err" >&2
+         # Archive the failed call too (outcome=call_failed): the prompt in
+         # em-last.prompt dies with .pipeline-state/ on the next success, and
+         # the archive exists precisely because that dir is ephemeral. Not
+         # replayable by em-bench (no reply), but the prompt survives.
+         type archive_em &>/dev/null && archive_em "$out" call_failed || true
+         die "EM call failed (see $LOG_DIR/em-last.err)"; }
   if ! python3 -c "import json; json.load(open('$LOG_DIR/em-last.raw'))" 2>/dev/null; then
+    # Archive the failed attempt before any exit path — the invalid replies
+    # are the highest-value corpus entries for the brief-variant bench.
+    type archive_em &>/dev/null && archive_em "$out" invalid_json || true
     # EM_JSON_SOFT=1 (consult_em's D-71 retry loop): report failure to the
     # caller instead of halting — a malformed reply there earns one retry.
     [ "${EM_JSON_SOFT:-0}" = "1" ] \
@@ -515,10 +538,17 @@ ensure_plan() {
   while :; do
     if [ -f tasks/plan.json ] && verrs=$(python3 scripts/validate-plan.py 2>&1); then
       echo "plan ok (v$(python3 -c 'import json;print(json.load(open("tasks/plan.json"))["version"])'))"
+      if [ -n "${LAST_ARCHIVE_ENTRY:-}" ] && [ -d "$LAST_ARCHIVE_ENTRY" ]; then
+        printf 'plan_gate=ok\n' >> "$LAST_ARCHIVE_ENTRY/meta.txt"
+      fi
       git add tasks/plan.json && git commit -m "[plan] validated against spec v$FROZEN_V" 2>/dev/null || true
       return 0
     fi
     verrs=$(python3 scripts/validate-plan.py 2>&1 || true)
+    if [ -n "${LAST_ARCHIVE_ENTRY:-}" ] && [ -d "$LAST_ARCHIVE_ENTRY" ]; then
+      printf 'plan_gate=rejected\nplan_gate_errors=%s\n' \
+        "$(printf '%s' "$verrs" | tr '\n' ' ')" >> "$LAST_ARCHIVE_ENTRY/meta.txt"
+    fi
     revs=$(plan_revisions_used)
     [ "$revs" -lt "$MAX_PLAN_REVISIONS" ] || {
       echo "$verrs"
@@ -605,8 +635,15 @@ if isinstance(d, dict):
         return 0
       fi
       verrs=$(tr '\n' ' ' < "$LOG_DIR/diag-last.err")
+      if [ -n "${LAST_ARCHIVE_ENTRY:-}" ] && [ -d "$LAST_ARCHIVE_ENTRY" ]; then
+        printf 'validation=schema_invalid\ntask_id=%s\nvalidator_errors=%s\n' \
+          "$id" "$verrs" >> "$LAST_ARCHIVE_ENTRY/meta.txt"
+      fi
     else
       verrs="the reply was not parseable JSON at all"
+      if [ -n "${LAST_ARCHIVE_ENTRY:-}" ] && [ -d "$LAST_ARCHIVE_ENTRY" ]; then
+        printf 'task_id=%s\n' "$id" >> "$LAST_ARCHIVE_ENTRY/meta.txt"
+      fi
     fi
   done
   die "EM diagnosis for $id still invalid after one retry — halting (Rule 4): $verrs"
@@ -879,9 +916,10 @@ The previous attempt failed with: $last_fail. Fix the cause, do not just retry t
   set_counter "$id" strikes "$strikes"
   [ "$strikes" -lt "$MAX_TASK_STRIKES" ] && continue   # plain retry with failure appended
 
-  # --- Fail-fast (default: MAX_TASK_STRIKES=1) ---
-  # Halt and lay out the failure for human review. The EM consult +
-  # escalation ladder below only fires when MAX_TASK_STRIKES > 1 (opt-in).
+  # --- Fail-fast (MAX_TASK_STRIKES=1, opt-in since D-70) ---
+  # Halt and lay out the failure for human review. Since D-70 the default is
+  # MAX_TASK_STRIKES=2, so the EM consult + escalation ladder below is the
+  # DEFAULT path; setting MAX_TASK_STRIKES=1 opts back into this bare halt.
   if [ "$MAX_TASK_STRIKES" -le 1 ]; then
     echo ""
     echo "=========================================="
@@ -977,6 +1015,15 @@ print(1 if any(sys.argv[1] in t['tests'] for t in p['tasks']) else 0)" "$fid")
   iso_evidence=""
   if [ "$all_carried" -eq 1 ]; then
     for fid in "${_fail_ids[@]}"; do
+      # Isolation is corroborating evidence only (never gating), so it is the
+      # one phase safe to skip over budget — each re-run is a full sandbox
+      # pytest start, and this loop runs after the last check_budget call.
+      # A budget die here would fail a run whose suite is flake-green; skip
+      # the evidence instead.
+      if [ "$SWBP_RUN_BUDGET" -gt 0 ] && [ "$(run_elapsed)" -gt "$SWBP_RUN_BUDGET" ]; then
+        iso_evidence="${iso_evidence:+$iso_evidence; }isolation runs skipped — over SWBP_RUN_BUDGET"
+        break
+      fi
       iso_pass=0
       for _try in 1 2; do
         run_tests "$fid"
