@@ -13,6 +13,19 @@ def _data_path() -> str:
     return os.environ.get("TESTCHAT_DATA", DEFAULT_PATH)
 
 
+def _try_load_bak(path: str) -> list[dict] | None:
+    bak = f"{path}.bak"
+    try:
+        with open(bak, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, ValueError, OSError):
+        return None
+    if isinstance(data, list):
+        logger.warning("Recovered snapshot from %s", bak)
+        return data
+    return None
+
+
 def load_snapshot() -> list[dict]:
     path = _data_path()
     try:
@@ -25,17 +38,12 @@ def load_snapshot() -> list[dict]:
     except FileNotFoundError:
         # save_snapshot has a brief window between renaming path→.bak and
         # tmp→path; a crash there leaves only .bak. Recover automatically.
-        bak = f"{path}.bak"
-        try:
-            with open(bak, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, list):
-                logger.warning("Recovered snapshot from %s (path missing)", bak)
-                return data
-        except (FileNotFoundError, json.JSONDecodeError, ValueError, OSError):
-            pass  # no usable backup either — fall through to empty
-        return []
+        recovered = _try_load_bak(path)
+        return recovered if recovered is not None else []
     except (json.JSONDecodeError, ValueError) as exc:
+        # Corrupt primary: prefer the previous good save if we have one,
+        # then quarantine the bad file so the next write doesn't re-corrupt.
+        recovered = _try_load_bak(path)
         quarantine = f"{path}.corrupt-{int(time.time())}"
         try:
             os.replace(path, quarantine)
@@ -48,7 +56,7 @@ def load_snapshot() -> list[dict]:
                 "Corrupt snapshot at %s could not be quarantined: %s",
                 path, move_exc,
             )
-        return []
+        return recovered if recovered is not None else []
     except OSError as exc:
         logger.warning("Cannot read snapshot at %s: %s", path, exc)
         return []
@@ -63,8 +71,13 @@ def save_snapshot(threads: list[dict]) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(threads, f, ensure_ascii=False, indent=2)
+        bak_path = f"{path}.bak"
         if os.path.exists(path):
-            os.replace(path, f"{path}.bak")
+            try:
+                import shutil
+                shutil.copy2(path, bak_path)
+            except OSError:
+                pass
         os.replace(tmp_path, path)
     except BaseException:
         try:
