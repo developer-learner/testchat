@@ -383,7 +383,7 @@ brief; transcribe it into working code immediately."
       write_state phase ""
       return 1
     fi
-  elif ! CODER_EVIDENCE=$(python3 - "$file" "$LOG_DIR/$id-a$attempt.raw" "$LOG_DIR/$id-a$attempt.log" <<'PYEOF'
+  elif ! CODER_EVIDENCE=$(python3 - "$file" "$LOG_DIR/$id-a$attempt.raw" "$LOG_DIR/$id-a$attempt.log" 2>&1 <<'PYEOF'
 import re, sys
 path, raw_path, log_path = sys.argv[1], sys.argv[2], sys.argv[3]
 text = open(raw_path).read()
@@ -998,6 +998,10 @@ run_tests
 # flake later failed 4/4 IN ISOLATION under host memory load, so an isolated
 # run measures the environment as much as the test. Any mapped node or
 # collection error keeps the DRIFT path exactly as before.
+#
+# The block between the BEGIN/END markers below is extracted verbatim by
+# scripts/selftest/drive-drift.sh — keep the markers on their own lines.
+# BEGIN D-77 flake triage (drive-drift.sh extracts this block)
 FLAKE_NOTE=""
 if [ "$TESTS_RC" -eq 1 ] && [ -n "$FAILING" ] \
   && [[ "$FAILING" != *COLLECTION_ERROR* ]]; then
@@ -1041,6 +1045,7 @@ WARNING (D-77): carried-forward node(s) failed in the full run — flake, not dr
     TESTS_RC=0
   fi
 fi
+# END D-77 flake triage
 
 if [ "$TESTS_RC" -eq 0 ]; then
   echo ""
