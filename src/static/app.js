@@ -792,16 +792,18 @@
       });
 
       modelSelect.addEventListener('change', function () {
-        // Overlapping-load guard: mid-load thread-switch can re-enable the
-        // selector on an unlocked thread, letting a second load start before
-        // the first .finally fires. Both loads' _unload_other_script_models
-        // then race for the same process handle.
-        if (TC.modelLoading) {
-          modelSelect.value = previousModelValue;
-          return;
-        }
         var selected = modelSelect.options[modelSelect.selectedIndex];
         if (selected && selected.dataset.loaded === 'false') {
+          // Overlapping-load guard: mid-load thread-switch can re-enable the
+          // selector on an unlocked thread, letting a second load start
+          // before the first .finally fires. Both loads'
+          // _unload_other_script_models then race for the same process
+          // handle. Only unloaded picks can start a load, so loaded-model
+          // selections stay usable during the (up to 180s) load window.
+          if (TC.modelLoading) {
+            modelSelect.value = previousModelValue;
+            return;
+          }
           var prior = previousModelValue;
           var id = modelSelect.value;
           loadConfirmText.textContent = 'Start ' + id + '? Uses significant RAM. ' + statusRam.textContent;
