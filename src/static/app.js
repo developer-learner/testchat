@@ -493,6 +493,11 @@
           return read();
         })
         .catch(function (err) {
+          // A rejection can land AFTER the final SSE frame was processed
+          // (Stop clicked as done arrives, or unclean connection teardown
+          // right behind the last frame). Everything is stored and rendered
+          // by then — pushing again would duplicate the reply in history.
+          if (streamEnded) return;
           streamEnded = true;
           if (!userStored) { currentThread.messages.push({ role: 'user', content: message, ts: Date.now() / 1000 }); userStored = true; }
           var caughtPartial = MD.stripThink(replyText).replace(/^\s+|\s+$/g, '');
@@ -501,12 +506,14 @@
             // Any post-token failure (stop button OR connection drop) keeps
             // the partial reply and its sources; only the abort path stays
             // silent about the error, the network case surfaces a bubble.
-            var caughtMsg = { role: 'assistant', content: caughtPartial, ts: Date.now() / 1000, model: streamModel || '' };
+            var caughtNow = Date.now() / 1000;
+            var caughtMsg = { role: 'assistant', content: caughtPartial, ts: caughtNow, model: streamModel || '' };
             if (pendingSources.length) {
               caughtMsg.sources = pendingSources.map(function (s) { return { title: s.title, url: s.url }; });
             }
             currentThread.messages.push(caughtMsg);
             renderReply(replyBubble, replyText);
+            Threads.addBubbleChrome(replyBubble, caughtPartial, caughtNow, streamModel || '', currentThread.messages.length - 1);
             if (pendingSources.length || pendingNotice) {
               setTimeout(function () { Threads.addSources(replyBubble, pendingSources, pendingNotice); }, 0);
             }
