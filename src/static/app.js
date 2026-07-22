@@ -444,9 +444,16 @@
               var errPartial = MD.stripThink(replyText).replace(/^\s+|\s+$/g, '');
               if (errPartial) {
                 var errNow = Date.now() / 1000;
-                currentThread.messages.push({ role: 'assistant', content: errPartial, ts: errNow, model: streamModel || '' });
+                var errAssistant = { role: 'assistant', content: errPartial, ts: errNow, model: streamModel || '' };
+                if (pendingSources.length) {
+                  errAssistant.sources = pendingSources.map(function (s) { return { title: s.title, url: s.url }; });
+                }
+                currentThread.messages.push(errAssistant);
                 renderReply(replyBubble, replyText);
                 Threads.addBubbleChrome(replyBubble, errPartial, errNow, streamModel || '', currentThread.messages.length - 1);
+                if (pendingSources.length || pendingNotice) {
+                  setTimeout(function () { Threads.addSources(replyBubble, pendingSources, pendingNotice); }, 0);
+                }
                 // Only surface the transient error bubble if the stream's
                 // thread is on screen — never inject it into another thread.
                 if (replyBubble.parentNode) appendBubble(errMsg, 'error');
@@ -488,21 +495,24 @@
         .catch(function (err) {
           streamEnded = true;
           if (!userStored) { currentThread.messages.push({ role: 'user', content: message, ts: Date.now() / 1000 }); userStored = true; }
-          if (err && err.name === 'AbortError') {
-            var partial = MD.stripThink(replyText).replace(/^\s+|\s+$/g, '');
-            if (partial) {
-              var abortMsg = { role: 'assistant', content: partial, ts: Date.now() / 1000, model: streamModel || '' };
-              if (pendingSources.length) {
-                abortMsg.sources = pendingSources.map(function (s) { return { title: s.title, url: s.url }; });
-              }
-              currentThread.messages.push(abortMsg);
-              renderReply(replyBubble, replyText);
-              if (pendingSources.length || pendingNotice) {
-                setTimeout(function () { Threads.addSources(replyBubble, pendingSources, pendingNotice); }, 0);
-              }
-            } else if (replyBubble.parentNode) {
-              replyBubble.parentNode.removeChild(replyBubble);
+          var caughtPartial = MD.stripThink(replyText).replace(/^\s+|\s+$/g, '');
+          var isAbort = err && err.name === 'AbortError';
+          if (caughtPartial) {
+            // Any post-token failure (stop button OR connection drop) keeps
+            // the partial reply and its sources; only the abort path stays
+            // silent about the error, the network case surfaces a bubble.
+            var caughtMsg = { role: 'assistant', content: caughtPartial, ts: Date.now() / 1000, model: streamModel || '' };
+            if (pendingSources.length) {
+              caughtMsg.sources = pendingSources.map(function (s) { return { title: s.title, url: s.url }; });
             }
+            currentThread.messages.push(caughtMsg);
+            renderReply(replyBubble, replyText);
+            if (pendingSources.length || pendingNotice) {
+              setTimeout(function () { Threads.addSources(replyBubble, pendingSources, pendingNotice); }, 0);
+            }
+            if (!isAbort && replyBubble.parentNode) appendBubble(FALLBACK_REPLY, 'error');
+          } else if (isAbort) {
+            if (replyBubble.parentNode) replyBubble.parentNode.removeChild(replyBubble);
           } else {
             replyBubble.className = 'chat-bubble error';
             replyBubble.textContent = FALLBACK_REPLY;
@@ -775,6 +785,14 @@
       });
 
       modelSelect.addEventListener('change', function () {
+        // Overlapping-load guard: mid-load thread-switch can re-enable the
+        // selector on an unlocked thread, letting a second load start before
+        // the first .finally fires. Both loads' _unload_other_script_models
+        // then race for the same process handle.
+        if (TC.modelLoading) {
+          modelSelect.value = previousModelValue;
+          return;
+        }
         var selected = modelSelect.options[modelSelect.selectedIndex];
         if (selected && selected.dataset.loaded === 'false') {
           var prior = previousModelValue;
@@ -790,6 +808,7 @@
           loadConfirmBtn.onclick = function () {
             loadConfirmModal.hidden = true;
             modelSelect.disabled = true;
+            TC.modelLoading = true;
             var opt = modelSelect.options[modelSelect.selectedIndex];
             var baseText = opt.value;
             var interval = setInterval(function () {
@@ -816,6 +835,7 @@
                 appendBubble(err.message || 'Failed to load model', 'error');
               })
               .finally(function () {
+                TC.modelLoading = false;
                 var active = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
                 modelSelect.disabled = active ? !!active.locked : false;
                 pollStatus();

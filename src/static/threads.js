@@ -6,7 +6,8 @@ window.TC = {
   streamingThreadId: null,
   liveBubbles: null,
   currentController: null,
-  showThinking: false
+  showThinking: false,
+  modelLoading: false
 };
 
 let threadSearchQuery = '';
@@ -443,13 +444,6 @@ function addSources(bubble, sources, notice) {
     maybeRetitle: maybeRetitle,
     createThread: createThread,
     switchThread: switchThread,
-    lockSelector: function () {
-      var thread = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
-      if (thread && !thread.locked) {
-        thread.locked = true;
-        el('model-select').disabled = true;
-      }
-    },
     lockThread: function (thread) {
       if (!thread || thread.locked) return;
       thread.locked = true;
