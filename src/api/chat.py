@@ -28,13 +28,17 @@ router = APIRouter()
 @router.post("/api/v1/chat")
 async def chat(request: ChatRequest) -> StreamingResponse:
     endpoint_override = None
-    script_model = get_script_model(request.model) if request.model else None
-    if script_model is not None:
-        if not is_script_model_loaded(request.model):
-            raise HTTPException(
-                status_code=422, detail=f"Model {request.model} is not loaded"
-            )
-        endpoint_override = script_model["chat_endpoint"]
+    # Guard on request.model itself, not on the derived script_model: both
+    # reads below need it narrowed to str, and mypy cannot infer that a
+    # non-None script_model implies a non-None request.model.
+    if request.model:
+        script_model = get_script_model(request.model)
+        if script_model is not None:
+            if not is_script_model_loaded(request.model):
+                raise HTTPException(
+                    status_code=422, detail=f"Model {request.model} is not loaded"
+                )
+            endpoint_override = script_model["chat_endpoint"]
 
     # Sync generator on purpose: Starlette iterates it in a threadpool, so the
     # blocking urllib reads in stream_reply/search_web can't stall the event
