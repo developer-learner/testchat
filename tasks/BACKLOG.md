@@ -44,6 +44,40 @@ threads.js (one-line swap, code path already exists).
 needs TPM spec coverage if pipeline work resumes
 **Rough size:** Spec-only (code done)
 
+### status.py RAM-helper coverage — the standing gap behind the coverage floor
+**Priority:** P2
+**Why:** `src/api/status.py` sits at **38% (61 of 99 statements never executed
+by any test)** — far the worst file in the tree; next worst is storage.py at
+70%, everything else is 77-100%. It is also what caps the CI coverage floor:
+raised 75 → 79 on 2026-07-24 (`9469c7b`), and total coverage is 79.8-80.2%
+depending on platform. Closing most of this gap is what makes an 85 floor
+reachable. Nothing here is a known bug — it is unverified code, which is a
+different and quieter risk.
+**What is uncovered** (`--cov-report=term-missing`, spec v57):
+lines `27, 32-41, 49-80, 85, 94-128` — i.e. essentially the whole of
+`_ram_totals()`, `_script_model_rss_gb()`, `_nemotron_rss_gb()` and
+`_loadable_gb()`. `get_status()` itself IS covered by `test_status_api.py`.
+**The catch — read before scoping:** these helpers shell out to `sysctl -n
+hw.memsize` and `vm_stat`, which are **macOS-only**. On the Linux CI runner
+the subprocess call raises, the `except Exception` branch swallows it, and the
+happy paths are structurally unreachable — this is the documented mac/Linux
+delta in `ci.yml` (measured 83% on macOS vs 78% on Linux back on 2026-07-14).
+So this is NOT "write the obvious tests"; it needs a deliberate choice:
+  (a) test the PARSING against captured fixture output with `subprocess.run`
+      monkeypatched — highest value, since the `vm_stat` page-accounting parse
+      (lines 32-41) is exactly the kind of string handling that breaks
+      silently on an OS update and would never be noticed; the suite already
+      monkeypatches in `conftest.py`, `test_websearch_service.py` and
+      `test_nemotron_config.py`, so the pattern exists; or
+  (b) accept the gap as platform-inherent and record that decision so the
+      number stops looking like neglect.
+Option (a) is the recommendation; (b) is a legitimate CEO call.
+**Constraint:** tests are INV-1-frozen — no agent may author them. This needs
+a TPM spec + `scripts/refreeze.sh`, not a patch. That is also why it never got
+done incidentally.
+**Rough size:** Spec/test-only (no `src/` change expected)
+**Source:** 2026-07-24 coverage-ratchet session.
+
 ---
 
 ## Later
