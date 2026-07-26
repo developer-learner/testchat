@@ -30,14 +30,13 @@ SCRIPT_MODEL_TERMINATE_GRACE_SECONDS = NEMOTRON_TERMINATE_GRACE_SECONDS
 
 def _find_listening_pid(port: int) -> int | None:
     """Return the PID listening on `port`, else None."""
-    try:
-        for conn in psutil.net_connections(kind='inet'):
-            if conn.status == psutil.CONN_LISTEN and conn.laddr.port == port:
-                return conn.pid
-    except (psutil.AccessDenied, psutil.Error):
-        # An undiscoverable PID is reported by the caller as a failed unload,
-        # never as success.
-        return None
+    for proc in psutil.process_iter(['pid']):
+        try:
+            for conn in proc.net_connections(kind='inet'):
+                if conn.status == psutil.CONN_LISTEN and conn.laddr.port == port:
+                    return proc.pid
+        except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.Error):
+            continue   # not our process; skip it and keep scanning
     return None
 
 
