@@ -5,6 +5,50 @@
 
 ---
 
+## State at 2026-07-26 session end (M29 — "unloaded" means unloaded)
+
+**Frozen spec:** v59. Suite **153/153** on the macOS host, in the sandbox
+container, and in CI (`677034a`). main pushed, nothing unpushed.
+
+**What shipped.** M29 fixed the P0 filed 2026-07-25: `unload_script_model`
+returned `{"status":"unloaded"}` having killed nothing whenever the in-memory
+`Popen` handle was gone (any `--reload` worker restart). Unload now discovers
+the server by the **listening port** parsed from its `ready_url`
+(`_find_listening_pid` → per-process `psutil.process_iter()`), terminates that
+one PID, re-probes, and returns `{'status':'error'}` if the model is still
+reachable. Load aborts rather than spawning when the other model cannot be
+evicted, closing the two-models-resident RAM path. Discovery by process *name*
+was rejected by CEO directive — `pgrep -f <basename>` also matches unrelated
+processes that merely mention the script path, then SIGKILLs them.
+
+v59 was a one-hunk refreeze: the carried-forward
+`test_load_nemotron_expands_script_path` mocked `httpx.get` to 200 for *every*
+URL, which made the other script model read as loaded and made new AC-104
+correctly refuse to spawn — unsatisfiable alongside the AC. The mock is now
+scoped to nemotron's own `ready_url`.
+
+**READ THIS BEFORE THE NEXT `scripts/orchestrate.sh` RUN.**
+`tasks/plan.json` is at `erd_version 58` while VERSION is 59, so the EM must
+re-derive the plan. Fingerprints hash the whole task dict, so a re-derived plan
+changes **all 12** and resets every task to `pending` — and
+`contracts.no_edit_files` protects only 3 files. The coder would then be handed
+`app.js`, `chat.py`, `threads.py`, `index.html`, `websearch.py` and the rest,
+none of which any current delta touches. `T11.fp`/`T12.fp` are also empty while
+their status is `done`.
+**Do not start a run unattended.** Either land the two P0 backlog items first
+(invert the `no_edit_files` default; fail closed on missing task state), or
+re-derive the plan, halt before the task DAG, and reconstruct the `done` markers
+against that plan. This was caught by hand this session, not by any gate.
+
+**Also open:** `.claude-md-pending.patch` (untracked) re-applies the port-doc
+change CEO-reverted at `c4710cc` and adds a correction-log row — needs explicit
+direction, and `CLAUDE.md` is pinned in `scripts/.manifest-project`, so applying
+it means regenerating that manifest. T12 never executed (its 18 API tests pass
+regardless). No formal `[success]` commit for M29, deliberately — producing one
+requires the full re-plan described above.
+
+---
+
 ## State at 2026-07-19 session end (post-M28 CEO live-fix sessions)
 
 **Frozen spec:** v54 unchanged — no pipeline runs today; all work was
