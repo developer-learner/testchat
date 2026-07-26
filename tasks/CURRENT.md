@@ -5,60 +5,6 @@
 
 ---
 
-## State at 2026-07-25 session end (CEO session — ops incident + defect triage)
-
-**Frozen spec:** v57 unchanged — no pipeline runs, no `src/` or `tests/`
-changes. All work was docs, backlog, and diagnosis.
-
-**Note on this file:** it had not been written since 2026-07-19 (`cce2554`)
-— 16 commits across several sessions, against a documented "every session"
-cadence (BLUEPRINT.md:105). Resumed here.
-
-**Ops incident (no code defect introduced).** The app was started on port
-8000 with a `0.0.0.0` bind. 8000 is `DS4_URL` — DeepSeek's — and the app
-spawns that server itself, so the first model load let `ds4-server` bind
-`127.0.0.1:8000` and silently inherit `localhost`, killing a live chat with
-`unknown endpoint` on every `/api/v1/*` call. App restored to **8080** (its long-standing `.claude/launch.json` port), bound to
-`127.0.0.1`. Chat history intact (34 threads; `data/threads.json`
-persistence verified across a hard restart). Full writeup:
-`project-trail/2026-07-25-port-collision-and-unload-defect.md`.
-
-**Two defects filed to `tasks/BACKLOG.md` (top of Up Next):**
-- **P1 — script-model unload silently fails after any app restart.**
-  `unload_script_model` kills only what it holds a live `Popen` handle for;
-  handles are in-memory, so a restart orphans the server while unload still
-  returns `{"status": "unloaded"}`. Catalog correctly keeps saying
-  `loaded: true`. Isolated by A/B: same-process load→unload works; a restart
-  in between breaks it. Trigger is routine — the documented run command uses
-  `--reload`, which restarts on every file save. Knock-on:
-  `_unload_other_script_models` trusts the fake success, so two script models
-  can end up resident at once.
-- **P2 — startup guard refusing to bind a port a `SCRIPT_MODELS` entry
-  claims.** Both failure shapes verified (loud `EADDRINUSE` on the true
-  default, silent hijack on `0.0.0.0`).
-
-**Shipped:** `4bdaa90` docs — quick start moved to `--host 127.0.0.1 --port
-8080`, failure-mode note, port map (1234 LM Studio / 8000 DeepSeek / 8001
-mtplx / 11234 mlx-serve / 8080 app), correction-log row.
-`scripts/.manifest-project` regenerated in the same commit — CLAUDE.md is
-control-plane via the `AGENTS.md` symlink, and the pre-commit gate caught the
-stale pin.
-
-**Imported:** `project-trail/` (blueprint D-84). It was never going to arrive
-via `update-template.sh` — the sync copies only the 31 executable
-control-plane files in `scripts/.manifest-template` and carries no `docs/`
-entries and no directories. **Blueprint-side gap worth raising: conventions
-established in blueprint docs have no transport to children.**
-
-**Machine state:** not a RAM problem — 31 GB total RSS against 128 GB
-installed, pressure green, zero swap. The real ceiling for large-model loads
-is `iogpu.wired_limit_mb` (unset = default ≈ 96 GB here).
-
-**Open:** both backlog items are `src/` work and need the pipeline. The port
-guard is docs-only today; nothing enforces it.
-
----
-
 ## State at 2026-07-19 session end (post-M28 CEO live-fix sessions)
 
 **Frozen spec:** v54 unchanged — no pipeline runs today; all work was
@@ -83,8 +29,7 @@ through `150dc22` (+ this note).
   ** or * renders literally. 7-case node harness + in-browser
   renderThink path verified.
 
-**M28 postmortem filed:** `project-trail/2026-07-19-m28-impossible-spec.md`
-(moved from `docs/POSTMORTEM-…` 2026-07-25 when project-trail was imported)
+**M28 postmortem filed:** `docs/POSTMORTEM-2026-07-19-m28.md`
 (`14e2260`, placement rationale corrected `7cb3ceb`). Finding: all four
 M28 recuts (v51→v54) were spec-layer TPM defects; the two local-EM
 "failures" were an unimplementable v51 spec (catalog route frozen
