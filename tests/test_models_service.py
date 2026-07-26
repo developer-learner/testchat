@@ -243,9 +243,22 @@ def test_load_nemotron_expands_script_path(monkeypatch):
     popen_spy = MagicMock(return_value=fake_proc)
     monkeypatch.setattr(models_mod.subprocess, "Popen", popen_spy)
 
-    ready_response = MagicMock()
-    ready_response.status_code = 200
-    monkeypatch.setattr(models_mod.httpx, "get", MagicMock(return_value=ready_response))
+    # Scope the readiness mock to nemotron's OWN ready_url. A blanket 200 also
+    # makes the *other* script model read as loaded, and AC-104 then correctly
+    # refuses to spawn until it is evicted — which a mock can never satisfy, so
+    # Popen is never called and this test's subject (expanduser on the script
+    # path) is never reached. The blanket mock predates AC-104; scoping it is
+    # what keeps this carried-forward test from contradicting a live AC.
+    nemotron_ready = models_mod.SCRIPT_MODELS["nemotron"]["ready_url"]
+
+    def fake_get(url, *args, **kwargs):
+        if url == nemotron_ready:
+            response = MagicMock()
+            response.status_code = 200
+            return response
+        raise models_mod.httpx.ConnectError("other script model not running")
+
+    monkeypatch.setattr(models_mod.httpx, "get", fake_get)
 
     models_mod.load_nemotron()
 
