@@ -7,8 +7,17 @@
 
 ## Up Next
 
-### AC-95′/AC-96′ recut — "unloaded" must mean the process is gone
-**Priority:** P0
+### ~~AC-95′/AC-96′ recut — "unloaded" must mean the process is gone~~ — SHIPPED
+**Priority:** ~~P0~~ — **DONE 2026-07-26, M29 (spec v58 → v59).** Recut as
+AC-102..AC-106 in outcome form; `unload_script_model` now discovers the server
+by the **listening port** parsed from its `ready_url` (`_find_listening_pid`,
+per-process `psutil.process_iter()`), terminates that one PID, re-probes, and
+returns `{'status':'error'}` when the model is still reachable. Load aborts
+rather than spawning when the other model cannot be evicted. 153/153 on the
+macOS host, in the sandbox container, and in CI. Discovery by process *name*
+was rejected by CEO directive: `pgrep -f <basename>` also matches unrelated
+processes that merely mention the script path, then SIGKILLs them. Original
+entry retained below for provenance.
 **Why:** Confirmed live 2026-07-25. `unload_script_model` returns
 `{"status":"unloaded"}` whether or not it had a handle to kill. Process handles
 live in a module-level dict (`src/services/models.py:50`) that any uvicorn
@@ -32,6 +41,88 @@ Implementation must reach servers it did not spawn — `src/api/status.py`
 obvious model. Draft ACs in
 `docs/POSTMORTEM-2026-07-25-unload-spec-lint.md` §6.
 **Rough size:** Spec + test + `services/models.py`
+
+### Invert the `no_edit_files` default — untouched unless the delta names it
+**Priority:** P0
+**Why:** Near-miss 2026-07-26 during M29. `.pipeline-state/tasks/` had lost its
+per-task `done` markers, so the EM planned all 12 files with every task
+`pending`. `contracts.no_edit_files` protects only 3 (`markdown.js`, `rain.js`,
+`style.css`), so the coder was about to be handed the other 9 — `app.js`,
+`chat.py`, `threads.py`, `index.html`, `websearch.py` — none of which the M29
+delta touches. Caught by inspection before the first coder call, not by any
+gate. D-65 exists precisely to keep declared-unchanged files away from the
+coder; it is scoped too narrowly to do that job.
+**What:** Invert the default. A file NOT named in the delta's
+`changed_contract_ids`/`changed_files` should be no-edit for that milestone,
+rather than fair game. Derive the no-edit set at refreeze instead of hand-listing
+it, so it cannot drift.
+**Rough size:** `refreeze.sh` + `orchestrate.sh` no-edit lookup + a DECISIONS entry
+
+### Fail closed when pipeline task-state is missing
+**Priority:** P0
+**Why:** Same 2026-07-26 near-miss, other half. An empty
+`.pipeline-state/tasks/` is indistinguishable from a greenfield repo, so
+orchestrate treats "state lost" as "nothing built yet" and rebuilds everything.
+The directory is gitignored and unversioned, and has now gone missing twice
+under this tree (the `.tpm/outbox/` disappearance, then a *partial* delete that
+emptied `tasks/` while `refreeze-pending.diff` survived beside it).
+**What:** Halt with a clear message when `.pipeline-state/tasks/` is empty AND
+`src/` is populated AND the frozen suite is mostly green — that combination is
+lost state, never a fresh project. Offer the reconstruct path rather than
+silently planning a full rebuild.
+**Rough size:** `orchestrate.sh` pre-flight
+
+### Run the frozen suite unprivileged in the sandbox
+**Priority:** P1
+**Why:** The container runs as root; the app runs as a normal user on macOS.
+M29 shipped `psutil.net_connections()` (module-level), which needs root on
+macOS: it passed 153/153 in the container while 5 tests failed on the host. A
+green oracle over a broken production path — caught only because the host run
+was done manually. The per-process form (`psutil.process_iter()` →
+`proc.net_connections()`) works in both and is what landed.
+**What:** Drop root in `sandbox-run.sh` so capability-dependent code cannot pass
+in the sandbox and fail in production. Interim rule until then: never declare
+green without a host run.
+**Rough size:** `sandbox-run.sh` / `Containerfile` + a DECISIONS entry
+
+### Spec lint, reverse direction — live tests vs NEW ACs
+**Priority:** P1
+**Why:** The existing lint checks staged tests against live ACs. v58 passed it
+and still shipped a contradiction in the other direction: the carried-forward
+`test_load_nemotron_expands_script_path` monkeypatches `httpx.get` to return
+200 for **every** URL, which makes the *other* script model read as loaded, so
+new AC-104 correctly refuses to spawn and `Popen` is never called — while the
+test asserts it was. Unsatisfiable alongside AC-104; cost a full escalation
+cycle and the v59 refreeze to fix.
+**What:** (a) diff live carried-forward tests against the ACs a delta ADDS, not
+only staged tests against live ACs; (b) treat a mock that answers every URL as a
+lint failure — it encodes "the whole world is ready" and silently couples
+unrelated subsystems.
+**Rough size:** `check-test-surface.py` or a new refreeze lint
+
+### Fold `mypy` into the sandbox run
+**Priority:** P2
+**Why:** CI's type-check is a gate nothing local exercises — the sandbox runs
+pytest and ruff only. M29's `psutil` addition passed two full platform runs at
+153/153 and still broke CI on `Library stubs not installed for "psutil"`,
+costing a red build and a follow-up commit (`types-psutil`, `0eb1d38`).
+**What:** Add `mypy --explicit-package-bases src/` to the sandbox acceptance so
+CI-only gates stop existing.
+**Rough size:** `sandbox-run.sh` + `orchestrate.sh` acceptance
+
+### `em.md` — test node-ids must be copied verbatim
+**Priority:** P2
+**Why:** The EM emitted all 32 `test_ui.py` / `test_ui_websearch.py` node-ids
+without Playwright's `[chromium]` parametrization suffix, so the plan gate
+rejected every one as "not in the frozen suite" and burned a plan revision.
+`scripts/.approved/test-nodeids` carries the suffix; `.opencode/prompts/em.md`
+never says to copy ids verbatim. It self-corrected on the retry, but will
+recur on any delta touching parametrized tests.
+**What:** One line in `em.md`: copy node-ids exactly as they appear in
+test-nodeids, including parametrization suffixes. Note `em.md` is control-plane
+and hash-pinned — regenerate `scripts/.control-plane-manifest` in the same
+isolated commit (Rule 2).
+**Rough size:** prompt line + manifest regen
 
 ### AC-15 disposition + AC-101 — a pinned unloaded model must be loadable
 **Priority:** P1
