@@ -85,7 +85,7 @@ proves it is what happened this time.
 
 ## Dispositions
 
-- Docs fix committed `4bdaa90` — app moved to 8010, port map recorded,
+- Docs fix committed `4bdaa90` — app moved off 8000, port map recorded,
   correction-log row added. Mitigation only; nothing enforces it.
 - Both defects filed in `tasks/BACKLOG.md`: unload-after-restart (P1),
   startup port guard (P2). Both are `src/` changes, so pipeline work.

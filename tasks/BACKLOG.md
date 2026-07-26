@@ -7,6 +7,30 @@
 
 ## Up Next
 
+### Pinned-but-unloaded model offers no way to load it
+**Priority:** P1
+**Why:** A thread persists its selected model (`thread.model` in
+`data/threads.json`), and on restore the dropdown shows that model as the
+current value. The load-confirm modal fires ONLY from
+`modelSelect.addEventListener('change', …)` (`src/static/app.js`) — so
+re-picking the already-displayed model generates no `change` event, no modal,
+and no load. The model is selected, unloaded, and unloadable from that thread.
+The only escape is picking a different model and switching back, which nothing
+in the UI suggests.
+**Not an edge case:** 34 of 42 threads currently carry a pinned model.
+Observed 2026-07-25 — thread id=1 (31 msgs) pins `deepseek-v4-flash`; after
+any restart it renders selected-but-unloaded with no load path, and the app
+appears simply broken. Compounds with the unload defect below: after a restart
+the catalog can also report a stale `loaded: true`, so the selector shows a
+model that is neither loadable nor genuinely loaded.
+**What:** provide a load affordance that does not depend on a `change` event —
+e.g. a load button beside the selector, enabled whenever the current selection
+has `dataset.loaded === 'false'`; or run the load-confirm flow on thread
+restore when the restored model is unloaded. Either way the invariant is:
+*if the selected model is not loaded, there is always a visible way to load
+it.*
+**Rough size:** Spec/test + `src/static/app.js`
+
 ### Script-model unload silently fails after any app restart
 **Priority:** P1
 **Why:** `unload_script_model` (`src/services/models.py:151`) terminates only a

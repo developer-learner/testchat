@@ -18,7 +18,7 @@ cadence (BLUEPRINT.md:105). Resumed here.
 8000 with a `0.0.0.0` bind. 8000 is `DS4_URL` — DeepSeek's — and the app
 spawns that server itself, so the first model load let `ds4-server` bind
 `127.0.0.1:8000` and silently inherit `localhost`, killing a live chat with
-`unknown endpoint` on every `/api/v1/*` call. App moved to **8010** bound to
+`unknown endpoint` on every `/api/v1/*` call. App restored to **8080** (its long-standing `.claude/launch.json` port), bound to
 `127.0.0.1`. Chat history intact (34 threads; `data/threads.json`
 persistence verified across a hard restart). Full writeup:
 `project-trail/2026-07-25-port-collision-and-unload-defect.md`.
@@ -38,8 +38,8 @@ persistence verified across a hard restart). Full writeup:
   default, silent hijack on `0.0.0.0`).
 
 **Shipped:** `4bdaa90` docs — quick start moved to `--host 127.0.0.1 --port
-8010`, failure-mode note, port map (1234 LM Studio / 8000 DeepSeek / 8001
-mtplx / 11234 mlx-serve / 8010 app), correction-log row.
+8080`, failure-mode note, port map (1234 LM Studio / 8000 DeepSeek / 8001
+mtplx / 11234 mlx-serve / 8080 app), correction-log row.
 `scripts/.manifest-project` regenerated in the same commit — CLAUDE.md is
 control-plane via the `AGENTS.md` symlink, and the pre-commit gate caught the
 stale pin.
