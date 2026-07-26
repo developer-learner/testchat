@@ -83,7 +83,8 @@ through `150dc22` (+ this note).
   ** or * renders literally. 7-case node harness + in-browser
   renderThink path verified.
 
-**M28 postmortem filed:** `docs/POSTMORTEM-2026-07-19-m28.md`
+**M28 postmortem filed:** `project-trail/2026-07-19-m28-impossible-spec.md`
+(moved from `docs/POSTMORTEM-…` 2026-07-25 when project-trail was imported)
 (`14e2260`, placement rationale corrected `7cb3ceb`). Finding: all four
 M28 recuts (v51→v54) were spec-layer TPM defects; the two local-EM
 "failures" were an unimplementable v51 spec (catalog route frozen
