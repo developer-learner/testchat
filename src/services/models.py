@@ -109,6 +109,8 @@ def _unload_other_script_models(model_id: str) -> None:
         if _get_process(other_id) is not None or is_script_model_loaded(other_id):
             logger.info('Unloading %s before loading %s', other_id, model_id)
             unload_script_model(other_id)
+            if is_script_model_loaded(other_id):
+                raise RuntimeError(f'failed to evict {other_id}')
 
 
 def load_script_model(model_id: str) -> dict:
@@ -117,15 +119,20 @@ def load_script_model(model_id: str) -> dict:
     if is_script_model_loaded(model_id):
         return {'status': 'loaded'}
 
-    _unload_other_script_models(model_id)
+    try:
+        _unload_other_script_models(model_id)
+    except RuntimeError as exc:
+        return {'status': 'error', 'message': str(exc)}
 
     process = subprocess.Popen(entry['command'])
     _set_process(model_id, process)
 
     timeout_seconds = globals()[entry['ready_timeout_attr']]
     deadline = time.monotonic() + timeout_seconds
+    child_exited = False
     while time.monotonic() < deadline:
         if process.poll() is not None:
+            child_exited = True
             break
         try:
             response = httpx.get(entry['ready_url'], timeout=5)
@@ -140,10 +147,41 @@ def load_script_model(model_id: str) -> dict:
     _terminate_process(process)
     _set_process(model_id, None)
 
+    if child_exited:
+        return {'status': 'error', 'message': f'child exited before {model_id} became ready'}
     return {'status': 'error', 'message': f'timeout waiting for {model_id} to become ready'}
 
 
+def _discover_and_terminate_by_name(basename: str) -> None:
+    """Find processes matching *basename* and send SIGINT then SIGKILL."""
+    try:
+        result = subprocess.run(
+            ['pgrep', '-f', basename],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return
+        pids = result.stdout.strip().split('\n')
+        for pid in pids:
+            try:
+                os.kill(int(pid), signal.SIGINT)
+            except ProcessLookupError:
+                # Process already gone — safe to ignore
+                pass
+        time.sleep(SCRIPT_MODEL_TERMINATE_GRACE_SECONDS)
+        for pid in pids:
+            try:
+                os.kill(int(pid), signal.SIGKILL)
+            except ProcessLookupError:
+                # Process already gone — safe to ignore
+                pass
+    except Exception:
+        # pgrep unavailable or discovery failed — caller checks reachability
+        pass
+
+
 def unload_script_model(model_id: str) -> dict:
+    entry = SCRIPT_MODELS[model_id]
     # A tracked process is terminated even when its HTTP side is unresponsive:
     # a hung server still holds RAM, and _unload_other_script_models relies on
     # this kill for the mutual-exclusion guarantee. Gating on the ready check
@@ -151,6 +189,16 @@ def unload_script_model(model_id: str) -> dict:
     process = _get_process(model_id)
     if process is not None:
         _terminate_process(process)
+    else:
+        # No tracked handle — discover the server by its ready endpoint and
+        # attempt termination via process discovery (AC-102).
+        if _responds_ready(entry['ready_url']):
+            basename = os.path.basename(entry['command'][0])
+            _discover_and_terminate_by_name(basename)
+            # Brief pause to allow graceful shutdown to complete
+            time.sleep(2)
+            if _responds_ready(entry['ready_url']):
+                return {'status': 'error', 'message': f'failed to terminate {model_id}'}
 
     _set_process(model_id, None)
     return {'status': 'unloaded'}
