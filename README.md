@@ -21,9 +21,15 @@ A minimal browser-based chat UI for local LLMs. FastAPI backend serves a chat pa
 
 ```bash
 pip install -r requirements.txt
-uvicorn src.main:app --reload
-# open http://localhost:8000
+uvicorn src.main:app --reload --port 8080
+# open http://localhost:8080
 ```
+
+> **Do not run the app on port 8000.** That port is reserved for the DeepSeek
+> script model (`ds4-server`, spawned by the app itself at `127.0.0.1:8000` —
+> see `DS4_URL` in `src/services/models.py`). Binding the app there makes every
+> DeepSeek load fail. 8080 is the project convention, matching
+> `.claude/launch.json`.
 
 ---
 

@@ -273,3 +273,40 @@ Feature built and validated (aside from noted flake).
 ## Results
 
 Full frozen TPM suite green against spec v56. Feature built and validated.
+
+---
+
+## Session 2026-07-25 — bug-claim review (conductor seat, no build run)
+
+Three filed claims independently verified against `c4710cc` (confirmed
+byte-identical to `1204546`). **All three confirmed**; two were understated by
+the original report and one carried two factual overreaches. Full evidence,
+reproduction steps and the spec lint:
+`docs/POSTMORTEM-2026-07-25-unload-spec-lint.md`.
+
+- **Defect 1 (P0)** — unload reports success without verifying the process died;
+  RAM mutual exclusion silently fails. `--reload` orphaning verified directly.
+- **Defect 2 (P1)** — locked thread pinned to an unloaded model is a dead end
+  (26/47 threads affected). Live-reproduced in a browser.
+- **Defect 3 (docs)** — **fixed this session** in `README.md` + `CLAUDE.md`:
+  documented run command bound port 8000, which is ds4-server's. Now 8080,
+  matching `.claude/launch.json`. Note this restores the substance of `f3cb479`,
+  reverted in `c4710cc` as part of a churn cleanup — the CEO's own revert
+  rationale names 8080 as the correct value.
+
+**Root cause (both code defects):** the frozen ACs specify mechanisms, not
+outcomes. AC-95 mandates "SIGINT the process and return `{status:unloaded}`",
+never "the model is no longer running", so the frozen test asserts
+`send_signal` on a `MagicMock` and cannot fail. Lint over 77 reconstructed ACs:
+process lifecycle fails 5 of 8, file lifecycle passes 9 of 9.
+
+**No `src/` or `tests/` changes** — outside the conductor lane (D-40) and INV-1.
+Both code defects need a TPM spec delta; draft replacement ACs are in
+postmortem §6 and filed in `tasks/BACKLOG.md` as the top three Up Next items.
+
+**Next step (CEO):** run `scripts/tpm-pack.sh`, take the bundle to the TPM web
+chat with postmortem §6 as the delta request, land via `scripts/refreeze.sh`.
+
+**State hygiene:** no production state mutated — `data/threads.json` verified
+byte-identical (`bcab36da...`) before and after; all spawned test processes
+cleaned up; app left stopped, as found.

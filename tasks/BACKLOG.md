@@ -7,6 +7,82 @@
 
 ## Up Next
 
+### AC-95′/AC-96′ recut — "unloaded" must mean the process is gone
+**Priority:** P0
+**Why:** Confirmed live 2026-07-25. `unload_script_model` returns
+`{"status":"unloaded"}` whether or not it had a handle to kill. Process handles
+live in a module-level dict (`src/services/models.py:50`) that any uvicorn
+worker restart empties — verified: a file save under `--reload` kills the
+worker and orphans its `Popen` child to `PPID=1` (uvicorn
+`basereload.py:96` signals the worker PID only). After that, unload reports
+success, the server keeps running, keeps the port, and the catalog still says
+`loaded: true`. Worse: the RAM mutual-exclusion guarantee silently fails —
+with a live-but-untracked model, `load_script_model` calls unload (no-op) and
+**spawns the second model anyway**. Two RAM-heavy models resident.
+**Root cause is the AC, not the test.** AC-95 specifies a mechanism ("SHALL
+SIGINT the process ... and return `{"status":"unloaded"}`") and never an
+outcome. The frozen test correspondingly asserts `send_signal` on a
+`MagicMock`, which cannot fail. AC-7×AC-8 also leave "reachable but untracked"
+— exactly the post-restart state — undefined.
+**What:** TPM re-cut of AC-95/AC-96 (and AC-6/AC-7/AC-94's cleanup halves) in
+outcome form: terminate *such that the readiness probe fails and the port is
+unbound*, regardless of whether a handle is tracked or who spawned the process.
+Implementation must reach servers it did not spawn — `src/api/status.py`
+`_script_model_rss_gb` already does PID discovery by launch command and is the
+obvious model. Draft ACs in
+`docs/POSTMORTEM-2026-07-25-unload-spec-lint.md` §6.
+**Rough size:** Spec + test + `services/models.py`
+
+### AC-15 disposition + AC-101 — a pinned unloaded model must be loadable
+**Priority:** P1
+**Why:** Confirmed live 2026-07-25. Thread 1 (31 messages) pins
+`deepseek-v4-flash`; the model is unloaded; the selector shows it and is
+**disabled** because the thread is `locked`. The load-confirm modal opens from
+exactly one place (`src/static/app.js:810`, a `change` listener), and a
+programmatic `.value` set fires no `change`. Sending returns HTTP 422. **26 of
+47 threads** are locked and pinned to a script model. On a locked thread there
+is no workaround at all — recovery requires abandoning the thread.
+**Spec-integrity defect behind it:** AC-15 ("WHEN the page is refreshed, THE
+SYSTEM SHALL unlock the model selector") was the escape hatch. M8 added
+persistence, explicitly retired AC-25, and left AC-15 orphaned — and the M8
+replacement test now ends `expect(model-select).to_be_disabled()`, asserting
+the opposite of a live AC. No test pins AC-15.
+**What:** Formally retire AC-15, and add AC-101: WHERE a thread's pinned model
+exists in the catalog but is not loaded, the system SHALL provide a path to
+load it from that thread in ≤2 interactions, including when the selector is
+locked.
+**Rough size:** Spec + test + `static/app.js` (likely a load affordance beside
+the eject button)
+
+### Spec lint at refreeze — post-conditions for state-changing ACs
+**Priority:** P1
+**Why:** The two defects above share one cause. A lint over 77 ACs
+reconstructed from 33 PRD versions found it confined entirely to process
+lifecycle: **5 of 8 process ACs fail**, while **9 of 9 file-lifecycle ACs
+pass**. AC-35 says "persist *such that a subsequent GET returns the updated
+thread*"; AC-95 says "SIGINT the process and return `{status:unloaded}`". Same
+document, opposite discipline. Load is outcome-specified (AC-4, "once the HTTP
+readiness probe succeeds"), unload is mechanism-specified — which is why
+loading is reliable and unloading is not.
+**What:** Gate at refreeze — any AC whose verb changes resource state
+(spawn/terminate/kill/unload/evict/delete/release/clear/cancel) must carry a
+post-condition clause naming an observable check. Greppable. Second, weaker
+gate: every delta lists the ACs it supersedes, diffed against ACs whose
+behavior the staged tests touch, so a staged test cannot contradict a live
+un-retired AC (the AC-15 case). Likely blueprint-side — see
+`tasks/HANDOFF-blueprint-items.md`.
+**Rough size:** `scripts/` + BLUEPRINT
+
+### AC-48 audit — Stop-mid-stream is an unaudited cancellation AC
+**Priority:** P3
+**Why:** The 2026-07-25 lint recovered 77 of ~100 AC statements; 23 have no
+surviving PRD text. All 23 are UI/theme/markdown/rename **except AC-48**
+(deliberately slow stream so a test can click Stop mid-reply), which is a
+cancellation operation — the same class as the failing process-lifecycle ACs
+and never checked for a post-condition.
+**What:** Recover AC-48's text and apply the §5.1 lint.
+**Rough size:** Spec review only
+
 ### AC-42 flake hardening — test_thinking_placeholder_shows_then_clears
 **Priority:** P1
 **Why:** M9-era timing-sensitive SLOWPING placeholder test; intermittent
