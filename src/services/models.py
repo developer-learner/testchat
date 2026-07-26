@@ -5,8 +5,10 @@ import os
 import signal
 import subprocess
 import time
+from urllib.parse import urlparse
 
 import httpx
+import psutil
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +26,41 @@ DEEPSEEK_SCRIPT_PATH = '/Users/arc.elixir/dev/ds4/run-server.sh'
 DEEPSEEK_READY_TIMEOUT_SECONDS = 180
 
 SCRIPT_MODEL_TERMINATE_GRACE_SECONDS = NEMOTRON_TERMINATE_GRACE_SECONDS
+
+
+def _find_listening_pid(port: int) -> int | None:
+    """Return the PID listening on `port`, else None."""
+    try:
+        for conn in psutil.net_connections(kind='inet'):
+            if conn.status == psutil.CONN_LISTEN and conn.laddr.port == port:
+                return conn.pid
+    except (psutil.AccessDenied, psutil.Error):
+        # An undiscoverable PID is reported by the caller as a failed unload,
+        # never as success.
+        return None
+    return None
+
+
+def _terminate_pid(pid: int) -> None:
+    """Send SIGINT, grace period, then SIGKILL if still alive."""
+    try:
+        os.kill(pid, signal.SIGINT)
+    except ProcessLookupError:
+        # Process already exited — nothing to terminate, safe to ignore.
+        return
+    deadline = time.monotonic() + SCRIPT_MODEL_TERMINATE_GRACE_SECONDS
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            # Process already exited during grace period — safe to ignore.
+            return
+        time.sleep(0.25)
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        # Process already exited — safe to ignore.
+        pass
 
 # Registry of script-run models. `command` is the argv to launch the server;
 # `ready_timeout_attr` names the module-level timeout constant so tests can
@@ -119,10 +156,15 @@ def load_script_model(model_id: str) -> dict:
     if is_script_model_loaded(model_id):
         return {'status': 'loaded'}
 
-    try:
-        _unload_other_script_models(model_id)
-    except RuntimeError as exc:
-        return {'status': 'error', 'message': str(exc)}
+    # Evict any other script model before spawning.
+    for other_id in SCRIPT_MODELS:
+        if other_id == model_id:
+            continue
+        if _get_process(other_id) is not None or is_script_model_loaded(other_id):
+            logger.info('Unloading %s before loading %s', other_id, model_id)
+            result = unload_script_model(other_id)
+            if result['status'] == 'error':
+                return {'status': 'error', 'message': f'could not evict {other_id}'}
 
     process = subprocess.Popen(entry['command'])
     _set_process(model_id, process)
@@ -152,34 +194,6 @@ def load_script_model(model_id: str) -> dict:
     return {'status': 'error', 'message': f'timeout waiting for {model_id} to become ready'}
 
 
-def _discover_and_terminate_by_name(basename: str) -> None:
-    """Find processes matching *basename* and send SIGINT then SIGKILL."""
-    try:
-        result = subprocess.run(
-            ['pgrep', '-f', basename],
-            capture_output=True, text=True, timeout=5,
-        )
-        if result.returncode != 0 or not result.stdout.strip():
-            return
-        pids = result.stdout.strip().split('\n')
-        for pid in pids:
-            try:
-                os.kill(int(pid), signal.SIGINT)
-            except ProcessLookupError:
-                # Process already gone — safe to ignore
-                pass
-        time.sleep(SCRIPT_MODEL_TERMINATE_GRACE_SECONDS)
-        for pid in pids:
-            try:
-                os.kill(int(pid), signal.SIGKILL)
-            except ProcessLookupError:
-                # Process already gone — safe to ignore
-                pass
-    except Exception:
-        # pgrep unavailable or discovery failed — caller checks reachability
-        pass
-
-
 def unload_script_model(model_id: str) -> dict:
     entry = SCRIPT_MODELS[model_id]
     # A tracked process is terminated even when its HTTP side is unresponsive:
@@ -190,15 +204,17 @@ def unload_script_model(model_id: str) -> dict:
     if process is not None:
         _terminate_process(process)
     else:
-        # No tracked handle — discover the server by its ready endpoint and
-        # attempt termination via process discovery (AC-102).
+        # No tracked handle — discover the server by its listening port and
+        # attempt termination (AC-102).
         if _responds_ready(entry['ready_url']):
-            basename = os.path.basename(entry['command'][0])
-            _discover_and_terminate_by_name(basename)
-            # Brief pause to allow graceful shutdown to complete
-            time.sleep(2)
-            if _responds_ready(entry['ready_url']):
-                return {'status': 'error', 'message': f'failed to terminate {model_id}'}
+            port = urlparse(entry['ready_url']).port
+            pid = _find_listening_pid(port)
+            if pid is not None:
+                _terminate_pid(pid)
+
+    # Re-check reachability after termination attempt.
+    if _responds_ready(entry['ready_url']):
+        return {'status': 'error', 'message': f'{model_id} still reachable'}
 
     _set_process(model_id, None)
     return {'status': 'unloaded'}
