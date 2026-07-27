@@ -11,7 +11,7 @@ does **not** hold for this delta.
 What this does and does not mean:
 
 * The acceptance criteria below are derived from *observed defect behavior*
-  (documented in `docs/POSTMORTEM-2026-07-25-unload-spec-lint.md`), not from
+  (documented in `project-trail/2026-07-25-unload-spec-lint.md`), not from
   reading implementation internals. They are deliberately written as outcomes
   that any correct implementation must satisfy.
 * The tests are nonetheless implementation-informed by construction. Their
@@ -37,7 +37,7 @@ defensible for a P0 defect fix whose ACs are outcome-shaped.
 M29 fixes a confirmed P0 defect: **the unload operation reports success without
 ever establishing that the model stopped running.** Full evidence, live
 reproduction, and the spec lint that found the root cause are in
-`docs/POSTMORTEM-2026-07-25-unload-spec-lint.md`.
+`project-trail/2026-07-25-unload-spec-lint.md`.
 
 The defect is not a coding error. It is faithful implementation of AC-95, which
 specifies a *mechanism* ("SHALL SIGINT the process ... and return

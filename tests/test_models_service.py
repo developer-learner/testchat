@@ -9,7 +9,7 @@ M29 (v58) re-cut. The process-lifecycle criteria are now stated as outcomes
 (AC-102..AC-106), so their tests assert reachability transitions against REAL
 subprocesses rather than `send_signal` calls against mocks. A mocked process
 cannot fail to die, which is exactly how the v57 oracle certified a unload path
-that never killed anything (see docs/POSTMORTEM-2026-07-25-unload-spec-lint.md).
+that never killed anything (see project-trail/2026-07-25-unload-spec-lint.md).
 
 Mock-based tests are retained only where the criterion is genuinely about a
 call being made (e.g. "does not spawn a second instance"), never where it is
