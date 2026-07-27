@@ -235,7 +235,8 @@
         var bubble = document.createElement('div');
         bubble.className = 'chat-bubble ' + type;
         bubble.textContent = text;
-        bubble.setAttribute('data-testid', type === 'user' ? 'msg-user' : 'msg-assistant');
+        bubble.setAttribute('data-testid',
+          type === 'user' ? 'msg-user' : type === 'error' ? 'msg-error' : 'msg-assistant');
         container.appendChild(bubble);
         scrollToBottom();
         return bubble;
@@ -870,6 +871,7 @@
           // selections stay usable during the (up to 180s) load window.
           if (TC.modelLoading) {
             modelSelect.value = previousModelValue;
+            modelSelect.classList.toggle('select-empty', !modelSelect.value);
             return;
           }
           var prior = previousModelValue;
@@ -880,6 +882,7 @@
           loadCancelBtn.onclick = function () {
             loadConfirmModal.hidden = true;
             modelSelect.value = prior;
+            modelSelect.classList.toggle('select-empty', !modelSelect.value);
             pollStatus();
           };
           loadConfirmBtn.onclick = function () {
