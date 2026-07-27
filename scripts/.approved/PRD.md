@@ -1,4 +1,4 @@
-PRD — testchat M31: current-chat awareness (spec v61)
+PRD — testchat M31: current-chat awareness (spec v64)
 
 ## Provenance caveat — READ BEFORE APPROVING (INV-1)
 

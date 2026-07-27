@@ -1,11 +1,13 @@
-ERD — testchat M31: current-chat awareness (erd_version 61)
+ERD — testchat M31: current-chat awareness (erd_version 64)
 
-## What changes v60 → v61
+## What changes v63 → v64
 
-A behavior delta that adds UI capability. Three inventory files may change
-(`src/static/index.html`, `src/static/app.js`, and a new
-`src/static/current-chat.css`); one is deliberately added to the inventory
-so `src/static/style.css` can remain in `contracts.no_edit_files`.
+A behavior delta that adds UI capability. Two inventory files may change (`src/static/index.html`,
+`src/static/app.js`). New visual rules are injected by `src/static/app.js`
+as a `<style>` element it creates at startup, so `src/static/style.css`
+remains in `contracts.no_edit_files` and no new stylesheet file is needed —
+a separate CSS file could not be loaded, since `index.html` carries the
+only `<link>` and is frequently outside the delta's editable scope.
 
 The delta specifies **16 acceptance criteria** (AC-111..AC-126) covering
 header title display, inline rename with full interaction paths, cross-source
@@ -81,11 +83,11 @@ testid rather than a new testid, because the highlight is a state on an
 existing element and the visual choice (border, background, glyph) is not
 prescribed.
 
-The delta also adds `src/static/current-chat.css` to the file inventory. It
-is a new small stylesheet for header-title layout and sidebar highlight
-rules. This lets `src/static/style.css` remain in `no_edit_files`
+Header-title layout and sidebar highlight rules are injected by
+`src/static/app.js` into a `<style>` element it creates and appends at
+startup. This lets `src/static/style.css` remain in `no_edit_files`
 (protecting the 10-theme system from a coder rewrite) while giving the
-coder somewhere to put the new visual rules.
+coder somewhere to put the new visual rules that is guaranteed to load.
 
 The load-order semantics live in `src/static/app.js`. The coder retires
 whatever mechanism currently persists a last-opened thread id and
@@ -93,13 +95,12 @@ substitutes the "first sidebar row" rule per AC-123.
 
 ## File inventory (M31 build) — changed from v60
 
-Adds one file to the inventory (`src/static/current-chat.css`); no other
-inventory changes. Files the delta may or must change:
+No inventory changes from v63. Files the delta may or must change:
 
 * **May change:** `src/static/index.html` (header title slot markup),
   `src/static/app.js` (header title wire-up, edit-mode handling, sidebar
-  highlight sync, load-selection policy), `src/static/current-chat.css`
-  (new — highlight and header-title visual rules).
+  highlight sync, load-selection policy, and the injected `<style>` element
+  carrying the highlight and header-title visual rules).
 * **Must not change:** every other file in the inventory. `no_edit_files`
   is unchanged from v60; the delta-scoped no-edit inversion (v60 pipeline
   gate) blocks the coder on any file not named by `--affected` for this
@@ -111,9 +112,9 @@ inventory changes. Files the delta may or must change:
   existing 32 tests including the 4 in `test_ui_websearch.py`-adjacent
   scope). Maps to the `src/static/app.js` task by `contracts.entry_points`
   reference; the header markup task (`src/static/index.html`) is covered
-  by AC-111's presence assertion; the CSS task
-  (`src/static/current-chat.css`) is covered by AC-121's non-color-signal
-  assertion, which the browser oracle observes via computed styles.
+  by AC-111's presence assertion; AC-121's non-color-signal requirement is
+  covered by the browser oracle's computed-style assertions against the
+  styles `src/static/app.js` injects.
 
 **Test-suite properties inherited from D-58:** element location is via
 `contracts.ui` testids only (checked at freeze by
@@ -123,15 +124,16 @@ zero retries.
 
 ## Smoke checks
 
-Unchanged from v60. `src/static/current-chat.css` needs no smoke check —
-its content is exercised entirely by the browser oracle's computed-style
-assertions.
+Unchanged from v63, minus the retired `src/static/current-chat.css` entry.
+The injected styles need no smoke check — they are exercised entirely by
+the browser oracle's computed-style assertions, and `src/static/app.js`
+already carries mapped tests as its acceptance signal.
 
 ## Rollback / risk
 
-* Rollback is reverting `src/static/index.html`, `src/static/app.js`, and
-  removing `src/static/current-chat.css`, then re-freezing v60. No schema
-  changes, no route changes, no persistence changes.
+* Rollback is reverting `src/static/index.html` and `src/static/app.js`,
+  then re-freezing v63. No schema changes, no route changes, no
+  persistence changes.
 * **Risk — sidebar rename regression.** AC-119 / AC-120 require the sidebar
   and header to stay in sync on rename from either surface. If the coder's
   implementation double-fires the update, the sidebar could momentarily
