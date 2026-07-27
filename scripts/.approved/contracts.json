@@ -1,5 +1,5 @@
 {
-  "erd_version": 61,
+  "erd_version": 62,
   "files": [
     "src/services/websearch.py",
     "src/api/status.py",
@@ -526,7 +526,8 @@
     "src/static/rain.js": "grep -q 'prefers-reduced-motion' src/static/rain.js",
     "src/static/style.css": "grep -q 'data-theme=' src/static/style.css",
     "src/services/models.py": "grep -q 'def list_model_catalog' src/services/models.py && grep -q 'SCRIPT_MODELS' src/services/models.py",
-    "src/api/models.py": "grep -q 'models/catalog' src/api/models.py && grep -q 'list_model_catalog' src/api/models.py"
+    "src/api/models.py": "grep -q 'models/catalog' src/api/models.py && grep -q 'list_model_catalog' src/api/models.py",
+    "src/static/current-chat.css": "grep -q '\\[data-active=\"true\"\\]' src/static/current-chat.css && grep -qE '(border|outline|font-weight|text-decoration|box-shadow)' src/static/current-chat.css"
   },
   "no_edit_files": [
     "src/static/markdown.js",
