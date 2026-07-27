@@ -890,6 +890,36 @@ if [ "$SPEC_ADVANCED" = "1" ]; then
 fi
 write_state spec_version "$FROZEN_V"
 
+# --- Delta-scoped edit permission (inverts D-65's default) -------------------
+# D-65 kept the coder away from files the spec DECLARED unchanged, via a
+# hand-maintained contracts.no_edit_files. Hand-maintained is the flaw: at
+# testchat M29 that list held 3 of 12 files, so when .pipeline-state/tasks/
+# lost its `done` markers every task read `pending` and the coder was one
+# call away from rewriting app.js, chat.py, threads.py, index.html and
+# websearch.py — none of which the delta touched. Nothing mechanical would
+# have stopped it.
+#
+# So the default is inverted: a file the current delta does not touch is
+# no-edit, rather than fair game. The permitted set is derived from the
+# frozen delta (never hand-listed, so it cannot drift), using the same
+# --affected computation the re-freeze reset uses — direct hits plus
+# transitive dependents, which is precisely the pipeline's own notion of
+# "invalidated by this delta".
+#
+# A file that does NOT yet exist is always editable: that is how greenfield
+# and genuinely new files get written, and it keeps an initial build (whose
+# delta touches nothing on disk) working unchanged.
+DELTA_FILE="$APPROVED/DELTA-v$FROZEN_V.json"
+DELTA_SCOPED=0
+AFFECTED_IDS=""
+if [ -f "$DELTA_FILE" ]; then
+  if AFFECTED_IDS=$(python3 scripts/validate-plan.py --affected "$DELTA_FILE" 2>/dev/null); then
+    AFFECTED_IDS=" $(printf '%s' "$AFFECTED_IDS" | tr '\n' ' ') "
+    DELTA_SCOPED=1
+    echo "delta v$FROZEN_V touches:${AFFECTED_IDS%% } — every other existing file is no-edit"
+  fi
+fi
+
 echo "=== Phase: task DAG ==="
 while :; do
   TOPO=$(python3 scripts/validate-plan.py --topo) || die "plan invalidated mid-run"
@@ -955,6 +985,17 @@ The previous attempt failed with: $last_fail. Fix the cause, do not just retry t
   # the skipped file's provenance is the spec, not luck. Acceptance below
   # (mapped tests + smoke_check) still runs in full.
   no_edit=$(python3 -c "import json,sys; c=json.load(open('scripts/.approved/contracts.json')); print(1 if sys.argv[1] in c.get('no_edit_files', []) else 0)" "$file")
+  no_edit_reason="frozen contracts.no_edit_files"
+  # Inverted default (see the delta-scoped block above): an EXISTING file the
+  # current delta does not touch never reaches the coder, whatever the
+  # hand-maintained list says. A file that does not exist yet stays editable
+  # so it can be created.
+  if [ "$no_edit" != "1" ] && [ "$DELTA_SCOPED" = "1" ] && [ -e "$file" ]; then
+    case "$AFFECTED_IDS" in
+      *" $id "*) ;;
+      *) no_edit=1; no_edit_reason="not touched by delta v$FROZEN_V" ;;
+    esac
+  fi
 
   # acceptance = projection of the frozen oracle (D-28) + optional smoke.
   # A coder call can now fail before any file exists (bad/missing sentinel
@@ -963,7 +1004,7 @@ The previous attempt failed with: $last_fail. Fix the cause, do not just retry t
   pass=1
   CODER_EVIDENCE=""
   if [ "$no_edit" = "1" ]; then
-    echo "  no-edit file (frozen contracts.no_edit_files) — coder not invoked; running acceptance only"
+    echo "  no-edit file ($no_edit_reason) — coder not invoked; running acceptance only"
     coder_ok=1
   elif run_coder "$id" "$file" "$attempt_brief" "$((strikes + 1))"; then
     coder_ok=1
