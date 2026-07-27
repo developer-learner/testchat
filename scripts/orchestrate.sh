@@ -280,6 +280,23 @@ curl -s --max-time 5 -o /dev/null "http://$SANDBOX_LLM_HOST:$SANDBOX_LLM_PORT/v1
 # requirements.txt and src/ it never saw).
 [ -z "$(git status --porcelain)" ] \
   || die "working tree not clean — commit or stash first (uncommitted changes would be misattributed to the first tier the lane gate checks): $(git status --porcelain | head -5 | tr '\n' ' ')"
+# Lost task-state reads identically to a fresh project, and that difference
+# decides whether the coder is handed the whole application. .pipeline-state/
+# is gitignored and unversioned; under testchat it vanished twice in one day
+# (2026-07-26), the second time as a PARTIAL delete that emptied tasks/ while
+# leaving its siblings intact. With the markers gone every task reads
+# `pending`, the EM plans the full file surface, and the coder rewrites files
+# no delta ever touched. Prior [task] commits prove work was completed here
+# before, so an empty state dir alongside them is loss — never a greenfield
+# start. Fail closed (Rule 4); a rebuild that is genuinely wanted is one
+# explicit `rm -rf .pipeline-state` away.
+if [ -z "$(ls -A "$TASK_STATE" 2>/dev/null || true)" ] \
+   && [ -n "$(git log --oneline --grep='^\[task ' -1 2>/dev/null || true)" ]; then
+  die "pipeline task-state is empty, but this repo has prior [task] commits — .pipeline-state/tasks/ was LOST, not never-created.
+  Every task would read 'pending' and the coder would be handed files no delta touches.
+  Recover: re-derive the plan, halt before the task DAG, then mark the tasks whose mapped tests already pass as done (status + fingerprint) — see tasks/CURRENT.md.
+  If a full rebuild really is intended, remove the state directory explicitly: rm -rf .pipeline-state"
+fi
 # Control-plane + frozen-artifact integrity (phase-gate verifies both, fail-closed)
 bash scripts/phase-gate.sh manifest HEAD
 # The frozen spec IS the human approval: it only exists via scripts/refreeze.sh,
