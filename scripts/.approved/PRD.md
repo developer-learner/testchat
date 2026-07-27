@@ -1,19 +1,21 @@
-PRD — testchat M29: "unloaded" means unloaded (spec v58)
+PRD — testchat M31: current-chat awareness (spec v61)
 
 ## Provenance caveat — READ BEFORE APPROVING (INV-1)
 
 This delta was authored by a TPM seat that had **already read `src/`** earlier in
-the same session, while occupying the conductor seat during the defect
-investigation. Agent-mode TPM is required never to read `src/` (D-39) precisely
-so the oracle cannot be derived from the implementation (INV-1). That property
-does **not** hold for this delta.
+the same session, while occupying the conductor seat across M29 (v58 → v59) and
+the subsequent pipeline-integrity work (v59 → v60). Agent-mode TPM is required
+never to read `src/` (D-39) precisely so the oracle cannot be derived from the
+implementation (INV-1). That property does **not** hold for this delta.
 
 What this does and does not mean:
 
-* The acceptance criteria below are derived from *observed defect behavior*
-  (documented in `project-trail/2026-07-25-unload-spec-lint.md`), not from
-  reading implementation internals. They are deliberately written as outcomes
-  that any correct implementation must satisfy.
+* The acceptance criteria below are derived from CEO-stated user problems
+  ("current chat is not discoverable in the sidebar list", "refresh takes the
+  chat to a specific chat only") and from the M28 lesson that interaction
+  criteria must be specified up front, not discovered as live-fixes after
+  `[success]`. They are written as outcomes any correct implementation must
+  satisfy.
 * The tests are nonetheless implementation-informed by construction. Their
   independence is asserted by the author, not guaranteed by structure — which
   is exactly the weaker claim INV-1 exists to avoid relying on.
@@ -27,159 +29,210 @@ Recommended dispositions, CEO's call:
    Restores INV-1 fully. This PRD is contamination-tolerant and can be reused
    as-is.
 
-Option 2 is the correct one if this delta is treated as precedent. Option 1 is
-defensible for a P0 defect fix whose ACs are outcome-shaped.
+Precedent: M29 (v58) and v60 both landed under option 1. This is a UI milestone
+(M28-shape), where the primary failure mode is not INV-1 — it is unspec'd
+interaction paths surfacing as post-`[success]` live-fixes. The spec below
+addresses that failure mode directly by exhaustively specifying interaction
+ACs; INV-1 contamination is the second-order risk.
 
 ---
 
-## What changes v57 -> v58
+## What changes v60 → v61
 
-M29 fixes a confirmed P0 defect: **the unload operation reports success without
-ever establishing that the model stopped running.** Full evidence, live
-reproduction, and the spec lint that found the root cause are in
-`project-trail/2026-07-25-unload-spec-lint.md`.
+M31 adds three closely related capabilities under one theme — **making the
+current chat visible and directly manageable from where the user is looking**:
 
-The defect is not a coding error. It is faithful implementation of AC-95, which
-specifies a *mechanism* ("SHALL SIGINT the process ... and return
-`{"status":"unloaded"}`") and never an *outcome* ("the model is no longer
-running"). The frozen test correspondingly asserts `send_signal` on a mock,
-which cannot fail. A lint across 77 acceptance criteria found this flaw confined
-entirely to process lifecycle — 5 of 8 process ACs specify mechanisms, while
-9 of 9 file-lifecycle ACs specify post-conditions.
+1. **Top-center title display of the current thread**, between the model
+   selector and the header controls to its right.
+2. **Inline rename of the current thread from that title**, with parity of
+   effect against the existing sidebar rename affordance.
+3. **Visual highlight of the current thread in the sidebar**, so the user
+   can scroll and identify which sidebar row is open on the right.
 
-This delta restates the process-lifecycle criteria in outcome form and re-cuts
-their tests against real subprocesses rather than mocks.
+And one restoration-policy correction:
 
-**Why this milestone is cut here (D-46).** The backend correctness defect is P0
-and independently CEO-checkable: load a model, restart the app, click Unload,
-observe the model actually stop. The UI dead-end defect (a locked thread pinned
-to an unloaded model, 26 of 47 threads affected) is real but P1, touches
-different files, and needs its own oracle in `tests/test_ui.py`. Bundling them
-would double the freeze surface and delay the P0. Defect 2 is specified as M30
-below and freezes next.
+4. **On page load or refresh, open the newest thread** (same order the
+   sidebar already renders — top row), rather than a stored "last-opened"
+   pin. This removes a source of user confusion where refresh appeared to be
+   stuck on one specific chat.
+
+**Why one milestone.** All four items concern current-chat awareness — the
+user's mental model of "which chat am I on?" Any two of them would leave the
+model incomplete: a title without a highlight leaves the sidebar-position
+question unanswered; a highlight without a title leaves ellipsis-truncated
+thread names still ambiguous; either without the refresh fix means the user
+lands on the wrong chat on every reload. Same test surface (`test_ui.py`),
+same primary files (`app.js`, `index.html`, one new CSS file), one refreeze.
+
+**Why M28's lesson applies here.** M28 shipped `[success]` and then required
+11 post-success live-fixes because interaction ACs (cancel reverts, blur
+behavior, race conditions, empty-state handling) were not specified up front.
+This milestone is precisely M28-shape — a UI feature with many interaction
+paths — so the acceptance criteria below cover **every** interaction path
+enumerated during spec, not only the happy paths. If the frozen suite passes,
+the milestone is done; there should be no live-fix batch.
+
+---
 
 ## Superseded criteria
 
-This delta **retires** the following. They must not survive into v58:
+None. AC-15 was already superseded in v58 by M30's AC-107 (spec'd but not
+built). No live criterion is retired here.
 
-* **AC-95** — replaced by AC-102 and AC-103.
-* **AC-96** — replaced by AC-104.
-* **AC-7** — replaced by AC-102 (which drops the "tracked subprocess handle"
-  precondition entirely; see below).
-* **AC-8** — replaced by AC-102's no-op clause.
-* **AC-6** — replaced by AC-105.
-
-**Why AC-7's precondition is deleted, not amended.** AC-7 applied only WHEN the
-model is reachable AND a tracked handle exists; AC-8 covered the not-reachable
-case. The quadrant **reachable but untracked** was covered by neither — and that
-quadrant is exactly the state produced by any restart of the server process,
-which empties in-memory handles while leaving the spawned model running. The
-defect lives in the gap between two criteria that each looked complete. Whether
-a handle is tracked is an implementation concern and must not appear in an
-acceptance criterion at all; reachability is the only state the user can observe.
-
-## Acceptance criteria
-
-* **AC-102:** WHEN a client requests unload of a registered script model AND
-  that model's readiness endpoint is reachable, THE SYSTEM SHALL stop that
-  model's server such that, after the response is returned, the model's
-  readiness endpoint is no longer reachable — regardless of whether the system
-  holds a subprocess handle for it, and regardless of which process spawned it.
-  WHEN the readiness endpoint is already unreachable, THE SYSTEM SHALL respond
-  `{"status":"unloaded"}` and make no attempt to terminate anything.
-
-* **AC-103:** IF the system cannot bring the model's readiness endpoint to
-  unreachable, THEN it SHALL respond `{"status":"error"}` with a `message`
-  naming the model, and SHALL NOT respond `{"status":"unloaded"}`. (D-68
-  failure-visibility: unload can now fail, so what the user sees on failure is
-  specified rather than left to the implementation.)
-
-* **AC-104:** WHEN a client requests load of a registered script model AND any
-  other registered script model's readiness endpoint is reachable, THE SYSTEM
-  SHALL bring that other model's readiness endpoint to unreachable **before**
-  spawning the requested model. IF it cannot, THE SYSTEM SHALL NOT spawn the
-  requested model and SHALL respond `{"status":"error"}` with a `message`
-  naming the model it could not evict. (Mutual exclusion is a RAM guarantee;
-  an unenforceable eviction must fail loudly, never silently proceed to a
-  second resident model.)
-
-* **AC-105:** WHEN a spawned script-model server exits before its readiness
-  endpoint becomes reachable, THE SYSTEM SHALL respond `{"status":"error"}`
-  with a `message` distinguishing that case from the readiness deadline
-  elapsing. (Today both report "timeout"; a server that dies on startup — for
-  example because its port is already bound — is reported as a 180 s timeout
-  after roughly 8 s, which misdirects diagnosis.)
-
-* **AC-106:** WHEN the readiness deadline elapses with the spawned server still
-  running, THE SYSTEM SHALL stop that server such that its readiness endpoint is
-  unreachable, and respond `{"status":"error"}`. (The AC-6 replacement, in
-  outcome form.)
-
-## Out of scope
-
-* The UI dead-end defect (thread pinned to an unloaded model). Specified as M30
-  below; not built in this milestone.
-* Any change to `/api/v1/models`, `/api/v1/models/catalog`, or chat routing.
-  Their contracts are untouched.
-* Persisting model state across restarts. The system remains free to hold no
-  memory of what it started — AC-102 is deliberately written so that a correct
-  implementation may discover a running server rather than remember it.
-* The refreeze-time spec lint (proposed gate). Blueprint-side; filed in
-  `tasks/BACKLOG.md`.
-
-## Flagged assumptions
-
-1. **Discovery mechanism is the coder's choice.** AC-102 requires reaching a
-   server the system did not spawn. It does not say how. `src/api/status.py`
-   already performs PID discovery by launch-command basename for RSS reporting,
-   so a precedent exists in-tree; port-based discovery is equally acceptable.
-   The tests assert only the outcome.
-2. **Termination of a process this app does not own may require escalation**
-   beyond SIGINT (SIGTERM, then SIGKILL). The grace period stays at 5 s per the
-   existing constant. If a server cannot be killed at all — for example it is
-   owned by another user — AC-103's error path is the specified outcome, not a
-   crash.
-3. **The readiness probe is the definition of "running".** A model whose HTTP
-   endpoint is unreachable is considered unloaded even if a process lingers.
-   This matches how the catalog already reports load state, and keeps the AC
-   observable. A lingering process that holds RAM but serves nothing is a
-   separate concern, not specified here.
-4. **Tests must use real subprocesses for the outcome assertions.** A mocked
-   process cannot fail to die, which is precisely how the original defect passed
-   a green suite. The re-cut oracle spawns short-lived real servers on
-   ephemeral ports and asserts reachability transitions.
+**Behavior that is not a frozen AC but changes silently:** whatever mechanism
+currently causes page refresh to land on a specific stored chat (a stored id
+in localStorage, a URL fragment, a persisted "lastActive" field) must no
+longer choose the opened thread. AC-123 defines the new selection policy in
+outcome terms; the coder retires the old mechanism as part of implementing it.
 
 ---
 
-## M30 — a pinned model must always be loadable (spec'd, not built here)
+## Acceptance criteria
 
-Recorded now so the criteria are reviewed alongside their root cause; freezes as
-its own delta with its own oracle in `tests/test_ui.py`.
+**Header title display**
 
-**Problem.** A thread stores the model it was last used with. When the app opens
-a thread whose stored model is not currently loaded, the selector displays that
-model as the current selection. A programmatic selection change fires no
-`change` event, and the load-confirm dialog opens only from that event — so no
-load path exists. When the thread is additionally locked (which happens after
-its first message), the selector is disabled and the user cannot even select
-away and back. Sending returns HTTP 422. Confirmed live: 26 of 47 threads in the
-CEO's current data are locked and pinned to a script model.
+* **AC-111:** THE SYSTEM SHALL display the current thread's title as text in
+  the page header, in a region located between the model selector control and
+  any header controls to its right. The title SHALL be visible on every page
+  load and after every thread switch.
 
-**Spec-integrity finding.** AC-15 ("WHEN the page is refreshed, THE SYSTEM SHALL
-unlock the model selector") was the escape hatch that made this unreachable. M8
-added persistence, explicitly retired AC-25, and left AC-15 orphaned — and the
-M8 replacement test now asserts the selector *is* disabled after reload, which
-directly contradicts a live, un-retired criterion. No test pins AC-15.
+* **AC-112:** WHERE the current thread's title exceeds the width available to
+  the header title region, THE SYSTEM SHALL render it truncated (single line,
+  no wrap) with the full title reachable via the browser's native tooltip
+  (`title` attribute or equivalent hover disclosure). The truncated title
+  SHALL NOT cause the header layout to reflow or push other header controls
+  out of view.
 
-* **AC-107 (M30):** AC-15 is retired. Refresh restores each thread's stored lock
-  state; it does not unlock the selector.
-* **AC-108 (M30):** WHERE the active thread's stored model is present in the
-  model catalog but not loaded, THE SYSTEM SHALL present a control that starts
-  loading that model, reachable in no more than two interactions from the open
-  thread, and available even while the thread's model selector is locked.
-* **AC-109 (M30):** WHEN that control is activated, THE SYSTEM SHALL show the
-  same confirmation the selector's load path shows (naming the model and its RAM
-  cost) before spawning anything.
-* **AC-110 (M30):** IF the load fails, THEN the user SHALL see the failure in
-  the chat error surface and the thread's stored model SHALL be left unchanged
-  (D-68 failure visibility).
+**Header rename — interaction**
+
+* **AC-113:** WHEN the user clicks the header title, THE SYSTEM SHALL enter
+  edit mode: an editable text input replaces (or is layered over) the display
+  element, pre-filled with the current title, focused, and with its text
+  content selected for immediate overwrite.
+
+* **AC-114:** WHEN the user presses Enter while in header-title edit mode,
+  THE SYSTEM SHALL commit the input's current text as the new thread title
+  (subject to AC-117), exit edit mode, and persist the rename to the same
+  thread record the sidebar rename writes to.
+
+* **AC-115:** WHEN the user presses Escape while in header-title edit mode,
+  THE SYSTEM SHALL exit edit mode without changing the stored title, and
+  the header SHALL display the title as it was before edit mode was entered.
+
+* **AC-116:** WHEN the user removes focus from the header-title input by any
+  means other than Escape (clicking away, tabbing away, switching threads),
+  THE SYSTEM SHALL treat it as a commit: apply AC-114 if the input's text is
+  non-empty and different from the prior title, otherwise apply AC-115.
+
+* **AC-117:** WHEN a header-title commit is attempted with input text that
+  is empty or whitespace-only, THE SYSTEM SHALL discard the input and leave
+  the stored title unchanged (same visible effect as AC-115). An empty title
+  is never persisted.
+
+* **AC-118:** WHEN the user switches to a different thread while a
+  header-title edit is in progress, THE SYSTEM SHALL first commit the
+  pending edit under AC-116, then perform the switch. The user's typed text
+  SHALL NOT be silently lost.
+
+**Cross-source parity**
+
+* **AC-119:** WHEN a thread is renamed via the sidebar rename affordance
+  (`thread-rename-btn` / `thread-rename-input`) AND that thread is the
+  current thread, THE SYSTEM SHALL update the header title to the new value
+  without requiring a page refresh or a thread switch.
+
+* **AC-120:** WHEN a thread is renamed via the header title AND the sidebar
+  is visible, THE SYSTEM SHALL update the sidebar row for that thread to the
+  new value without requiring a page refresh or a thread switch. Persistence,
+  ordering, and highlighting SHALL be unaffected by which surface the rename
+  came from.
+
+**Sidebar highlight**
+
+* **AC-121:** THE SYSTEM SHALL mark exactly one sidebar `thread-item` as the
+  current thread, using the DOM attribute `data-active="true"` on that
+  element. Every other `thread-item` SHALL either lack the attribute or
+  carry `data-active="false"`. The marked row SHALL be visually
+  distinguishable from unmarked rows by at least one non-color signal
+  (border, background contrast, weight, or indicator glyph) so that the mark
+  is discernible for users who cannot perceive color-only differentiation.
+
+* **AC-122:** WHEN the user switches threads, creates a new thread, or
+  deletes the currently-active thread, THE SYSTEM SHALL update `data-active`
+  such that the newly-current thread carries `data-active="true"` before the
+  next paint and no other thread does.
+
+**Load / refresh restoration policy**
+
+* **AC-123:** WHEN the page is loaded or reloaded AND at least one thread
+  exists, THE SYSTEM SHALL open the thread that appears first in the sidebar
+  ordering (newest first, per the existing
+  `test_sidebar_lists_newest_thread_first`). No previously-stored
+  "last-opened" or "last-active" thread identifier SHALL override this
+  choice.
+
+* **AC-124:** WHEN the page is loaded or reloaded AND zero threads exist,
+  THE SYSTEM SHALL create a new empty thread and open it. (Consistent with
+  existing `test_new_chat_creates_unlocked_empty_thread` semantics for the
+  same starting state.)
+
+**Content safety**
+
+* **AC-125:** THE SYSTEM SHALL render thread titles as text, never as HTML,
+  in both the header and the sidebar. A title containing HTML markup SHALL
+  be visible as literal characters, and SHALL NOT create DOM elements or
+  attach event handlers.
+
+* **AC-126:** WHEN a header-title commit contains newline characters, THE
+  SYSTEM SHALL strip them (replace with a single space, or drop entirely)
+  before persisting. Titles are single-line by construction.
+
+---
+
+## Out of scope
+
+* **Sidebar row auto-scroll on switch.** AC-121 requires the mark to be
+  present; it does not require the sidebar to auto-scroll the marked row
+  into view when the user switches to a thread off-screen. Auto-scroll is a
+  defensible enhancement but is deferred so the milestone's test surface
+  does not couple to sidebar viewport geometry.
+* **Undo of an accidental commit.** AC-115 provides revert only during edit
+  mode. Once committed, the sidebar rename affordance is the recovery path;
+  no header undo control is required.
+* **Keyboard focus onto the static header title.** AC-113 requires focus
+  after a click enters edit mode; it does not require a Tab-navigable
+  landing on the static title before edit mode. Adding that is a defensible
+  accessibility enhancement, deferred.
+* **Custom "empty title" placeholder text.** A thread whose title is
+  legitimately empty (created but never messaged) shows whatever the
+  existing `thread-item` display already shows in that state; this
+  milestone does not redefine that behavior.
+
+---
+
+## Flagged assumptions
+
+* **Sidebar ordering is stable across renames.** AC-119 / AC-120 assume
+  that renaming a thread does not change its sidebar position (position is
+  by activity or creation time, not by title). This matches existing
+  `test_sidebar_lists_newest_thread_first`. If ordering ever becomes
+  title-driven, AC-121's highlight semantics still hold but the visible
+  position of the highlighted row would move on rename — a UX regression
+  this spec does not prevent.
+* **Multi-tab semantics.** Highlight and current-thread state are per-tab
+  (client state), not shared across tabs of the same user. Renames persist
+  server-side, so a rename in tab A becomes visible in tab B on tab B's
+  next thread-list refresh. This is inherited behavior, not new.
+* **Rename during message stream.** If the user sends a message and, while
+  the assistant reply is streaming, renames the thread from the header, the
+  rename SHALL commit and the streaming reply SHALL continue in the same
+  thread record. No AC pins this because it is a pure consequence of
+  AC-119 / AC-120 (rename does not touch the message pipeline). Called out
+  only so a reviewer knows it was considered.
+
+---
+
+## M32 and beyond
+
+Nothing spec'd here. The M30 defect (pinned unloaded model,
+AC-107..AC-110) remains reserved from v58 and awaits its own freeze.

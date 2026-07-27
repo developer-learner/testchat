@@ -454,3 +454,360 @@ def test_model_option_labels_never_carry_checkmark(page: Page, app_url: str) -> 
     _await_reply(page)
     expect(select).to_be_disabled()              # thread bound to its model (AC-28)
     expect(select).not_to_contain_text("✓")      # bound state: still no label glyph
+
+
+# =============================================================================
+# M31 (spec v61) — current-chat awareness (AC-111..AC-126)
+#
+# Header title display, inline rename with full interaction paths, cross-source
+# rename parity, sidebar highlight of the current thread, load / refresh
+# selection policy, and content safety. See scripts/.approved/PRD.md.
+#
+# Interaction ACs specified up front (M28 lesson): every cancel path, blur
+# behavior, empty-input case, and race with a thread switch is a named test.
+# =============================================================================
+
+
+# AC-111: title visible on load
+def test_current_thread_title_shows_in_header(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    _send(page, "seed message so the thread gets a real title")
+    _await_reply(page)
+    sidebar_title = page.get_by_test_id("thread-item").first.inner_text().strip()
+    expect(page.get_by_test_id("current-thread-title")).to_have_text(
+        re.compile(re.escape(sidebar_title))
+    )
+
+
+# AC-111 / AC-122: title updates on thread switch
+def test_header_title_updates_when_switching_threads(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    _send(page, "first thread")
+    _await_reply(page)
+    page.get_by_test_id("new-thread-btn").click()
+    _send(page, "second thread")
+    _await_reply(page)
+    # Switch to the older thread (nth(1) = second in the list, which is
+    # the older one because sidebar lists newest first).
+    page.get_by_test_id("thread-item").nth(1).click()
+    older_sidebar_text = page.get_by_test_id("thread-item").nth(1).inner_text().strip()
+    expect(page.get_by_test_id("current-thread-title")).to_have_text(
+        re.compile(re.escape(older_sidebar_text))
+    )
+
+
+# AC-112: long titles truncate and expose full text via native tooltip
+def test_long_header_title_truncates_with_full_text_in_tooltip(
+    page: Page, app_url: str
+) -> None:
+    page.goto(app_url)
+    _send(page, "seed message")
+    _await_reply(page)
+    long_title = "A" * 200
+    page.get_by_test_id("current-thread-title").click()
+    box = page.get_by_test_id("current-thread-title-input")
+    box.fill(long_title)
+    box.press("Enter")
+    title = page.get_by_test_id("current-thread-title")
+    # Full title reachable via native tooltip regardless of visible truncation.
+    expect(title).to_have_attribute("title", long_title)
+    # No horizontal reflow: the title element's rendered width must not exceed
+    # the header region's available space (asserted as no page-level horizontal
+    # scroll being introduced by the long title).
+    body_scroll_width = page.evaluate("document.body.scrollWidth")
+    body_client_width = page.evaluate("document.body.clientWidth")
+    assert body_scroll_width <= body_client_width + 1, (
+        "long thread title must not cause horizontal page overflow"
+    )
+
+
+# AC-113: click enters edit mode with input focused and pre-selected
+def test_click_header_title_enters_edit_mode(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    _send(page, "seed message")
+    _await_reply(page)
+    page.get_by_test_id("current-thread-title").click()
+    box = page.get_by_test_id("current-thread-title-input")
+    expect(box).to_be_visible()
+    expect(box).to_be_focused()
+    # Pre-selected: overwriting with a single character replaces the whole
+    # title rather than appending to it.
+    box.press("X")
+    expect(box).to_have_value("X")
+
+
+# AC-114: Enter commits header-title edit and persists
+def test_enter_commits_header_title_edit(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    _send(page, "seed message")
+    _await_reply(page)
+    page.get_by_test_id("current-thread-title").click()
+    box = page.get_by_test_id("current-thread-title-input")
+    box.fill("Committed via Enter")
+    box.press("Enter")
+    expect(page.get_by_test_id("current-thread-title")).to_have_text(
+        "Committed via Enter"
+    )
+    # Persists across reload
+    page.reload()
+    expect(page.get_by_test_id("current-thread-title")).to_have_text(
+        "Committed via Enter"
+    )
+
+
+# AC-115: Escape reverts header-title edit
+def test_escape_reverts_header_title_edit(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    _send(page, "seed message")
+    _await_reply(page)
+    prior = page.get_by_test_id("current-thread-title").inner_text()
+    page.get_by_test_id("current-thread-title").click()
+    box = page.get_by_test_id("current-thread-title-input")
+    box.fill("This should be discarded")
+    box.press("Escape")
+    expect(page.get_by_test_id("current-thread-title")).to_have_text(prior)
+    # Persisted title unchanged: reload shows the prior title, not the discard
+    page.reload()
+    expect(page.get_by_test_id("current-thread-title")).to_have_text(prior)
+
+
+# AC-117: empty commit reverts to prior title (never persisted as empty)
+def test_empty_header_title_commit_reverts_to_prior(
+    page: Page, app_url: str
+) -> None:
+    page.goto(app_url)
+    _send(page, "seed message")
+    _await_reply(page)
+    prior = page.get_by_test_id("current-thread-title").inner_text()
+    page.get_by_test_id("current-thread-title").click()
+    box = page.get_by_test_id("current-thread-title-input")
+    box.fill("   ")   # whitespace-only counts as empty
+    box.press("Enter")
+    expect(page.get_by_test_id("current-thread-title")).to_have_text(prior)
+
+
+# AC-118: switching threads mid-edit commits the pending rename first
+def test_switching_threads_mid_edit_commits_pending_rename(
+    page: Page, app_url: str
+) -> None:
+    page.goto(app_url)
+    _send(page, "first thread")
+    _await_reply(page)
+    page.get_by_test_id("new-thread-btn").click()
+    _send(page, "second thread")
+    _await_reply(page)
+    # Enter edit mode on the current (newest) thread's title
+    page.get_by_test_id("current-thread-title").click()
+    page.get_by_test_id("current-thread-title-input").fill("Renamed before switch")
+    # Switch to the older thread WITHOUT explicitly committing
+    page.get_by_test_id("thread-item").nth(1).click()
+    # Return to the previously-edited thread; its title must show the commit
+    page.get_by_test_id("thread-item").first.click()
+    expect(page.get_by_test_id("current-thread-title")).to_have_text(
+        "Renamed before switch"
+    )
+
+
+# AC-119: sidebar rename updates header immediately for the current thread
+def test_sidebar_rename_updates_header_immediately(
+    page: Page, app_url: str
+) -> None:
+    page.goto(app_url)
+    _send(page, "seed message")
+    _await_reply(page)
+    item = page.get_by_test_id("thread-item").first
+    item.hover()
+    page.get_by_test_id("thread-rename-btn").first.click()
+    box = page.get_by_test_id("thread-rename-input")
+    box.fill("Renamed from sidebar")
+    box.press("Enter")
+    expect(page.get_by_test_id("current-thread-title")).to_have_text(
+        "Renamed from sidebar"
+    )
+
+
+# AC-120: header rename updates sidebar row immediately
+def test_header_rename_updates_sidebar_row_immediately(
+    page: Page, app_url: str
+) -> None:
+    page.goto(app_url)
+    _send(page, "seed message")
+    _await_reply(page)
+    page.get_by_test_id("current-thread-title").click()
+    box = page.get_by_test_id("current-thread-title-input")
+    box.fill("Renamed from header")
+    box.press("Enter")
+    expect(page.get_by_test_id("thread-item").first).to_contain_text(
+        "Renamed from header"
+    )
+
+
+# AC-121: exactly one thread-item is marked data-active="true"
+def test_current_thread_is_highlighted_in_sidebar(
+    page: Page, app_url: str
+) -> None:
+    page.goto(app_url)
+    _send(page, "first thread")
+    _await_reply(page)
+    page.get_by_test_id("new-thread-btn").click()
+    _send(page, "second thread")
+    _await_reply(page)
+    items = page.get_by_test_id("thread-item")
+    expect(items).to_have_count(2)
+    # Current (just-sent) thread is newest — sidebar renders it first
+    expect(items.first).to_have_attribute("data-active", "true")
+    # And no other thread carries data-active="true"
+    active_count = page.locator('[data-testid="thread-item"][data-active="true"]').count()
+    assert active_count == 1, f"expected exactly one highlighted thread, got {active_count}"
+
+
+# AC-122: highlight moves when the user switches threads
+def test_highlight_moves_when_switching_threads(
+    page: Page, app_url: str
+) -> None:
+    page.goto(app_url)
+    _send(page, "first thread")
+    _await_reply(page)
+    page.get_by_test_id("new-thread-btn").click()
+    _send(page, "second thread")
+    _await_reply(page)
+    items = page.get_by_test_id("thread-item")
+    # Currently second thread is highlighted (it is the newest, first in list)
+    expect(items.first).to_have_attribute("data-active", "true")
+    # Switch to the older thread
+    items.nth(1).click()
+    expect(items.nth(1)).to_have_attribute("data-active", "true")
+    # And the previously-active one no longer is
+    active_count = page.locator('[data-testid="thread-item"][data-active="true"]').count()
+    assert active_count == 1
+
+
+# AC-122: highlight moves to newest-remaining when the current thread is deleted
+def test_highlight_moves_when_current_thread_deleted(
+    page: Page, app_url: str
+) -> None:
+    page.goto(app_url)
+    _send(page, "keeper thread")
+    _await_reply(page)
+    page.get_by_test_id("new-thread-btn").click()
+    _send(page, "doomed thread")
+    _await_reply(page)
+    # Newest (doomed) is currently active — delete it
+    items = page.get_by_test_id("thread-item")
+    items.first.hover()
+    page.get_by_test_id("thread-delete-btn").first.click()
+    page.get_by_test_id("delete-confirm").click()
+    # Only the keeper remains, and it must be the active one
+    expect(page.get_by_test_id("thread-item")).to_have_count(1)
+    expect(page.get_by_test_id("thread-item").first).to_have_attribute(
+        "data-active", "true"
+    )
+    # Header title reflects the switch
+    keeper_title = page.get_by_test_id("thread-item").first.inner_text().strip()
+    expect(page.get_by_test_id("current-thread-title")).to_have_text(
+        re.compile(re.escape(keeper_title))
+    )
+
+
+# AC-123: reload opens the newest (top-of-sidebar) thread, not a stored pin
+def test_reload_opens_newest_thread(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    _send(page, "first thread")
+    _await_reply(page)
+    page.get_by_test_id("new-thread-btn").click()
+    _send(page, "second thread")
+    _await_reply(page)
+    # Deliberately switch AWAY from the newest, so that if the app tried to
+    # restore last-opened it would land on the older one after reload.
+    page.get_by_test_id("thread-item").nth(1).click()
+    older_title = page.get_by_test_id("thread-item").nth(1).inner_text().strip()
+    expect(page.get_by_test_id("current-thread-title")).to_have_text(
+        re.compile(re.escape(older_title))
+    )
+    # Reload — must land on the newest (top row), not the last-opened one.
+    page.reload()
+    newest_title = page.get_by_test_id("thread-item").first.inner_text().strip()
+    expect(page.get_by_test_id("current-thread-title")).to_have_text(
+        re.compile(re.escape(newest_title))
+    )
+    expect(page.get_by_test_id("thread-item").first).to_have_attribute(
+        "data-active", "true"
+    )
+
+
+# AC-123: reload after deleting the current thread opens the newest remaining
+def test_reload_after_current_deleted_opens_newest_remaining(
+    page: Page, app_url: str
+) -> None:
+    page.goto(app_url)
+    _send(page, "keeper thread")
+    _await_reply(page)
+    page.get_by_test_id("new-thread-btn").click()
+    _send(page, "doomed thread")
+    _await_reply(page)
+    # Delete the newest (currently active)
+    items = page.get_by_test_id("thread-item")
+    items.first.hover()
+    page.get_by_test_id("thread-delete-btn").first.click()
+    page.get_by_test_id("delete-confirm").click()
+    expect(page.get_by_test_id("thread-item")).to_have_count(1)
+    # Reload — must land on the remaining keeper, not attempt to restore
+    # the deleted thread.
+    page.reload()
+    expect(page.get_by_test_id("thread-item")).to_have_count(1)
+    keeper_title = page.get_by_test_id("thread-item").first.inner_text().strip()
+    expect(page.get_by_test_id("current-thread-title")).to_have_text(
+        re.compile(re.escape(keeper_title))
+    )
+    expect(page.get_by_test_id("thread-item").first).to_have_attribute(
+        "data-active", "true"
+    )
+
+
+# AC-125: titles render as text, never as HTML (XSS guard)
+def test_title_renders_as_text_not_html(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    _send(page, "seed message")
+    _await_reply(page)
+    page.get_by_test_id("current-thread-title").click()
+    box = page.get_by_test_id("current-thread-title-input")
+    box.fill("<img src=x onerror=window.__pwned=1>")
+    box.press("Enter")
+    # Header title contains the literal text (not the rendered <img>)
+    expect(page.get_by_test_id("current-thread-title")).to_contain_text(
+        "<img src=x onerror=window.__pwned=1>"
+    )
+    # No injected DOM element and no executed handler. querySelectorAll is
+    # inside page.evaluate() so it is not a Playwright selector call — no
+    # INV-4 raw-selector rejection, and the assertion still verifies the
+    # HTML wasn't parsed as HTML.
+    injected = page.evaluate(
+        "document.querySelectorAll('img[src=\"x\"]').length"
+    )
+    assert injected == 0, "title must not be parsed as HTML"
+    assert page.evaluate("window.__pwned") is None, (
+        "title's onerror handler must not have executed"
+    )
+
+
+# AC-126: newlines are stripped from a header-title commit
+def test_newlines_in_header_title_are_stripped_on_commit(
+    page: Page, app_url: str
+) -> None:
+    page.goto(app_url)
+    _send(page, "seed message")
+    _await_reply(page)
+    page.get_by_test_id("current-thread-title").click()
+    box = page.get_by_test_id("current-thread-title-input")
+    # A contenteditable / input receiving Shift+Enter or Enter within its
+    # text would produce a newline in the buffer; we simulate by directly
+    # setting the value including a newline character and pressing Enter to
+    # commit. The commit path must strip.
+    box.fill("line one\nline two")
+    box.press("Enter")
+    committed = page.get_by_test_id("current-thread-title").inner_text()
+    assert "\n" not in committed, (
+        f"committed title contains a raw newline: {committed!r}"
+    )
+    # And the sidebar carries the same single-line rendering
+    assert "\n" not in page.get_by_test_id("thread-item").first.inner_text()

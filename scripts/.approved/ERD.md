@@ -1,130 +1,172 @@
-ERD — testchat M29: "unloaded" means unloaded (erd_version 58)
+ERD — testchat M31: current-chat awareness (erd_version 61)
 
-## What changes v57 -> v58
+## What changes v60 → v61
 
-A behavior delta, not a ratify. One inventory file changes
-(`src/services/models.py`); one may change if the coder chooses to surface the
-new error path there (`src/api/models.py`). Both are already inventory members,
-so no inventory growth.
+A behavior delta that adds UI capability. Three inventory files may change
+(`src/static/index.html`, `src/static/app.js`, and a new
+`src/static/current-chat.css`); one is deliberately added to the inventory
+so `src/static/style.css` can remain in `contracts.no_edit_files`.
 
-The delta restates five process-lifecycle acceptance criteria in outcome form
-(AC-102..AC-106, superseding AC-6/AC-7/AC-8/AC-95/AC-96) and re-cuts their
-oracle against real subprocesses. See `PRD.md` for the criteria and for the
-INV-1 provenance caveat that must be read before approving this freeze.
+The delta specifies **16 acceptance criteria** (AC-111..AC-126) covering
+header title display, inline rename with full interaction paths, cross-source
+rename parity, sidebar highlight of the current thread, load / refresh
+selection policy, and content safety. See `PRD.md` for the criteria and for
+the INV-1 provenance caveat that must be read before approving this freeze.
 
 ## Behavior newly locked
 
-* **AC-102 — unload is defined by reachability, not by handle bookkeeping.**
-  `unload_script_model` must leave the model's readiness endpoint unreachable
-  whether or not `_script_processes` holds a handle for it. The untracked case
-  is the one that matters: the handle map lives in module memory and does not
-  survive a restart of the serving process, while a server spawned before the
-  restart keeps running and keeps its port. Pinned by
-  `test_models_service.py::test_unload_stops_a_running_server_with_no_tracked_handle`
-  and `test_models_api.py::test_unload_route_stops_a_server_with_no_tracked_handle`.
+* **AC-111 / AC-112 — header title display.** The current thread's title is
+  rendered as text between the model selector and the header's right-side
+  controls, single-line, truncated with a native tooltip when it exceeds the
+  available width, present on every load and after every thread switch.
+  Pinned by
+  `test_ui.py::test_current_thread_title_shows_in_header`,
+  `test_header_title_updates_when_switching_threads`, and
+  `test_long_header_title_truncates_with_full_text_in_tooltip`.
 
-* **AC-103 — unload can fail, and says so.** When the readiness endpoint stays
-  reachable, the response is `{"status": "error", "message": ...}` naming the
-  model. `ScriptModelUnloadResponse` and `NemotronUnloadResponse` already admit
-  the `"error"` literal, so **no schema change is required**. Pinned by
-  `test_unload_reports_error_when_the_model_stays_reachable` (service) and
-  `test_unload_route_reports_error_when_the_model_stays_reachable` (route).
+* **AC-113..AC-118 — inline header rename.** Click enters edit mode with the
+  input focused and pre-selected; Enter commits, Escape reverts, blur commits
+  if the input is non-empty, empty-or-whitespace is never persisted, and
+  switching threads mid-edit commits the pending rename before the switch.
+  Pinned by
+  `test_click_header_title_enters_edit_mode`,
+  `test_enter_commits_header_title_edit`,
+  `test_escape_reverts_header_title_edit`,
+  `test_empty_header_title_commit_reverts_to_prior`,
+  and `test_switching_threads_mid_edit_commits_pending_rename`.
 
-* **AC-104 — mutual exclusion is a state.** `_unload_other_script_models` (or
-  whatever replaces it) must establish that the other model is unreachable
-  before spawning, and must abort the load with an error naming the model it
-  could not evict. Pinned by `test_load_evicts_a_running_untracked_other_model`
-  and `test_load_refuses_when_the_other_model_cannot_be_evicted`.
+* **AC-119 / AC-120 — cross-source parity.** A rename in the sidebar
+  updates the header instantly for the current thread; a rename in the
+  header updates the sidebar row for that thread instantly. Neither surface
+  requires a page refresh to see the other's change. Pinned by
+  `test_sidebar_rename_updates_header_immediately` and
+  `test_header_rename_updates_sidebar_row_immediately`.
 
-* **AC-105 — a backing server that exits before readiness is not a timeout.**
-  The wait loop already breaks on child exit; only the message is wrong. Pinned
-  by `test_load_reports_child_exit_distinctly_from_the_deadline`.
+* **AC-121 / AC-122 — sidebar highlight.** Exactly one `thread-item`
+  carries `data-active="true"` at any time; every switch, create, or delete
+  of the current thread updates that attribute before the next paint. The
+  visible mark uses at least one non-color signal. Pinned by
+  `test_current_thread_is_highlighted_in_sidebar`,
+  `test_highlight_moves_when_switching_threads`, and
+  `test_highlight_moves_when_current_thread_deleted`.
 
-* **AC-106 — a load that misses its deadline leaves nothing running.** The AC-6
-  replacement, asserted as reachability rather than as a signal call. Pinned by
-  `test_load_deadline_leaves_the_spawned_server_unreachable`.
+* **AC-123 / AC-124 — load / refresh selection policy.** On reload the
+  system opens the first-in-sidebar-order thread (matching the existing
+  `test_sidebar_lists_newest_thread_first` ordering); zero threads causes
+  creation of a new empty thread. Pinned by
+  `test_reload_opens_newest_thread` and
+  `test_reload_after_current_deleted_opens_newest_remaining`.
+
+* **AC-125 / AC-126 — content safety.** Titles are rendered as text (no
+  HTML injection); newlines in a header-title commit are stripped before
+  persist. Pinned by `test_title_renders_as_text_not_html` and
+  `test_newlines_in_header_title_are_stripped_on_commit`.
 
 ## Implementation notes (non-binding — the tests are the contract)
 
-The one genuinely new capability is reaching a server this process did not
-spawn. Two in-tree precedents:
+The oracle depends on two new testids being present in the DOM:
 
-* `src/api/status.py::_script_model_rss_gb` already discovers a script model's
-  PID by matching the launch command's basename when no handle is tracked. The
-  same discovery satisfies AC-102.
-* The registry entry's `base_url` carries the port, so port-based discovery is
-  equally available.
+* `current-thread-title` — the display element that renders the title text
+  (a `<span>`, `<h1>`, or similar). Also serves as the click target that
+  enters edit mode per AC-113.
+* `current-thread-title-input` — the input element used for the inline
+  rename. Present only while in edit mode; can be a text `<input>` or a
+  `contenteditable` element.
 
-Either is acceptable. Termination of a process this app does not own may need
-escalation past SIGINT; the existing 5 s grace constant is unchanged, and
-AC-103's error path is the specified outcome when termination is impossible.
+Both are added to `contracts.ui`; INV-4 rejects any test that references a
+testid not in the inventory.
 
-**Do not** solve AC-102 by persisting handles to disk. The criterion is written
-so that discovery, not memory, is the expected shape — a persisted PID is stale
-in exactly the cases that matter.
+Sidebar highlight uses `data-active="true"` on the existing `thread-item`
+testid rather than a new testid, because the highlight is a state on an
+existing element and the visual choice (border, background, glyph) is not
+prescribed.
 
-## File inventory (M29 build) — UNCHANGED from v57
+The delta also adds `src/static/current-chat.css` to the file inventory. It
+is a new small stylesheet for header-title layout and sidebar highlight
+rules. This lets `src/static/style.css` remain in `no_edit_files`
+(protecting the 10-theme system from a coder rewrite) while giving the
+coder somewhere to put the new visual rules.
 
-Same 12 files, same `no_edit_files` (markdown.js, rain.js, style.css). No task
-adds an inventory member.
+The load-order semantics live in `src/static/app.js`. The coder retires
+whatever mechanism currently persists a last-opened thread id and
+substitutes the "first sidebar row" rule per AC-123.
 
-Files this delta expects to change:
+## File inventory (M31 build) — changed from v60
 
-* `src/services/models.py` — AC-102..AC-106 all land here.
-* `src/api/models.py` — only if the coder routes AC-103's error through the
-  route layer rather than returning it from the service. Either is acceptable;
-  the route tests assert the response body, not where it was built.
+Adds one file to the inventory (`src/static/current-chat.css`); no other
+inventory changes. Files the delta may or must change:
+
+* **May change:** `src/static/index.html` (header title slot markup),
+  `src/static/app.js` (header title wire-up, edit-mode handling, sidebar
+  highlight sync, load-selection policy), `src/static/current-chat.css`
+  (new — highlight and header-title visual rules).
+* **Must not change:** every other file in the inventory. `no_edit_files`
+  is unchanged from v60; the delta-scoped no-edit inversion (v60 pipeline
+  gate) blocks the coder on any file not named by `--affected` for this
+  delta.
 
 ## Oracle mapping
 
-* `tests/test_models_service.py` — full replacement (24 tests). Maps to the
-  `src/services/models.py` task.
-* `tests/test_models_api.py` — full replacement (20 tests). Maps to the
-  `src/api/models.py` task.
+* `tests/test_ui.py` — full replacement (adds 15 new tests, retains all
+  existing 32 tests including the 4 in `test_ui_websearch.py`-adjacent
+  scope). Maps to the `src/static/app.js` task by `contracts.entry_points`
+  reference; the header markup task (`src/static/index.html`) is covered
+  by AC-111's presence assertion; the CSS task
+  (`src/static/current-chat.css`) is covered by AC-121's non-color-signal
+  assertion, which the browser oracle observes via computed styles.
 
-Both files previously asserted `send_signal` against `MagicMock` process
-objects for every termination path. Those assertions are removed, not
-weakened — a mock cannot fail to die, which is why the v57 suite was green
-against a unload path that killed nothing. Mock-based tests are retained only
-where the criterion is about a call being made (`spawn.assert_not_called()` for
-load idempotence), never where it is about a resource reaching a state.
-
-**New test-suite dependency:** these files spawn real short-lived Python HTTP
-servers on ephemeral ports (`socket` bind-to-0), and guarantee teardown through
-a fixture that kills survivors. No new package requirement — `socket`,
-`subprocess`, and `sys` are stdlib. The sandbox must permit loopback TCP on
-ephemeral ports; the existing UI suite already binds `APP_PORT` and the LLM
-stub, so this is not a new capability.
+**Test-suite properties inherited from D-58:** element location is via
+`contracts.ui` testids only (checked at freeze by
+`scripts/check-test-surface.py`); synchronization is via Playwright
+`expect()` auto-waiting only (no `page.wait_for_timeout`, no `time.sleep`);
+zero retries.
 
 ## Smoke checks
 
-Unchanged from v57.
+Unchanged from v60. `src/static/current-chat.css` needs no smoke check —
+its content is exercised entirely by the browser oracle's computed-style
+assertions.
 
 ## Rollback / risk
 
-* Rollback is reverting `src/services/models.py` and re-freezing the v57
-  oracle. The route contracts and response schemas are untouched either way.
-* **Risk — killing a process this app did not spawn.** Discovery by command
-  basename or by port could in principle match an unrelated process. Mitigation
-  is that both script models launch from absolute, project-specific paths
-  (`/Users/arc.elixir/dev/ds4/run-server.sh`, `~/nemotron-vmlx.py`) and bind
-  fixed loopback ports. Accepted; the alternative is the current defect.
-* **Risk — AC-103 turns a previously silent success into a visible error.** A
-  user who unloads a model the app genuinely cannot kill now sees an error
-  instead of a false success. That is the point, but it is a user-visible
-  behavior change worth naming at UAT.
-* **Risk — real-subprocess tests are slower and can flake** on a loaded machine
-  (the AC-42 precedent). Timeouts are set at 10 s with polling rather than
-  fixed sleeps, and every wait is a predicate loop, so the failure mode is a
-  clear assertion rather than a race.
+* Rollback is reverting `src/static/index.html`, `src/static/app.js`, and
+  removing `src/static/current-chat.css`, then re-freezing v60. No schema
+  changes, no route changes, no persistence changes.
+* **Risk — sidebar rename regression.** AC-119 / AC-120 require the sidebar
+  and header to stay in sync on rename from either surface. If the coder's
+  implementation double-fires the update, the sidebar could momentarily
+  show a stale value. Mitigation: the paired tests
+  (`test_sidebar_rename_updates_header_immediately` and its inverse) assert
+  the visible state after the rename settles, using Playwright's auto-wait,
+  so a race that eventually settles correctly passes and a race that
+  settles wrongly fails.
+* **Risk — refresh-restore change is user-visible.** A user who relied on
+  the old "refresh returns to the same chat" behavior will see refresh
+  land on the newest thread instead. This is the point of AC-123, but it
+  is a visible behavior change worth naming at UAT.
+* **Risk — highlight visual pass on 10 themes.** The 10-theme system means
+  the highlight's non-color signal must be visible under every theme. The
+  test asserts the DOM attribute and one computed-style differentiator; a
+  theme-specific regression that leaves the mark invisible to the eye but
+  present in the DOM would pass the test. Named as a UAT check.
+* **Risk — real-browser tests are slower and can flake.** Same class as
+  M28's `test_thinking_placeholder_shows_then_clears`. All waits are
+  Playwright `expect()` predicates, not fixed sleeps.
 
 ## CEO acceptance (D-44)
 
-Observable without reading code:
+Observable without reading code, on any browser:
 
-1. Conductor starts the app and loads DeepSeek from the dropdown.
-2. Conductor restarts the app (any way — a file save is enough).
-3. CEO clicks Unload.
-4. **Expected:** the model actually stops — the dropdown shows it unloaded, and
-   the conductor can show that nothing is listening on the model's port.
-   Before this delta, step 4 reported success and the model kept running.
+1. Open the app. **Expected:** the current thread's title appears in the
+   header between the model selector and the right-side controls; the
+   same thread is highlighted in the sidebar list.
+2. Click the header title, type a new title, press Enter. **Expected:**
+   the header updates immediately and the sidebar row for that thread
+   updates to match — with no page refresh.
+3. Rename the same thread from the sidebar rename affordance.
+   **Expected:** the header title updates to match immediately.
+4. Refresh the page. **Expected:** the newest thread opens (top of the
+   sidebar list) and is highlighted; no matter which thread was open
+   before the refresh, the same top-of-list thread is what appears.
+5. Delete the currently-open thread. **Expected:** the newest remaining
+   thread opens and is highlighted; the header title updates to match.
