@@ -1,39 +1,50 @@
-PRD — testchat M31: current-chat awareness (spec v64)
+PRD — testchat M31: current-chat awareness, as built (spec v65)
 
 ## Provenance caveat — READ BEFORE APPROVING (INV-1)
 
-This delta was authored by a TPM seat that had **already read `src/`** earlier in
-the same session, while occupying the conductor seat across M29 (v58 → v59) and
-the subsequent pipeline-integrity work (v59 → v60). Agent-mode TPM is required
-never to read `src/` (D-39) precisely so the oracle cannot be derived from the
-implementation (INV-1). That property does **not** hold for this delta.
+This version is a **catch-up freeze**: it re-trues the spec to code that
+already exists. After the v60–v64 pipeline arc halted five times on spec
+defects, the CEO directed a direct hand-build; M31 shipped outside the
+pipeline (testchat commit `2ac5827`), along with four further behaviors the
+CEO requested live (full-length titles, history-copy hygiene, a resizable
+sidebar, model-dropdown guidance).
 
-What this does and does not mean:
+The INV-1 situation is therefore **inverted, not merely weakened**: the six
+new tests in this delta (AC-127..AC-132) were written *after* the
+implementation, *by its author*. They are regression pins on as-built
+behavior — they cannot serve as an independent oracle for it, and no
+disposition short of clean-room re-authoring would make them one. The 15
+M31 tests (AC-111..AC-126) predate the implementation (frozen at v63/v64,
+untouched here) and retain their original, weaker v64 caveat.
 
-* The acceptance criteria below are derived from CEO-stated user problems
-  ("current chat is not discoverable in the sidebar list", "refresh takes the
-  chat to a specific chat only") and from the M28 lesson that interaction
-  criteria must be specified up front, not discovered as live-fixes after
-  `[success]`. They are written as outcomes any correct implementation must
-  satisfy.
-* The tests are nonetheless implementation-informed by construction. Their
-  independence is asserted by the author, not guaranteed by structure — which
-  is exactly the weaker claim INV-1 exists to avoid relying on.
+What approving this version means:
 
-Recommended dispositions, CEO's call:
+1. The inventory and prose stop lying about the tree — the pipeline can plan
+   against reality again. This is the load-bearing purpose of v65.
+2. The four hand-built behaviors get regression protection with honest
+   provenance labels, instead of remaining permanently untested.
+3. If independent verification of the hand-built areas is ever wanted, the
+   path is a clean-context TPM re-authoring tests from this PRD's AC text
+   alone (`scripts/tpm-agent.sh`, fresh session). Not required to proceed.
 
-1. **Accept with the caveat recorded** (this section stays in the frozen PRD).
-   Fastest; the residual risk is a blind spot shared by spec and code.
-2. **Re-author the tests from a clean TPM context** (`scripts/tpm-agent.sh` in
-   a fresh session, which has never read `src/`), using this PRD as input.
-   Restores INV-1 fully. This PRD is contamination-tolerant and can be reused
-   as-is.
+---
 
-Precedent: M29 (v58) and v60 both landed under option 1. This is a UI milestone
-(M28-shape), where the primary failure mode is not INV-1 — it is unspec'd
-interaction paths surfacing as post-`[success]` live-fixes. The spec below
-addresses that failure mode directly by exhaustively specifying interaction
-ACs; INV-1 contamination is the second-order risk.
+## What changes v64 → v65
+
+* Spec re-true: the ERD now describes the as-built architecture
+  (`current-chat.js`/`.css` linked from `index.html` — NOT the v64
+  "app.js injects a `<style>` element" design, which was never built).
+* Inventory grows by four files: `src/static/current-chat.js`,
+  `src/static/current-chat.css`, `src/static/sidebar-resize.js`,
+  `src/static/sidebar-resize.css`.
+* Six new ACs (AC-127..AC-132) pin the hand-built behaviors; six new tests
+  enforce them. All 170 existing tests carry forward byte-identical in
+  intent (test_ui.py is restaged with the six appended).
+* `contracts.changed_files` (D-86) declares the seven files this version's
+  work touched. Nothing here opens new coder scope — the work is built;
+  the declaration documents it.
+* AC-28 (model locked after first send) is **untouched**. Removing it is a
+  live CEO question, deferred to its own version.
 
 ---
 
@@ -189,6 +200,47 @@ outcome terms; the coder retires the old mechanism as part of implementing it.
 
 ---
 
+## v65 catch-up criteria (AC-127..AC-132) — as-built behavior, regression pins
+
+**Title storage**
+
+* **AC-127:** THE SYSTEM SHALL store thread titles at their full length (to a
+  storage cap of 120 characters) and SHALL NOT bake a truncation marker into
+  the stored string. Visual shortening is render-time only (CSS ellipsis), so
+  a wider sidebar reveals more of the same stored title, and the header
+  tooltip always carries the full stored text.
+
+**Copy hygiene**
+
+* **AC-128:** THE SYSTEM SHALL provide, for every assistant reply bubble —
+  including one restored from persisted history after a reload — a copy
+  source that is free of `<think>` reasoning markup, even when the stored
+  message content carries such markup inline.
+
+**Sidebar resize**
+
+* **AC-129:** THE SYSTEM SHALL let the user resize the sidebar by dragging
+  the divider between the sidebar and the chat panel. The width SHALL clamp
+  to no less than 250px and no more than half the viewport width, and the
+  chosen width SHALL persist across a reload.
+
+**Model selection guidance**
+
+* **AC-130:** WHEN no model is loaded and the active thread has no saved
+  model, THE SYSTEM SHALL show a placeholder ("Select model...") in the
+  model field, visually distinct from a real selection (muted, italic — the
+  same voice as the message-input placeholder), and SHALL NOT display an
+  unloaded model as if it were selected.
+* **AC-131:** WHEN the user sends a message with no model selected, THE
+  SYSTEM SHALL show guidance naming the fix (pick a model) instead of
+  surfacing a raw backend error, and SHALL NOT dispatch the chat request.
+* **AC-132:** WHEN the user picks an unloaded model from the dropdown, THE
+  SYSTEM SHALL ask for confirmation before loading; cancelling SHALL revert
+  the selection to its prior value and SHALL NOT load anything or send
+  anything.
+
+---
+
 ## Out of scope
 
 * **Sidebar row auto-scroll on switch.** AC-121 requires the mark to be
@@ -207,6 +259,14 @@ outcome terms; the coder retires the old mechanism as part of implementing it.
   legitimately empty (created but never messaged) shows whatever the
   existing `thread-item` display already shows in that state; this
   milestone does not redefine that behavior.
+* **(v65) Divider double-click reset.** Double-clicking the divider resets
+  the sidebar to its default width. Shipped, deliberately unpinned — a
+  convenience whose exact semantics may change.
+* **(v65) Load-then-auto-send.** Sending with an unloaded model *selected*
+  offers to load it and then dispatches the pending message automatically.
+  The confirmation modal contract is pinned (AC-132); the auto-resubmit
+  tail is shipped but unpinned, pending a mock-load harness that doesn't
+  spawn a real model process inside the fixture.
 
 ---
 

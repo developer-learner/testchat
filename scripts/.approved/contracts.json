@@ -1,535 +1,562 @@
 {
-  "erd_version": 64,
-  "files": [
-    "src/services/websearch.py",
-    "src/api/status.py",
-    "src/api/chat.py",
-    "src/api/threads.py",
-    "src/static/index.html",
-    "src/static/threads.js",
-    "src/static/app.js",
-    "src/static/markdown.js",
-    "src/static/rain.js",
-    "src/static/style.css",
-    "src/services/models.py",
-    "src/api/models.py"
-  ],
-  "entry_points": [
-    "src.main:app",
-    "src.services.llm",
-    "src.services.llm:stream_reply",
-    "src.services.models",
-    "src.services.models:list_models",
-    "src.services.models:load_nemotron",
-    "src.services.models:unload_nemotron",
-    "src.services.models:is_nemotron_loaded",
-    "src.api.chat",
-    "src.services.storage",
-    "src.services.storage:load_snapshot",
-    "src.services.storage:save_snapshot",
-    "src.api.threads",
-    "src.api.settings",
-    "src.api.status",
-    "src.services.settings",
-    "src.services.settings:load_settings",
-    "src.services.settings:save_settings",
-    "src.services.settings:get_system_prompt",
-    "src.services.websearch",
-    "src.services.websearch:search_web",
-    "src.services.websearch:build_prompt",
-    "src.services.websearch:is_configured",
-    "src.services.websearch:WebSearchError",
-    "src.services.models:load_script_model",
-    "src.services.models:unload_script_model",
-    "src.services.models:is_script_model_loaded",
-    "src.services.models:list_model_catalog",
-    "src.services.models:get_script_model"
-  ],
-  "routes": [
-    {
-      "id": "route:GET /",
-      "method": "GET",
-      "path": "/"
-    },
-    {
-      "id": "route:POST /api/v1/chat",
-      "method": "POST",
-      "path": "/api/v1/chat"
-    },
-    {
-      "id": "route:GET /api/v1/models",
-      "method": "GET",
-      "path": "/api/v1/models"
-    },
-    {
-      "id": "route:GET /api/v1/models/catalog",
-      "method": "GET",
-      "path": "/api/v1/models/catalog"
-    },
-    {
-      "id": "route:POST /api/v1/nemotron/load",
-      "method": "POST",
-      "path": "/api/v1/nemotron/load"
-    },
-    {
-      "id": "route:POST /api/v1/nemotron/unload",
-      "method": "POST",
-      "path": "/api/v1/nemotron/unload"
-    },
-    {
-      "id": "route:GET /static/{path}",
-      "method": "GET",
-      "path": "/static/{path}"
-    },
-    {
-      "id": "route:GET /api/v1/threads",
-      "method": "GET",
-      "path": "/api/v1/threads"
-    },
-    {
-      "id": "route:PUT /api/v1/threads",
-      "method": "PUT",
-      "path": "/api/v1/threads"
-    },
-    {
-      "id": "route:DELETE /api/v1/threads",
-      "method": "DELETE",
-      "path": "/api/v1/threads"
-    },
-    {
-      "id": "route:GET /api/v1/settings",
-      "method": "GET",
-      "path": "/api/v1/settings"
-    },
-    {
-      "id": "route:PUT /api/v1/settings",
-      "method": "PUT",
-      "path": "/api/v1/settings"
-    },
-    {
-      "id": "route:GET /api/v1/status",
-      "method": "GET",
-      "path": "/api/v1/status"
-    },
-    {
-      "id": "route:POST /api/v1/script-models/{model_id}/load",
-      "method": "POST",
-      "path": "/api/v1/script-models/{model_id}/load"
-    },
-    {
-      "id": "route:POST /api/v1/script-models/{model_id}/unload",
-      "method": "POST",
-      "path": "/api/v1/script-models/{model_id}/unload"
-    }
-  ],
-  "schemas": [
-    {
-      "id": "schema:ChatRequest",
-      "fields": {
-        "message": "string",
-        "history": "array of HistoryEntry, optional, default []",
-        "model": "string, optional, default null",
-        "web": "boolean, optional, default false \u2014 when true the backend performs one Tavily search before the LLM call (AC-86)"
-      }
-    },
-    {
-      "id": "schema:HistoryEntry",
-      "fields": {
-        "role": "string, literal 'user' or 'assistant'",
-        "content": "string"
-      }
-    },
-    {
-      "id": "schema:SourceLink",
-      "fields": {
-        "title": "string",
-        "url": "string"
-      }
-    },
-    {
-      "id": "schema:SSESources",
-      "fields": {
-        "event": "literal 'sources' \u2014 emitted at most once, BEFORE any token event, only when the request had web=true",
-        "sources": "array of {n: integer 1-based, title, url}; empty on search failure",
-        "notice": "string, present only on search failure: 'web search unavailable' (AC-89)"
-      }
-    },
-    {
-      "id": "schema:SSEToken",
-      "fields": {
-        "event": "literal 'token'",
-        "content": "string"
-      }
-    },
-    {
-      "id": "schema:SSEThink",
-      "fields": {
-        "event": "literal 'think'",
-        "content": "string"
-      }
-    },
-    {
-      "id": "schema:SSEDone",
-      "fields": {
-        "event": "literal 'done'"
-      }
-    },
-    {
-      "id": "schema:SSEError",
-      "fields": {
-        "event": "literal 'error'",
-        "message": "string"
-      }
-    },
-    {
-      "id": "schema:ModelInfo",
-      "fields": {
-        "id": "string",
-        "source": "string, literal 'lmstudio' or 'nemotron' or 'deepseek-v4-flash'"
-      }
-    },
-    {
-      "id": "schema:ModelsListResponse",
-      "fields": {
-        "models": "array of ModelInfo"
-      }
-    },
-    {
-      "id": "schema:NemotronLoadResponse",
-      "fields": {
-        "status": "string, literal 'loaded' or 'error'",
-        "message": "string, optional"
-      }
-    },
-    {
-      "id": "schema:ScriptModelLoadResponse",
-      "fields": {
-        "status": "string, literal 'loaded' or 'error'",
-        "message": "string, optional \u2014 present on 'error'"
-      }
-    },
-    {
-      "id": "schema:NemotronUnloadResponse",
-      "fields": {
-        "status": "string, literal 'unloaded' or 'error'",
-        "message": "string, optional"
-      }
-    },
-    {
-      "id": "schema:ScriptModelUnloadResponse",
-      "fields": {
-        "status": "string, literal 'unloaded' or 'error'",
-        "message": "string, optional \u2014 present on 'error'"
-      }
-    },
-    {
-      "id": "schema:ThreadSnapshot",
-      "fields": {
-        "id": "integer",
-        "title": "string",
-        "messages": "array of HistoryEntry (role: \"user\"|\"assistant\", content, ts, model, optional sources: array of SourceLink \u2014 absent, never empty-list, when the message had no web sources)",
-        "model": "string, may be empty",
-        "locked": "boolean"
-      }
-    },
-    {
-      "id": "schema:ThreadsPayload",
-      "fields": {
-        "threads": "array of ThreadSnapshot"
-      }
-    },
-    {
-      "id": "schema:ThreadsListResponse",
-      "fields": {
-        "threads": "array of ThreadSnapshot",
-        "quarantined": "boolean \u2014 true while a quarantined (unreadable) snapshot file sits beside the data file"
-      }
-    },
-    {
-      "id": "schema:StatusResponse",
-      "fields": {
-        "nemotron_loaded": "boolean",
-        "nemotron_rss_gb": "number",
-        "ram_used_gb": "number",
-        "ram_total_gb": "number",
-        "loadable_gb": "number",
-        "web_configured": "boolean \u2014 true iff TAVILY_API_KEY is set (AC-90)"
-      }
-    }
-  ],
-  "errors": [
-    {
-      "id": "error:422-validation",
-      "status": 422
-    },
-    {
-      "id": "error:503-nemotron-unavailable",
-      "status": 503
-    },
-    {
-      "id": "error:503-script-model-unavailable",
-      "status": 503
-    }
-  ],
-  "externals": [
-    {
-      "id": "external:lmstudio-models",
-      "probe": "curl -sS http://localhost:1234/api/v1/models",
-      "capture": "captures/lmstudio-models.json",
-      "notes": "Backend reads models[].key and models[].loaded_instances (non-empty = loaded). The UI-test mock serves this shape."
-    },
-    {
-      "id": "external:lmstudio-chat-stream",
-      "probe": "curl -sS -N -X POST http://localhost:1234/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"qwen/qwen3.6-27b\",\"messages\":[{\"role\":\"user\",\"content\":\"/no_think Say hi in three words\"}],\"stream\":true}'",
-      "capture": "captures/lmstudio-chat-stream.txt",
-      "notes": "OpenAI chunk shape. Captured reality (2026-07-08): thinking arrives INLINE as <think>...</think> inside delta.content \u2014 this LM Studio config emits no reasoning_content. Think text therefore reaches the frontend through SSE 'token' events; the frontend must render it via the think toggle AND strip it from stored/POSTed history. The 'think' SSE event path (reasoning_content) remains contractually valid for configs that parse reasoning."
-    },
-    {
-      "id": "external:tavily-search",
-      "probe": "curl -sS https://api.tavily.com/search -H 'Content-Type: application/json' -H \"Authorization: Bearer $TAVILY_API_KEY\" -d '{\"query\":\"latest stable Python version July 2026\",\"max_results\":4}'",
-      "capture": "captures/tavily-search.json",
-      "notes": "Captured 2026-07-17 against the live API. Backend reads top-level results[] only: url, title, content (extracted page prose \u2014 quality varies by page, hence the per-source char cap). score/raw_content/answer/images are present in the shape but unread. Key travels as Authorization: Bearer; TAVILY_ENDPOINT env overrides the URL so the sandboxed suite binds a loopback stub."
-    }
-  ],
-  "ui": [
-    {
-      "id": "ui:new-thread-btn",
-      "testid": "new-thread-btn",
-      "description": "sidebar 'New Chat' button"
-    },
-    {
-      "id": "ui:thread-item",
-      "testid": "thread-item",
-      "description": "each thread entry in the sidebar list (one per thread, newest thread first \u2014 reverse creation order)"
-    },
-    {
-      "id": "ui:message-input",
-      "testid": "message-input",
-      "description": "chat text input"
-    },
-    {
-      "id": "ui:send-btn",
-      "testid": "send-btn",
-      "description": "send button"
-    },
-    {
-      "id": "ui:think-toggle",
-      "testid": "think-toggle",
-      "description": "global thinking-visibility toggle button"
-    },
-    {
-      "id": "ui:think-content",
-      "testid": "think-content",
-      "description": "each span wrapping thinking text inside an assistant reply bubble (hidden unless toggle is on)"
-    },
-    {
-      "id": "ui:model-select",
-      "testid": "model-select",
-      "description": "model selector dropdown"
-    },
-    {
-      "id": "ui:msg-user",
-      "testid": "msg-user",
-      "description": "each user message bubble in the chat container"
-    },
-    {
-      "id": "ui:msg-assistant",
-      "testid": "msg-assistant",
-      "description": "each assistant reply bubble in the chat container"
-    },
-    {
-      "id": "ui:eject-model-btn",
-      "testid": "eject-model-btn",
-      "description": "single unload control right-aligned next to the model dropdown; hidden by default, revealed while the dropdown has focus (approximates 'visible while the model menu is open' \u2014 native selects expose no open event); click opens unload-confirm-modal; no-op when no script model is loaded (M28a)"
-    },
-    {
-      "id": "ui:load-confirm-modal",
-      "testid": "load-confirm-modal",
-      "description": "confirmation dialog shown when an unloaded script model is selected in the dropdown; shows the model name and the live RAM figures from /api/v1/status; nothing is launched until confirmed (M28a)"
-    },
-    {
-      "id": "ui:load-confirm",
-      "testid": "load-confirm",
-      "description": "confirm button inside load-confirm-modal; closes the modal and POSTs /api/v1/script-models/{id}/load (M28a)"
-    },
-    {
-      "id": "ui:load-cancel",
-      "testid": "load-cancel",
-      "description": "cancel button inside load-confirm-modal; closes the modal and reverts the dropdown to the previous selection - no load request is sent (M28a)"
-    },
-    {
-      "id": "ui:unload-confirm-modal",
-      "testid": "unload-confirm-modal",
-      "description": "confirmation dialog opened by eject-model-btn, naming the loaded script model; nothing is stopped until confirmed (M28a)"
-    },
-    {
-      "id": "ui:unload-confirm",
-      "testid": "unload-confirm",
-      "description": "confirm button inside unload-confirm-modal; closes the modal and POSTs /api/v1/script-models/{id}/unload (M28a)"
-    },
-    {
-      "id": "ui:unload-cancel",
-      "testid": "unload-cancel",
-      "description": "cancel button inside unload-confirm-modal; closes the modal, nothing is sent (M28a)"
-    },
-    {
-      "id": "ui:delete-confirm-modal",
-      "testid": "delete-confirm-modal",
-      "description": "confirmation dialog for destructive actions (message-pair delete, thread delete); reuses the settings-modal overlay pattern (M28d)"
-    },
-    {
-      "id": "ui:delete-confirm",
-      "testid": "delete-confirm",
-      "description": "confirm button inside delete-confirm-modal; closes the modal and executes the pending delete (M28d)"
-    },
-    {
-      "id": "ui:delete-cancel",
-      "testid": "delete-cancel",
-      "description": "cancel button inside delete-confirm-modal; closes the modal, nothing is deleted (M28d)"
-    },
-    {
-      "id": "ui:settings-toggle",
-      "testid": "settings-toggle",
-      "description": "gear button opening the system-prompt modal (already carries this testid)"
-    },
-    {
-      "id": "ui:theme-toggle",
-      "testid": "theme-toggle",
-      "description": "theme cycle button (already carries this testid)"
-    },
-    {
-      "id": "ui:system-prompt-input",
-      "testid": "system-prompt-input",
-      "description": "textarea inside the settings modal"
-    },
-    {
-      "id": "ui:settings-save",
-      "testid": "settings-save",
-      "description": "settings modal Save button"
-    },
-    {
-      "id": "ui:settings-cancel",
-      "testid": "settings-cancel",
-      "description": "settings modal Cancel button"
-    },
-    {
-      "id": "ui:status-strip",
-      "testid": "status-strip",
-      "description": "footer status strip (model / RAM / tok-s)"
-    },
-    {
-      "id": "ui:thread-rename-btn",
-      "testid": "thread-rename-btn",
-      "description": "per-thread rename button in the sidebar (one per thread)"
-    },
-    {
-      "id": "ui:thread-delete-btn",
-      "testid": "thread-delete-btn",
-      "description": "per-thread delete button in the sidebar (one per thread)"
-    },
-    {
-      "id": "ui:thread-rename-input",
-      "testid": "thread-rename-input",
-      "description": "inline rename input that replaces a thread title during rename"
-    },
-    {
-      "id": "ui:matrix-rain",
-      "testid": "matrix-rain",
-      "description": "full-screen digital-rain canvas backdrop; present and visible ONLY while the matrix theme is active"
-    },
-    {
-      "id": "ui:terminal-titlebar",
-      "testid": "terminal-titlebar",
-      "description": "terminal window title bar (three window-control dots + session title) at the top of the chat panel; visible ONLY while the phosphor theme is active"
-    },
-    {
-      "id": "ui:thread-search-input",
-      "testid": "thread-search-input",
-      "description": "sidebar search box; typing filters the thread list to threads whose title or message content contains the text (case-insensitive); empty restores the full list"
-    },
-    {
-      "id": "ui:search-hit",
-      "testid": "search-hit",
-      "description": "highlight wrapper around each occurrence of the active sidebar search text inside an opened thread's messages; present ONLY while a search is active"
-    },
-    {
-      "id": "ui:search-hit-count",
-      "testid": "search-hit-count",
-      "description": "current-position/total counter for search hits in the open thread (e.g. '2/7'); visible only while a search is active"
-    },
-    {
-      "id": "ui:search-prev-btn",
-      "testid": "search-prev-btn",
-      "description": "moves the current-search-hit selection to the previous hit, wrapping from the first to the last"
-    },
-    {
-      "id": "ui:search-next-btn",
-      "testid": "search-next-btn",
-      "description": "moves the current-search-hit selection to the next hit, wrapping from the last back to the first"
-    },
-    {
-      "id": "ui:save-status",
-      "testid": "save-status",
-      "description": "status-strip save indicator: empty while persists succeed, 'not saved' after a failed persist (AC-75/76)"
-    },
-    {
-      "id": "ui:history-status",
-      "testid": "history-status",
-      "description": "status-strip history indicator: empty while the saved history loads cleanly, 'history unreadable (backup kept)' after a corrupt snapshot was quarantined at load (AC-80/81)"
-    },
-    {
-      "id": "ui:msg-meta",
-      "testid": "msg-meta",
-      "description": "per-bubble meta span; its data-meta attribute carries the hover text: time for today's messages, date + time for past-day messages (AC-83), plus the model name when stored"
-    },
-    {
-      "id": "ui:web-toggle",
-      "testid": "web-toggle",
-      "description": "composer globe button arming web search for the NEXT message only; default OFF, carries class 'active' while armed, resets to OFF on send (AC-84); disabled while the backend reports web_configured false (AC-90)"
-    },
-    {
-      "id": "ui:msg-sources",
-      "testid": "msg-sources",
-      "description": "container under an assistant reply bubble holding that reply's source links (and the failure notice); present ONLY on web-informed replies (AC-88)"
-    },
-    {
-      "id": "ui:source-link",
-      "testid": "source-link",
-      "description": "each numbered source anchor inside msg-sources; href = the source URL, opens in a new tab (AC-88)"
-    },
-    {
-      "id": "ui:web-notice",
-      "testid": "web-notice",
-      "description": "'web search unavailable' span inside msg-sources when the search failed (AC-89); live-render only, never persisted"
-    },
-    {
-      "id": "ui:current-thread-title",
-      "testid": "current-thread-title",
-      "description": "header display of the current thread's title, between the model selector and the header's right-side controls; click enters inline edit mode (AC-111, AC-113); truncated single-line with native tooltip when long (AC-112)"
-    },
-    {
-      "id": "ui:current-thread-title-input",
-      "testid": "current-thread-title-input",
-      "description": "inline editable input that replaces current-thread-title during header rename; present only in edit mode; Enter commits, Escape reverts, blur commits if non-empty (AC-113..AC-118)"
-    }
-  ],
-  "smoke_checks": {
-    "src/services/websearch.py": "grep -q 'WebSearchError' src/services/websearch.py && grep -q 'TAVILY_ENDPOINT' src/services/websearch.py && grep -q 'def build_prompt' src/services/websearch.py && grep -q 'plain square' src/services/websearch.py",
-    "src/api/status.py": "grep -q 'web_configured' src/api/status.py",
-    "src/api/chat.py": "grep -q 'web: bool = False' src/api/chat.py && grep -q 'event: sources' src/api/chat.py && grep -q 'get_script_model' src/api/chat.py",
-    "src/api/threads.py": "grep -q 'class SourceLink' src/api/threads.py && grep -q 'exclude_none=True' src/api/threads.py",
-    "src/static/index.html": "grep -q 'data-testid=\"web-toggle\"' src/static/index.html && grep -q 'data-testid=\"eject-model-btn\"' src/static/index.html && grep -q 'data-testid=\"delete-confirm-modal\"' src/static/index.html",
-    "src/static/threads.js": "grep -q 'addSources' src/static/threads.js && grep -q 'msg-sources' src/static/threads.js",
-    "src/static/app.js": "grep -q 'webToggle' src/static/app.js && grep -q 'pendingSources' src/static/app.js && grep -q '\u3010' src/static/app.js && grep -q 'ejectModelBtn' src/static/app.js && grep -q 'models/catalog' src/static/app.js",
-    "src/static/markdown.js": "grep -q 'renderBlocks' src/static/markdown.js",
-    "src/static/rain.js": "grep -q 'prefers-reduced-motion' src/static/rain.js",
-    "src/static/style.css": "grep -q 'data-theme=' src/static/style.css",
-    "src/services/models.py": "grep -q 'def list_model_catalog' src/services/models.py && grep -q 'SCRIPT_MODELS' src/services/models.py",
-    "src/api/models.py": "grep -q 'models/catalog' src/api/models.py && grep -q 'list_model_catalog' src/api/models.py"
+ "erd_version": 65,
+ "files": [
+  "src/services/websearch.py",
+  "src/api/status.py",
+  "src/api/chat.py",
+  "src/api/threads.py",
+  "src/static/index.html",
+  "src/static/threads.js",
+  "src/static/app.js",
+  "src/static/markdown.js",
+  "src/static/rain.js",
+  "src/static/style.css",
+  "src/services/models.py",
+  "src/api/models.py",
+  "src/static/current-chat.js",
+  "src/static/current-chat.css",
+  "src/static/sidebar-resize.js",
+  "src/static/sidebar-resize.css"
+ ],
+ "entry_points": [
+  "src.main:app",
+  "src.services.llm",
+  "src.services.llm:stream_reply",
+  "src.services.models",
+  "src.services.models:list_models",
+  "src.services.models:load_nemotron",
+  "src.services.models:unload_nemotron",
+  "src.services.models:is_nemotron_loaded",
+  "src.api.chat",
+  "src.services.storage",
+  "src.services.storage:load_snapshot",
+  "src.services.storage:save_snapshot",
+  "src.api.threads",
+  "src.api.settings",
+  "src.api.status",
+  "src.services.settings",
+  "src.services.settings:load_settings",
+  "src.services.settings:save_settings",
+  "src.services.settings:get_system_prompt",
+  "src.services.websearch",
+  "src.services.websearch:search_web",
+  "src.services.websearch:build_prompt",
+  "src.services.websearch:is_configured",
+  "src.services.websearch:WebSearchError",
+  "src.services.models:load_script_model",
+  "src.services.models:unload_script_model",
+  "src.services.models:is_script_model_loaded",
+  "src.services.models:list_model_catalog",
+  "src.services.models:get_script_model"
+ ],
+ "routes": [
+  {
+   "id": "route:GET /",
+   "method": "GET",
+   "path": "/"
   },
-  "no_edit_files": [
-    "src/static/markdown.js",
-    "src/static/rain.js",
-    "src/static/style.css"
-  ]
+  {
+   "id": "route:POST /api/v1/chat",
+   "method": "POST",
+   "path": "/api/v1/chat"
+  },
+  {
+   "id": "route:GET /api/v1/models",
+   "method": "GET",
+   "path": "/api/v1/models"
+  },
+  {
+   "id": "route:GET /api/v1/models/catalog",
+   "method": "GET",
+   "path": "/api/v1/models/catalog"
+  },
+  {
+   "id": "route:POST /api/v1/nemotron/load",
+   "method": "POST",
+   "path": "/api/v1/nemotron/load"
+  },
+  {
+   "id": "route:POST /api/v1/nemotron/unload",
+   "method": "POST",
+   "path": "/api/v1/nemotron/unload"
+  },
+  {
+   "id": "route:GET /static/{path}",
+   "method": "GET",
+   "path": "/static/{path}"
+  },
+  {
+   "id": "route:GET /api/v1/threads",
+   "method": "GET",
+   "path": "/api/v1/threads"
+  },
+  {
+   "id": "route:PUT /api/v1/threads",
+   "method": "PUT",
+   "path": "/api/v1/threads"
+  },
+  {
+   "id": "route:DELETE /api/v1/threads",
+   "method": "DELETE",
+   "path": "/api/v1/threads"
+  },
+  {
+   "id": "route:GET /api/v1/settings",
+   "method": "GET",
+   "path": "/api/v1/settings"
+  },
+  {
+   "id": "route:PUT /api/v1/settings",
+   "method": "PUT",
+   "path": "/api/v1/settings"
+  },
+  {
+   "id": "route:GET /api/v1/status",
+   "method": "GET",
+   "path": "/api/v1/status"
+  },
+  {
+   "id": "route:POST /api/v1/script-models/{model_id}/load",
+   "method": "POST",
+   "path": "/api/v1/script-models/{model_id}/load"
+  },
+  {
+   "id": "route:POST /api/v1/script-models/{model_id}/unload",
+   "method": "POST",
+   "path": "/api/v1/script-models/{model_id}/unload"
+  }
+ ],
+ "schemas": [
+  {
+   "id": "schema:ChatRequest",
+   "fields": {
+    "message": "string",
+    "history": "array of HistoryEntry, optional, default []",
+    "model": "string, optional, default null",
+    "web": "boolean, optional, default false \u2014 when true the backend performs one Tavily search before the LLM call (AC-86)"
+   }
+  },
+  {
+   "id": "schema:HistoryEntry",
+   "fields": {
+    "role": "string, literal 'user' or 'assistant'",
+    "content": "string"
+   }
+  },
+  {
+   "id": "schema:SourceLink",
+   "fields": {
+    "title": "string",
+    "url": "string"
+   }
+  },
+  {
+   "id": "schema:SSESources",
+   "fields": {
+    "event": "literal 'sources' \u2014 emitted at most once, BEFORE any token event, only when the request had web=true",
+    "sources": "array of {n: integer 1-based, title, url}; empty on search failure",
+    "notice": "string, present only on search failure: 'web search unavailable' (AC-89)"
+   }
+  },
+  {
+   "id": "schema:SSEToken",
+   "fields": {
+    "event": "literal 'token'",
+    "content": "string"
+   }
+  },
+  {
+   "id": "schema:SSEThink",
+   "fields": {
+    "event": "literal 'think'",
+    "content": "string"
+   }
+  },
+  {
+   "id": "schema:SSEDone",
+   "fields": {
+    "event": "literal 'done'"
+   }
+  },
+  {
+   "id": "schema:SSEError",
+   "fields": {
+    "event": "literal 'error'",
+    "message": "string"
+   }
+  },
+  {
+   "id": "schema:ModelInfo",
+   "fields": {
+    "id": "string",
+    "source": "string, literal 'lmstudio' or 'nemotron' or 'deepseek-v4-flash'"
+   }
+  },
+  {
+   "id": "schema:ModelsListResponse",
+   "fields": {
+    "models": "array of ModelInfo"
+   }
+  },
+  {
+   "id": "schema:NemotronLoadResponse",
+   "fields": {
+    "status": "string, literal 'loaded' or 'error'",
+    "message": "string, optional"
+   }
+  },
+  {
+   "id": "schema:ScriptModelLoadResponse",
+   "fields": {
+    "status": "string, literal 'loaded' or 'error'",
+    "message": "string, optional \u2014 present on 'error'"
+   }
+  },
+  {
+   "id": "schema:NemotronUnloadResponse",
+   "fields": {
+    "status": "string, literal 'unloaded' or 'error'",
+    "message": "string, optional"
+   }
+  },
+  {
+   "id": "schema:ScriptModelUnloadResponse",
+   "fields": {
+    "status": "string, literal 'unloaded' or 'error'",
+    "message": "string, optional \u2014 present on 'error'"
+   }
+  },
+  {
+   "id": "schema:ThreadSnapshot",
+   "fields": {
+    "id": "integer",
+    "title": "string",
+    "messages": "array of HistoryEntry (role: \"user\"|\"assistant\", content, ts, model, optional sources: array of SourceLink \u2014 absent, never empty-list, when the message had no web sources)",
+    "model": "string, may be empty",
+    "locked": "boolean"
+   }
+  },
+  {
+   "id": "schema:ThreadsPayload",
+   "fields": {
+    "threads": "array of ThreadSnapshot"
+   }
+  },
+  {
+   "id": "schema:ThreadsListResponse",
+   "fields": {
+    "threads": "array of ThreadSnapshot",
+    "quarantined": "boolean \u2014 true while a quarantined (unreadable) snapshot file sits beside the data file"
+   }
+  },
+  {
+   "id": "schema:StatusResponse",
+   "fields": {
+    "nemotron_loaded": "boolean",
+    "nemotron_rss_gb": "number",
+    "ram_used_gb": "number",
+    "ram_total_gb": "number",
+    "loadable_gb": "number",
+    "web_configured": "boolean \u2014 true iff TAVILY_API_KEY is set (AC-90)"
+   }
+  }
+ ],
+ "errors": [
+  {
+   "id": "error:422-validation",
+   "status": 422
+  },
+  {
+   "id": "error:503-nemotron-unavailable",
+   "status": 503
+  },
+  {
+   "id": "error:503-script-model-unavailable",
+   "status": 503
+  }
+ ],
+ "externals": [
+  {
+   "id": "external:lmstudio-models",
+   "probe": "curl -sS http://localhost:1234/api/v1/models",
+   "capture": "captures/lmstudio-models.json",
+   "notes": "Backend reads models[].key and models[].loaded_instances (non-empty = loaded). The UI-test mock serves this shape."
+  },
+  {
+   "id": "external:lmstudio-chat-stream",
+   "probe": "curl -sS -N -X POST http://localhost:1234/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"qwen/qwen3.6-27b\",\"messages\":[{\"role\":\"user\",\"content\":\"/no_think Say hi in three words\"}],\"stream\":true}'",
+   "capture": "captures/lmstudio-chat-stream.txt",
+   "notes": "OpenAI chunk shape. Captured reality (2026-07-08): thinking arrives INLINE as <think>...</think> inside delta.content \u2014 this LM Studio config emits no reasoning_content. Think text therefore reaches the frontend through SSE 'token' events; the frontend must render it via the think toggle AND strip it from stored/POSTed history. The 'think' SSE event path (reasoning_content) remains contractually valid for configs that parse reasoning."
+  },
+  {
+   "id": "external:tavily-search",
+   "probe": "curl -sS https://api.tavily.com/search -H 'Content-Type: application/json' -H \"Authorization: Bearer $TAVILY_API_KEY\" -d '{\"query\":\"latest stable Python version July 2026\",\"max_results\":4}'",
+   "capture": "captures/tavily-search.json",
+   "notes": "Captured 2026-07-17 against the live API. Backend reads top-level results[] only: url, title, content (extracted page prose \u2014 quality varies by page, hence the per-source char cap). score/raw_content/answer/images are present in the shape but unread. Key travels as Authorization: Bearer; TAVILY_ENDPOINT env overrides the URL so the sandboxed suite binds a loopback stub."
+  }
+ ],
+ "ui": [
+  {
+   "id": "ui:new-thread-btn",
+   "testid": "new-thread-btn",
+   "description": "sidebar 'New Chat' button"
+  },
+  {
+   "id": "ui:thread-item",
+   "testid": "thread-item",
+   "description": "each thread entry in the sidebar list (one per thread, newest thread first \u2014 reverse creation order)"
+  },
+  {
+   "id": "ui:message-input",
+   "testid": "message-input",
+   "description": "chat text input"
+  },
+  {
+   "id": "ui:send-btn",
+   "testid": "send-btn",
+   "description": "send button"
+  },
+  {
+   "id": "ui:think-toggle",
+   "testid": "think-toggle",
+   "description": "global thinking-visibility toggle button"
+  },
+  {
+   "id": "ui:think-content",
+   "testid": "think-content",
+   "description": "each span wrapping thinking text inside an assistant reply bubble (hidden unless toggle is on)"
+  },
+  {
+   "id": "ui:model-select",
+   "testid": "model-select",
+   "description": "model selector dropdown"
+  },
+  {
+   "id": "ui:msg-user",
+   "testid": "msg-user",
+   "description": "each user message bubble in the chat container"
+  },
+  {
+   "id": "ui:msg-assistant",
+   "testid": "msg-assistant",
+   "description": "each assistant reply bubble in the chat container"
+  },
+  {
+   "id": "ui:eject-model-btn",
+   "testid": "eject-model-btn",
+   "description": "single unload control right-aligned next to the model dropdown; hidden by default, revealed while the dropdown has focus (approximates 'visible while the model menu is open' \u2014 native selects expose no open event); click opens unload-confirm-modal; no-op when no script model is loaded (M28a)"
+  },
+  {
+   "id": "ui:load-confirm-modal",
+   "testid": "load-confirm-modal",
+   "description": "confirmation dialog shown when an unloaded script model is selected in the dropdown; shows the model name and the live RAM figures from /api/v1/status; nothing is launched until confirmed (M28a)"
+  },
+  {
+   "id": "ui:load-confirm",
+   "testid": "load-confirm",
+   "description": "confirm button inside load-confirm-modal; closes the modal and POSTs /api/v1/script-models/{id}/load (M28a)"
+  },
+  {
+   "id": "ui:load-cancel",
+   "testid": "load-cancel",
+   "description": "cancel button inside load-confirm-modal; closes the modal and reverts the dropdown to the previous selection - no load request is sent (M28a)"
+  },
+  {
+   "id": "ui:unload-confirm-modal",
+   "testid": "unload-confirm-modal",
+   "description": "confirmation dialog opened by eject-model-btn, naming the loaded script model; nothing is stopped until confirmed (M28a)"
+  },
+  {
+   "id": "ui:unload-confirm",
+   "testid": "unload-confirm",
+   "description": "confirm button inside unload-confirm-modal; closes the modal and POSTs /api/v1/script-models/{id}/unload (M28a)"
+  },
+  {
+   "id": "ui:unload-cancel",
+   "testid": "unload-cancel",
+   "description": "cancel button inside unload-confirm-modal; closes the modal, nothing is sent (M28a)"
+  },
+  {
+   "id": "ui:delete-confirm-modal",
+   "testid": "delete-confirm-modal",
+   "description": "confirmation dialog for destructive actions (message-pair delete, thread delete); reuses the settings-modal overlay pattern (M28d)"
+  },
+  {
+   "id": "ui:delete-confirm",
+   "testid": "delete-confirm",
+   "description": "confirm button inside delete-confirm-modal; closes the modal and executes the pending delete (M28d)"
+  },
+  {
+   "id": "ui:delete-cancel",
+   "testid": "delete-cancel",
+   "description": "cancel button inside delete-confirm-modal; closes the modal, nothing is deleted (M28d)"
+  },
+  {
+   "id": "ui:settings-toggle",
+   "testid": "settings-toggle",
+   "description": "gear button opening the system-prompt modal (already carries this testid)"
+  },
+  {
+   "id": "ui:theme-toggle",
+   "testid": "theme-toggle",
+   "description": "theme cycle button (already carries this testid)"
+  },
+  {
+   "id": "ui:system-prompt-input",
+   "testid": "system-prompt-input",
+   "description": "textarea inside the settings modal"
+  },
+  {
+   "id": "ui:settings-save",
+   "testid": "settings-save",
+   "description": "settings modal Save button"
+  },
+  {
+   "id": "ui:settings-cancel",
+   "testid": "settings-cancel",
+   "description": "settings modal Cancel button"
+  },
+  {
+   "id": "ui:status-strip",
+   "testid": "status-strip",
+   "description": "footer status strip (model / RAM / tok-s)"
+  },
+  {
+   "id": "ui:thread-rename-btn",
+   "testid": "thread-rename-btn",
+   "description": "per-thread rename button in the sidebar (one per thread)"
+  },
+  {
+   "id": "ui:thread-delete-btn",
+   "testid": "thread-delete-btn",
+   "description": "per-thread delete button in the sidebar (one per thread)"
+  },
+  {
+   "id": "ui:thread-rename-input",
+   "testid": "thread-rename-input",
+   "description": "inline rename input that replaces a thread title during rename"
+  },
+  {
+   "id": "ui:matrix-rain",
+   "testid": "matrix-rain",
+   "description": "full-screen digital-rain canvas backdrop; present and visible ONLY while the matrix theme is active"
+  },
+  {
+   "id": "ui:terminal-titlebar",
+   "testid": "terminal-titlebar",
+   "description": "terminal window title bar (three window-control dots + session title) at the top of the chat panel; visible ONLY while the phosphor theme is active"
+  },
+  {
+   "id": "ui:thread-search-input",
+   "testid": "thread-search-input",
+   "description": "sidebar search box; typing filters the thread list to threads whose title or message content contains the text (case-insensitive); empty restores the full list"
+  },
+  {
+   "id": "ui:search-hit",
+   "testid": "search-hit",
+   "description": "highlight wrapper around each occurrence of the active sidebar search text inside an opened thread's messages; present ONLY while a search is active"
+  },
+  {
+   "id": "ui:search-hit-count",
+   "testid": "search-hit-count",
+   "description": "current-position/total counter for search hits in the open thread (e.g. '2/7'); visible only while a search is active"
+  },
+  {
+   "id": "ui:search-prev-btn",
+   "testid": "search-prev-btn",
+   "description": "moves the current-search-hit selection to the previous hit, wrapping from the first to the last"
+  },
+  {
+   "id": "ui:search-next-btn",
+   "testid": "search-next-btn",
+   "description": "moves the current-search-hit selection to the next hit, wrapping from the last back to the first"
+  },
+  {
+   "id": "ui:save-status",
+   "testid": "save-status",
+   "description": "status-strip save indicator: empty while persists succeed, 'not saved' after a failed persist (AC-75/76)"
+  },
+  {
+   "id": "ui:history-status",
+   "testid": "history-status",
+   "description": "status-strip history indicator: empty while the saved history loads cleanly, 'history unreadable (backup kept)' after a corrupt snapshot was quarantined at load (AC-80/81)"
+  },
+  {
+   "id": "ui:msg-meta",
+   "testid": "msg-meta",
+   "description": "per-bubble meta span; its data-meta attribute carries the hover text: time for today's messages, date + time for past-day messages (AC-83), plus the model name when stored"
+  },
+  {
+   "id": "ui:web-toggle",
+   "testid": "web-toggle",
+   "description": "composer globe button arming web search for the NEXT message only; default OFF, carries class 'active' while armed, resets to OFF on send (AC-84); disabled while the backend reports web_configured false (AC-90)"
+  },
+  {
+   "id": "ui:msg-sources",
+   "testid": "msg-sources",
+   "description": "container under an assistant reply bubble holding that reply's source links (and the failure notice); present ONLY on web-informed replies (AC-88)"
+  },
+  {
+   "id": "ui:source-link",
+   "testid": "source-link",
+   "description": "each numbered source anchor inside msg-sources; href = the source URL, opens in a new tab (AC-88)"
+  },
+  {
+   "id": "ui:web-notice",
+   "testid": "web-notice",
+   "description": "'web search unavailable' span inside msg-sources when the search failed (AC-89); live-render only, never persisted"
+  },
+  {
+   "id": "ui:current-thread-title",
+   "testid": "current-thread-title",
+   "description": "header display of the current thread's title, between the model selector and the header's right-side controls; click enters inline edit mode (AC-111, AC-113); truncated single-line with native tooltip when long (AC-112)"
+  },
+  {
+   "id": "ui:current-thread-title-input",
+   "testid": "current-thread-title-input",
+   "description": "inline editable input that replaces current-thread-title during header rename; present only in edit mode; Enter commits, Escape reverts, blur commits if non-empty (AC-113..AC-118)"
+  },
+  {
+   "id": "ui:sidebar-resizer",
+   "testid": "sidebar-resizer",
+   "description": "draggable divider between the sidebar and the chat panel (AC-129)"
+  },
+  {
+   "id": "ui:msg-error",
+   "testid": "msg-error",
+   "description": "guidance/error bubble in the chat container (AC-131); distinct from msg-assistant"
+  }
+ ],
+ "smoke_checks": {
+  "src/services/websearch.py": "grep -q 'WebSearchError' src/services/websearch.py && grep -q 'TAVILY_ENDPOINT' src/services/websearch.py && grep -q 'def build_prompt' src/services/websearch.py && grep -q 'plain square' src/services/websearch.py",
+  "src/api/status.py": "grep -q 'web_configured' src/api/status.py",
+  "src/api/chat.py": "grep -q 'web: bool = False' src/api/chat.py && grep -q 'event: sources' src/api/chat.py && grep -q 'get_script_model' src/api/chat.py",
+  "src/api/threads.py": "grep -q 'class SourceLink' src/api/threads.py && grep -q 'exclude_none=True' src/api/threads.py",
+  "src/static/index.html": "grep -q 'data-testid=\"web-toggle\"' src/static/index.html && grep -q 'data-testid=\"eject-model-btn\"' src/static/index.html && grep -q 'data-testid=\"delete-confirm-modal\"' src/static/index.html",
+  "src/static/threads.js": "grep -q 'addSources' src/static/threads.js && grep -q 'msg-sources' src/static/threads.js",
+  "src/static/app.js": "grep -q 'webToggle' src/static/app.js && grep -q 'pendingSources' src/static/app.js && grep -q '\u3010' src/static/app.js && grep -q 'ejectModelBtn' src/static/app.js && grep -q 'models/catalog' src/static/app.js",
+  "src/static/markdown.js": "grep -q 'renderBlocks' src/static/markdown.js",
+  "src/static/rain.js": "grep -q 'prefers-reduced-motion' src/static/rain.js",
+  "src/static/style.css": "grep -q 'data-theme=' src/static/style.css",
+  "src/services/models.py": "grep -q 'def list_model_catalog' src/services/models.py && grep -q 'SCRIPT_MODELS' src/services/models.py",
+  "src/api/models.py": "grep -q 'models/catalog' src/api/models.py && grep -q 'list_model_catalog' src/api/models.py",
+  "src/static/current-chat.js": "grep -q 'CurrentChat' src/static/current-chat.js && grep -q 'commitPending' src/static/current-chat.js",
+  "src/static/current-chat.css": "grep -qE \"data-active=['\\\"]true['\\\"]\" src/static/current-chat.css && grep -q 'current-chat-title' src/static/current-chat.css",
+  "src/static/sidebar-resize.js": "grep -q 'SidebarResize' src/static/sidebar-resize.js && grep -q 'tc-sidebar-width' src/static/sidebar-resize.js",
+  "src/static/sidebar-resize.css": "grep -q 'sidebar-resizer' src/static/sidebar-resize.css && grep -q 'col-resize' src/static/sidebar-resize.css"
+ },
+ "no_edit_files": [
+  "src/static/markdown.js",
+  "src/static/rain.js",
+  "src/static/style.css"
+ ],
+ "changed_files": [
+  "src/static/current-chat.js",
+  "src/static/current-chat.css",
+  "src/static/sidebar-resize.js",
+  "src/static/sidebar-resize.css",
+  "src/static/app.js",
+  "src/static/threads.js",
+  "src/static/index.html"
+ ]
 }

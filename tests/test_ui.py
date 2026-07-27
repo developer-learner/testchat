@@ -811,3 +811,184 @@ def test_newlines_in_header_title_are_stripped_on_commit(
     )
     # And the sidebar carries the same single-line rendering
     assert "\n" not in page.get_by_test_id("thread-item").first.inner_text()
+
+
+# =============================================================================
+# v65 catch-up (AC-127..AC-132) — behaviors shipped in the M31 hand-build.
+#
+# Provenance (PRD v65 caveat): these six tests were written AFTER the
+# implementation, by its author. They are regression pins on as-built
+# behavior, not an independent oracle for it.
+# =============================================================================
+
+
+# AC-127: titles are stored full-length; shortening is render-time only
+def test_thread_title_stores_full_text_beyond_thirty_chars(
+    page: Page, app_url: str
+) -> None:
+    long_msg = (
+        "chronicle of an unusually verbose opening message that would have "
+        "been cut at thirty characters before v65"
+    )
+    page.goto(app_url)
+    _send(page, long_msg)
+    _await_reply(page)
+    # Sidebar row carries the full stored text (CSS may clip the paint;
+    # the text itself is intact).
+    expect(page.get_by_test_id("thread-item").first).to_contain_text(long_msg)
+    # Header tooltip carries the same full string.
+    expect(page.get_by_test_id("current-thread-title")).to_have_attribute(
+        "title", long_msg
+    )
+    # And no truncation marker was baked into storage.
+    row_text = page.get_by_test_id("thread-item").first.inner_text()
+    assert not row_text.strip().endswith("..."), (
+        f"stored title must not end in a baked ellipsis: {row_text!r}"
+    )
+
+
+# AC-128: a history-restored reply's copy source is reasoning-free
+def test_reply_copy_source_strips_think_after_reload(
+    page: Page, app_url: str
+) -> None:
+    page.goto(app_url)
+    _send(page, "seed for copy provenance")
+    _await_reply(page)
+    page.reload()
+    expect(page.get_by_test_id("msg-assistant").first).to_be_visible()
+    # Fixture sanity: the stub stream embeds inline <think>...</think>, so
+    # the stored message MUST carry markup for this test to bite.
+    stored_has_think = page.evaluate(
+        "window.TC.threads.some(t => t.messages.some("
+        "m => m.role === 'assistant' && m.content.includes('<think>')))"
+    )
+    assert stored_has_think, (
+        "fixture reply no longer carries inline <think> — this test needs a "
+        "stream shape that exercises the strip path"
+    )
+    raw = page.evaluate(
+        "document.querySelector('[data-testid=\"msg-assistant\"]').dataset.raw"
+    )
+    assert "<think>" not in raw, f"copy source carries reasoning markup: {raw[:80]!r}"
+    assert "Hello" in raw, "copy source lost the reply's visible text"
+
+
+# AC-129: the divider drags, and width clamps at half the viewport
+def test_sidebar_divider_drags_and_clamps(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    handle = page.get_by_test_id("sidebar-resizer")
+    box = handle.bounding_box()
+    assert box is not None
+    grab_y = box["y"] + 200
+    page.mouse.move(box["x"] + box["width"] / 2, grab_y)
+    page.mouse.down()
+    page.mouse.move(400, grab_y, steps=4)
+    page.mouse.up()
+    width = page.evaluate(
+        "document.querySelector('.sidebar').getBoundingClientRect().width"
+    )
+    assert abs(width - 400) <= 6, f"drag to 400px landed at {width}px"
+    # Drag far past the middle — must clamp to viewport/2.
+    box = handle.bounding_box()
+    assert box is not None
+    page.mouse.move(box["x"] + box["width"] / 2, grab_y)
+    page.mouse.down()
+    page.mouse.move(1200, grab_y, steps=4)
+    page.mouse.up()
+    width = page.evaluate(
+        "document.querySelector('.sidebar').getBoundingClientRect().width"
+    )
+    half = page.evaluate("Math.round(window.innerWidth / 2)")
+    assert width <= half + 2, f"width {width}px escaped the half-viewport clamp {half}px"
+    assert width >= half - 6, f"width {width}px stopped short of the clamp {half}px"
+
+
+# AC-129: the chosen width survives a reload
+def test_sidebar_width_persists_across_reload(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    handle = page.get_by_test_id("sidebar-resizer")
+    box = handle.bounding_box()
+    assert box is not None
+    grab_y = box["y"] + 200
+    page.mouse.move(box["x"] + box["width"] / 2, grab_y)
+    page.mouse.down()
+    page.mouse.move(380, grab_y, steps=4)
+    page.mouse.up()
+    before = page.evaluate(
+        "document.querySelector('.sidebar').getBoundingClientRect().width"
+    )
+    assert abs(before - 380) <= 6
+    page.reload()
+    expect(page.get_by_test_id("sidebar-resizer")).to_be_visible()
+    after = page.evaluate(
+        "document.querySelector('.sidebar').getBoundingClientRect().width"
+    )
+    assert abs(after - before) <= 2, (
+        f"width did not persist across reload: {before}px -> {after}px"
+    )
+
+
+# AC-130 / AC-131: nothing loaded -> placeholder voice; Send guides, not 422
+def test_no_loaded_model_shows_placeholder_and_send_guides(
+    page: Page, app_url: str
+) -> None:
+    page.route(
+        "**/api/v1/models",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body='{"models":[]}'
+        ),
+    )
+    page.route(
+        "**/api/v1/models/catalog",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"models":[{"id":"nemotron","source":"nemotron","loaded":false}]}',
+        ),
+    )
+    page.goto(app_url)
+    select = page.get_by_test_id("model-select")
+    expect(select).to_have_value("")
+    shown = page.evaluate(
+        "document.querySelector('[data-testid=\"model-select\"]')"
+        ".selectedOptions[0].textContent"
+    )
+    assert "Select model" in shown, f"placeholder option not shown: {shown!r}"
+    # The M28 status rule already disables the Send button without a loaded
+    # model — pin that, then exercise the Enter path (form.requestSubmit
+    # bypasses the disabled submitter), which must guide, not 422.
+    expect(page.get_by_test_id("send-btn")).to_be_disabled()
+    page.get_by_test_id("message-input").fill("hello without a model")
+    page.get_by_test_id("message-input").press("Enter")
+    expect(page.get_by_test_id("msg-error")).to_contain_text("Pick a model")
+    expect(page.get_by_test_id("msg-user")).to_have_count(0)
+
+
+# AC-132: picking an unloaded model asks first; cancel reverts and sends nothing
+def test_unloaded_model_pick_asks_and_cancel_reverts(
+    page: Page, app_url: str
+) -> None:
+    page.route(
+        "**/api/v1/models",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body='{"models":[]}'
+        ),
+    )
+    page.route(
+        "**/api/v1/models/catalog",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"models":[{"id":"nemotron","source":"nemotron","loaded":false}]}',
+        ),
+    )
+    page.goto(app_url)
+    select = page.get_by_test_id("model-select")
+    expect(select).to_have_value("")
+    select.select_option("nemotron")
+    expect(page.get_by_test_id("load-confirm-modal")).to_be_visible()
+    page.get_by_test_id("load-cancel").click()
+    expect(page.get_by_test_id("load-confirm-modal")).to_be_hidden()
+    # Reverted to the prior (placeholder) selection; nothing loaded or sent.
+    expect(select).to_have_value("")
+    expect(page.get_by_test_id("msg-user")).to_have_count(0)

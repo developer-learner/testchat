@@ -150,6 +150,12 @@ tests/test_ui.py::test_reload_opens_newest_thread
 tests/test_ui.py::test_reload_after_current_deleted_opens_newest_remaining
 tests/test_ui.py::test_title_renders_as_text_not_html
 tests/test_ui.py::test_newlines_in_header_title_are_stripped_on_commit
+tests/test_ui.py::test_thread_title_stores_full_text_beyond_thirty_chars
+tests/test_ui.py::test_reply_copy_source_strips_think_after_reload
+tests/test_ui.py::test_sidebar_divider_drags_and_clamps
+tests/test_ui.py::test_sidebar_width_persists_across_reload
+tests/test_ui.py::test_no_loaded_model_shows_placeholder_and_send_guides
+tests/test_ui.py::test_unloaded_model_pick_asks_and_cancel_reverts
 tests/test_ui_websearch.py::test_web_toggle_present_default_off
 tests/test_ui_websearch.py::test_web_reply_shows_source_links_and_toggle_resets
 tests/test_ui_websearch.py::test_sources_persist_across_reload

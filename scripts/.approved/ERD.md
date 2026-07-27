@@ -1,174 +1,160 @@
-ERD — testchat M31: current-chat awareness (erd_version 64)
+ERD — testchat M31 as built + hand-build coverage (erd_version 65)
 
-## What changes v63 → v64
+## What changes v64 → v65
 
-A behavior delta that adds UI capability. Two inventory files may change (`src/static/index.html`,
-`src/static/app.js`). New visual rules are injected by `src/static/app.js`
-as a `<style>` element it creates at startup, so `src/static/style.css`
-remains in `contracts.no_edit_files` and no new stylesheet file is needed —
-a separate CSS file could not be loaded, since `index.html` carries the
-only `<link>` and is frequently outside the delta's editable scope.
+A catch-up re-true, not a build delta. M31 was hand-built outside the
+pipeline (commit `2ac5827` + `57b40b8`) after the v60–v64 arc; this version
+makes the frozen spec describe the tree as it actually is, adds the four
+new files to the inventory, and pins six hand-built behaviors
+(AC-127..AC-132) with regression tests. See the PRD provenance caveat —
+the new tests postdate the implementation and share its author.
 
-The delta specifies **16 acceptance criteria** (AC-111..AC-126) covering
-header title display, inline rename with full interaction paths, cross-source
-rename parity, sidebar highlight of the current thread, load / refresh
-selection policy, and content safety. See `PRD.md` for the criteria and for
-the INV-1 provenance caveat that must be read before approving this freeze.
+**The v64 design this supersedes was never built:** v64 specified that
+`src/static/app.js` would inject a `<style>` element at startup because a
+separate stylesheet "could not be loaded". The hand-build did the simpler
+correct thing v64 talked itself out of: it edited `index.html`, which was
+always editable (only `markdown.js`, `rain.js`, `style.css` are
+`no_edit_files` — "outside the delta" was a scoping artifact, not a
+property of the file).
 
-## Behavior newly locked
+## As-built architecture
 
-* **AC-111 / AC-112 — header title display.** The current thread's title is
-  rendered as text between the model selector and the header's right-side
-  controls, single-line, truncated with a native tooltip when it exceeds the
-  available width, present on every load and after every thread switch.
-  Pinned by
-  `test_ui.py::test_current_thread_title_shows_in_header`,
-  `test_header_title_updates_when_switching_threads`, and
-  `test_long_header_title_truncates_with_full_text_in_tooltip`.
+* **`src/static/current-chat.js`** (new) — owns the header title for the
+  active thread: display + tooltip refresh, inline rename (click → input
+  focused and pre-selected; Enter/blur commit; Escape reverts; empty or
+  whitespace-only commits revert; newlines collapse to spaces), in-place
+  sidebar-row patching on commit, and `commitPending()` which
+  `Threads.switchThread` calls so a mid-edit thread switch commits first
+  (AC-118). Exposes `window.CurrentChat = { refresh, commitPending }`.
+* **`src/static/current-chat.css`** (new) — header-title truncation
+  (`max-width: 38%`, ellipsis, native tooltip carries the full string),
+  edit-input styling, the `data-active` sidebar highlight (background tint
+  + 3px left bar — the non-color signal), and the `select-empty`
+  placeholder voice for the model field (muted + italic, matching the
+  message-input placeholder).
+* **`src/static/sidebar-resize.js`** (new) — drag handle logic on
+  `#sidebar-resizer`: drives a `--sidebar-w` CSS custom property, clamps to
+  [250px, 50vw], persists the width to `localStorage`
+  (`tc-sidebar-width`), restores it on load, re-clamps on window resize,
+  and resets to the 250px default on double-click.
+* **`src/static/sidebar-resize.css`** (new) — re-points `.sidebar`'s fixed
+  width at `var(--sidebar-w, 250px)` with `max-width: 50vw`, and styles the
+  5px grab strip (hover/active affordance, drag-time cursor and
+  user-select suppression).
+* **`src/static/index.html`** — links both new stylesheets after
+  `style.css`, hosts the header title span + rename input (between the
+  model field and the settings control), the `sidebar-resizer` divider
+  element, and loads `current-chat.js` and `sidebar-resize.js` between
+  `threads.js` and `app.js` (load order matters: `app.js` init calls
+  `Threads.renderSidebar()`, which calls `CurrentChat.refresh()`).
+* **`src/static/threads.js`** — sidebar rows carry
+  `data-active="true|false"` and `data-thread-id`; `renderSidebar()`
+  re-syncs the header via `CurrentChat.refresh()`; `switchThread()` first
+  calls `CurrentChat.commitPending()`; deleting the current thread falls
+  back to the **newest** remaining thread; `updateTitle`/`maybeRetitle`
+  store full-length titles (cap 120, no baked "..." — AC-127);
+  `renderThreadMessages` builds each restored assistant bubble's copy
+  source (`dataset.raw`) with citations normalized and `<think>` stripped,
+  matching the live-stream path (AC-128); `createThread` prefers a
+  *loaded* model over the dropdown's sticky value and leaves the model
+  empty (placeholder) when nothing is loaded.
+* **`src/static/app.js`** — initial-load hydration opens the **newest**
+  thread (`threads[]` is oldest-first, so the last element — AC-123);
+  `populateModelOptions` prefers a loaded model when nothing matches,
+  else prepends a disabled hidden "Select model..." option and tags the
+  field `select-empty` (AC-130); the submit path guards empty-model
+  (guidance bubble `msg-error`, AC-131) and unloaded-model (load-confirm
+  modal, then auto-resubmit on success) before any request; error bubbles
+  carry `data-testid="msg-error"`.
 
-* **AC-113..AC-118 — inline header rename.** Click enters edit mode with the
-  input focused and pre-selected; Enter commits, Escape reverts, blur commits
-  if the input is non-empty, empty-or-whitespace is never persisted, and
-  switching threads mid-edit commits the pending rename before the switch.
-  Pinned by
-  `test_click_header_title_enters_edit_mode`,
-  `test_enter_commits_header_title_edit`,
-  `test_escape_reverts_header_title_edit`,
-  `test_empty_header_title_commit_reverts_to_prior`,
-  and `test_switching_threads_mid_edit_commits_pending_rename`.
+## Behavior locked by this version (beyond the v64 set)
 
-* **AC-119 / AC-120 — cross-source parity.** A rename in the sidebar
-  updates the header instantly for the current thread; a rename in the
-  header updates the sidebar row for that thread instantly. Neither surface
-  requires a page refresh to see the other's change. Pinned by
-  `test_sidebar_rename_updates_header_immediately` and
-  `test_header_rename_updates_sidebar_row_immediately`.
+* **AC-127 — full-length title storage.** Pinned by
+  `test_thread_title_stores_full_text_beyond_thirty_chars`.
+* **AC-128 — history-copy hygiene.** Pinned by
+  `test_reply_copy_source_strips_think_after_reload` (the fixture stream
+  deliberately carries inline `<think>…</think>`, so the stored message
+  contains markup the copy source must not).
+* **AC-129 — sidebar resize: drag, clamp, persist.** Pinned by
+  `test_sidebar_divider_drags_and_clamps` and
+  `test_sidebar_width_persists_across_reload`.
+* **AC-130 / AC-131 — placeholder + send guidance.** Pinned by
+  `test_no_loaded_model_shows_placeholder_and_send_guides` (routes both
+  model endpoints to a nothing-loaded state).
+* **AC-132 — unloaded-pick confirmation contract.** Pinned by
+  `test_unloaded_model_pick_asks_and_cancel_reverts`.
 
-* **AC-121 / AC-122 — sidebar highlight.** Exactly one `thread-item`
-  carries `data-active="true"` at any time; every switch, create, or delete
-  of the current thread updates that attribute before the next paint. The
-  visible mark uses at least one non-color signal. Pinned by
-  `test_current_thread_is_highlighted_in_sidebar`,
-  `test_highlight_moves_when_switching_threads`, and
-  `test_highlight_moves_when_current_thread_deleted`.
+The 15 M31 tests (AC-111..AC-126) carry forward untouched and now pass
+against the as-built code.
 
-* **AC-123 / AC-124 — load / refresh selection policy.** On reload the
-  system opens the first-in-sidebar-order thread (matching the existing
-  `test_sidebar_lists_newest_thread_first` ordering); zero threads causes
-  creation of a new empty thread. Pinned by
-  `test_reload_opens_newest_thread` and
-  `test_reload_after_current_deleted_opens_newest_remaining`.
+## File inventory
 
-* **AC-125 / AC-126 — content safety.** Titles are rendered as text (no
-  HTML injection); newlines in a header-title commit are stripped before
-  persist. Pinned by `test_title_renders_as_text_not_html` and
-  `test_newlines_in_header_title_are_stripped_on_commit`.
+16 files. Added this version (all new, all shipped):
 
-## Implementation notes (non-binding — the tests are the contract)
+* `src/static/current-chat.js`
+* `src/static/current-chat.css`
+* `src/static/sidebar-resize.js`
+* `src/static/sidebar-resize.css`
 
-The oracle depends on two new testids being present in the DOM:
+`no_edit_files` unchanged: `markdown.js`, `rain.js`, `style.css`.
 
-* `current-thread-title` — the display element that renders the title text
-  (a `<span>`, `<h1>`, or similar). Also serves as the click target that
-  enters edit mode per AC-113.
-* `current-thread-title-input` — the input element used for the inline
-  rename. Present only while in edit mode; can be a text `<input>` or a
-  `contenteditable` element.
-
-Both are added to `contracts.ui`; INV-4 rejects any test that references a
-testid not in the inventory.
-
-Sidebar highlight uses `data-active="true"` on the existing `thread-item`
-testid rather than a new testid, because the highlight is a state on an
-existing element and the visual choice (border, background, glyph) is not
-prescribed.
-
-Header-title layout and sidebar highlight rules are injected by
-`src/static/app.js` into a `<style>` element it creates and appends at
-startup. This lets `src/static/style.css` remain in `no_edit_files`
-(protecting the 10-theme system from a coder rewrite) while giving the
-coder somewhere to put the new visual rules that is guaranteed to load.
-
-The load-order semantics live in `src/static/app.js`. The coder retires
-whatever mechanism currently persists a last-opened thread id and
-substitutes the "first sidebar row" rule per AC-123.
-
-## File inventory (M31 build) — changed from v60
-
-No inventory changes from v63. Files the delta may or must change:
-
-* **May change:** `src/static/index.html` (header title slot markup),
-  `src/static/app.js` (header title wire-up, edit-mode handling, sidebar
-  highlight sync, load-selection policy, and the injected `<style>` element
-  carrying the highlight and header-title visual rules).
-* **Must not change:** every other file in the inventory. `no_edit_files`
-  is unchanged from v60; the delta-scoped no-edit inversion (v60 pipeline
-  gate) blocks the coder on any file not named by `--affected` for this
-  delta.
+`contracts.changed_files` (D-86) declares the seven files the hand-build
+touched: the four above plus `app.js`, `threads.js`, `index.html`. This
+documents provenance; no coder run is pending against this version.
 
 ## Oracle mapping
 
-* `tests/test_ui.py` — full replacement (adds 15 new tests, retains all
-  existing 32 tests including the 4 in `test_ui_websearch.py`-adjacent
-  scope). Maps to the `src/static/app.js` task by `contracts.entry_points`
-  reference; the header markup task (`src/static/index.html`) is covered
-  by AC-111's presence assertion; AC-121's non-color-signal requirement is
-  covered by the browser oracle's computed-style assertions against the
-  styles `src/static/app.js` injects.
-
-**Test-suite properties inherited from D-58:** element location is via
-`contracts.ui` testids only (checked at freeze by
-`scripts/check-test-surface.py`); synchronization is via Playwright
-`expect()` auto-waiting only (no `page.wait_for_timeout`, no `time.sleep`);
-zero retries.
+* `tests/test_ui.py` — full replacement: all previous tests byte-identical,
+  six appended (mapping above). Element location via `contracts.ui` testids
+  only; two additions to the locked surface: `sidebar-resizer` (the
+  divider) and `msg-error` (guidance/error bubbles). Synchronization via
+  Playwright `expect()` auto-waiting; the resize tests use `page.mouse`
+  with position math from the handle's own bounding box, no fixed sleeps.
 
 ## Smoke checks
 
-Unchanged from v63, minus the retired `src/static/current-chat.css` entry.
-The injected styles need no smoke check — they are exercised entirely by
-the browser oracle's computed-style assertions, and `src/static/app.js`
-already carries mapped tests as its acceptance signal.
+The four new files get presence checks, quote-agnostic per the v61 lesson
+(single- and double-quoted forms both match):
+
+* `current-chat.js` — `CurrentChat` and `commitPending` present.
+* `current-chat.css` — `grep -qE "data-active=['\"]true['\"]"` and
+  `current-chat-title` present.
+* `sidebar-resize.js` — `SidebarResize` and `tc-sidebar-width` present.
+* `sidebar-resize.css` — `sidebar-resizer` and `col-resize` present.
+
+Existing entries unchanged.
 
 ## Rollback / risk
 
-* Rollback is reverting `src/static/index.html` and `src/static/app.js`,
-  then re-freezing v63. No schema changes, no route changes, no
-  persistence changes.
-* **Risk — sidebar rename regression.** AC-119 / AC-120 require the sidebar
-  and header to stay in sync on rename from either surface. If the coder's
-  implementation double-fires the update, the sidebar could momentarily
-  show a stale value. Mitigation: the paired tests
-  (`test_sidebar_rename_updates_header_immediately` and its inverse) assert
-  the visible state after the rename settles, using Playwright's auto-wait,
-  so a race that eventually settles correctly passes and a race that
-  settles wrongly fails.
-* **Risk — refresh-restore change is user-visible.** A user who relied on
-  the old "refresh returns to the same chat" behavior will see refresh
-  land on the newest thread instead. This is the point of AC-123, but it
-  is a visible behavior change worth naming at UAT.
-* **Risk — highlight visual pass on 10 themes.** The 10-theme system means
-  the highlight's non-color signal must be visible under every theme. The
-  test asserts the DOM attribute and one computed-style differentiator; a
-  theme-specific regression that leaves the mark invisible to the eye but
-  present in the DOM would pass the test. Named as a UAT check.
-* **Risk — real-browser tests are slower and can flake.** Same class as
-  M28's `test_thinking_placeholder_shows_then_clears`. All waits are
-  Playwright `expect()` predicates, not fixed sleeps.
+* Rollback is `git revert` of `2ac5827` + `57b40b8` and a re-freeze to the
+  v64 spec — no schema, route, or persistence changes anywhere in the arc.
+* **Risk — regression pins, not an oracle.** The six new tests verify the
+  implementation against itself at freeze time. They will catch future
+  regressions; they cannot catch present defects. Named in the PRD
+  provenance caveat; accepted by approving this freeze.
+* **Risk — resize geometry.** The drag tests assert against
+  `getBoundingClientRect` with a ±6px tolerance; a themed border change
+  that alters layout by more than that will surface as a test failure
+  rather than silently passing (preferred failure direction).
+* **Risk — model-endpoint mocks.** AC-130/131/132 tests route both
+  `/api/v1/models` and `/api/v1/models/catalog`; if a future milestone
+  renames either route, these tests fail loudly at the route mock, which
+  is the correct signal to re-true the contracts.
 
 ## CEO acceptance (D-44)
 
 Observable without reading code, on any browser:
 
-1. Open the app. **Expected:** the current thread's title appears in the
-   header between the model selector and the right-side controls; the
-   same thread is highlighted in the sidebar list.
-2. Click the header title, type a new title, press Enter. **Expected:**
-   the header updates immediately and the sidebar row for that thread
-   updates to match — with no page refresh.
-3. Rename the same thread from the sidebar rename affordance.
-   **Expected:** the header title updates to match immediately.
-4. Refresh the page. **Expected:** the newest thread opens (top of the
-   sidebar list) and is highlighted; no matter which thread was open
-   before the refresh, the same top-of-list thread is what appears.
-5. Delete the currently-open thread. **Expected:** the newest remaining
-   thread opens and is highlighted; the header title updates to match.
+1. Open the app: header shows the current thread's title; the same thread
+   is highlighted in the sidebar; refresh always lands on the newest chat.
+2. Drag the divider between sidebar and chat: it follows the pointer,
+   refuses to pass the middle of the window, and is still where you left
+   it after a refresh. Double-click snaps it back.
+3. With no model loaded, open a new chat: the model field reads
+   "Select model..." in the same quiet voice as the message box's hint —
+   it does not claim a model is active. Hit Send anyway: the app tells you
+   to pick a model; nothing is sent.
+4. Pick a model that isn't loaded: the app asks before loading. Cancel:
+   your selection reverts and nothing loads.
+5. Copy an assistant reply after refreshing the page: the clipboard text
+   is clean prose — no `<think>` markup.
