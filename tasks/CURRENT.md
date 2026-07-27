@@ -35,10 +35,15 @@ changes **all 12** and resets every task to `pending` — and
 `app.js`, `chat.py`, `threads.py`, `index.html`, `websearch.py` and the rest,
 none of which any current delta touches. `T11.fp`/`T12.fp` are also empty while
 their status is `done`.
-**Do not start a run unattended.** Either land the two P0 backlog items first
-(invert the `no_edit_files` default; fail closed on missing task state), or
-re-derive the plan, halt before the task DAG, and reconstruct the `done` markers
-against that plan. This was caught by hand this session, not by any gate.
+**Both P0 mitigations have since landed** (`6557283`, `2144d12`): orchestrate
+now halts pre-flight when task-state is lost, and a file the delta does not
+touch never reaches the coder — 8 of 12 blocked on the M29 plan, against 3
+before. The stale plan above is therefore no longer dangerous, only untidy: a
+re-derived plan still resets every task, but the untouched files are protected.
+**Residual to know about:** `--affected` includes transitive dependents, so
+`src/api/chat.py` and `src/static/app.js` stay editable for a models-only delta,
+and `app.js` maps 0 tests (smoke_check only). Watch those two if a run does go
+through, or reconstruct the `done` markers against the re-derived plan first.
 
 **Also open:** `.claude-md-pending.patch` (untracked) re-applies the port-doc
 change CEO-reverted at `c4710cc` and adds a correction-log row — needs explicit
