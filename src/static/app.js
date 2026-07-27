@@ -296,6 +296,44 @@
         var message = input.value.trim();
         if (!message) return;
 
+        // No model chosen (fresh chat, nothing loaded): don't hit /api/v1/chat
+        // with an unset model — the server would return a bare 422 the UI has
+        // no handler for. Focus the selector so the fix is one keystroke away.
+        if (!modelSelect.value) {
+          appendBubble('Pick a model from the dropdown before sending.', 'error');
+          modelSelect.focus();
+          return;
+        }
+        // Selected model is unloaded. Historically this was reachable only via
+        // the change event, so re-picking the already-shown option was a dead
+        // end; Send now offers the same load modal and auto-resubmits when the
+        // load returns 200, so the user's one Send click is enough.
+        var sel = modelSelect.options[modelSelect.selectedIndex];
+        if (sel && sel.dataset.loaded === 'false' && !TC.modelLoading) {
+          var loadId = modelSelect.value;
+          loadConfirmText.textContent = 'Start ' + loadId + ' first, then send? Uses significant RAM. ' + statusRam.textContent;
+          loadConfirmModal.hidden = false;
+          loadCancelBtn.onclick = function () { loadConfirmModal.hidden = true; };
+          loadConfirmBtn.onclick = function () {
+            loadConfirmModal.hidden = true;
+            TC.modelLoading = true;
+            fetch('/api/v1/script-models/' + encodeURIComponent(loadId) + '/load', { method: 'POST' })
+              .then(function (r) {
+                if (!r.ok) throw new Error('Failed to load model');
+                // Refresh in the background so the option list re-syncs; flip
+                // this option's data-loaded inline so the resubmit's guard
+                // (which reads the DOM, not the server) lets it through.
+                sel.dataset.loaded = 'true';
+                sel.textContent = '🟢 ' + loadId;
+                refreshModels();
+                form.dispatchEvent(new Event('submit', { cancelable: true }));
+              })
+              .catch(function (err) { appendBubble(err.message || 'Failed to load model', 'error'); })
+              .finally(function () { TC.modelLoading = false; });
+          };
+          return;
+        }
+
         var currentThread = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
 
         if (currentThread.messages.length === 0) {
@@ -717,13 +755,42 @@
             break;
           }
         }
+        // Nothing saved to match against \u2014 prefer a live-loaded model over the
+        // native default (which is whichever option happened to appear first,
+        // and until today was an unloaded deepseek that Send silently 422'd on).
+        if (!matched) {
+          for (var q = 0; q < options.length; q++) {
+            if (options[q].loaded) {
+              modelSelect.value = options[q].id;
+              var t = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
+              if (t) t.model = options[q].id;
+              matched = true;
+              break;
+            }
+          }
+        }
+        // Still nothing \u2014 show a placeholder option ("Select model...") the
+        // way the message-input placeholder reads, so an empty field is
+        // visibly empty rather than looking like a live selection.
+        if (!matched) {
+          var ph = document.createElement('option');
+          ph.value = '';
+          ph.disabled = true;
+          ph.hidden = true;
+          ph.textContent = 'Select model...';
+          modelSelect.insertBefore(ph, modelSelect.firstChild);
+          modelSelect.value = '';
+          var t2 = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
+          if (t2) t2.model = '';
+        }
         // Saved model vanished from the dropdown: native <select> silently
         // shows the first option, but thread.model kept the stale id until
         // the next send. Sync it now so the UI and stored state agree.
-        if (!matched && previous) {
+        if (previous && !opts.length) {
           var thread3 = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
           if (thread3) thread3.model = modelSelect.value || '';
         }
+        modelSelect.classList.toggle('select-empty', !modelSelect.value);
       }
 
       function refreshModels() {
@@ -792,6 +859,7 @@
       });
 
       modelSelect.addEventListener('change', function () {
+        modelSelect.classList.toggle('select-empty', !modelSelect.value);
         var selected = modelSelect.options[modelSelect.selectedIndex];
         if (selected && selected.dataset.loaded === 'false') {
           // Overlapping-load guard: mid-load thread-switch can re-enable the
@@ -868,9 +936,13 @@
             for (var i = 0; i < TC.threads.length; i++) {
               if (TC.threads[i].id > TC.threadCounter) TC.threadCounter = TC.threads[i].id;
             }
-            TC.activeThreadId = TC.threads[0].id;
-            Threads.renderThreadMessages(TC.threads[0]);
-            Threads.restoreThreadModelState(TC.threads[0]);
+            // AC-123: open the NEWEST thread — the one the sidebar renders at
+            // the top. threads[] is oldest-first, so that is the last element,
+            // not the first. No last-opened pin is restored.
+            var newest = TC.threads[TC.threads.length - 1];
+            TC.activeThreadId = newest.id;
+            Threads.renderThreadMessages(newest);
+            Threads.restoreThreadModelState(newest);
             Threads.renderSidebar();
           } else {
             Threads.createThread();

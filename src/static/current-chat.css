@@ -1,0 +1,66 @@
+/* M31 — current-chat awareness (AC-112, AC-121).
+   Loaded after style.css so these rules win on equal specificity. */
+
+/* AC-112: the title shrinks and ellipsises inside the top bar. max-width is
+   what keeps a 200-character title from widening .top-bar and introducing a
+   horizontal scrollbar on <body>; min-width:0 lets a flex item shrink below
+   its content width at all. */
+.current-chat-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 38%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.875rem;
+  color: var(--input-text);
+  cursor: text;
+  padding: 0.45rem 0.4rem;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+}
+
+.current-chat-title:hover {
+  border-color: var(--input-border);
+}
+
+.current-chat-title-input {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 38%;
+  font-size: 0.875rem;
+  font-family: inherit;
+  padding: 0.45rem 0.4rem;
+  border: 1px solid var(--input-border);
+  border-radius: 0.5rem;
+  outline: none;
+  background: var(--input-bg);
+  color: var(--input-text);
+}
+
+/* AC-121: the active row already carries a background tint from
+   .thread-item.active; the left bar is the non-color signal so the highlight
+   survives a monochrome or high-contrast rendering. */
+.thread-item[data-active="true"] {
+  background: var(--sidebar-active);
+  opacity: 1;
+}
+
+.thread-item[data-active="true"]::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  bottom: 20%;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--sidebar-active-bar);
+}
+
+/* Placeholder mode for the model selector — reads the same way as the
+   message-input placeholder so an unselected field looks visibly empty
+   instead of asserting a live selection. #id beats .top-bar select. */
+#model-select.select-empty {
+  color: var(--muted-text);
+  font-style: italic;
+}

@@ -40,8 +40,10 @@ window.Threads = (function () {
   }
 
   function restoreThreadModelState(thread) {
-    el('model-select').value = thread.model || '';
-    el('model-select').disabled = !!thread.locked;
+    var ms = el('model-select');
+    ms.value = thread.model || '';
+    ms.disabled = !!thread.locked;
+    ms.classList.toggle('select-empty', !ms.value);
   }
 
   function addBubbleChrome(bubble, raw, ts, model, idx) {
@@ -111,15 +113,22 @@ function addSources(bubble, sources, notice) {
       var bubble = document.createElement('div');
       bubble.className = 'chat-bubble ' + (msg.role === 'user' ? 'user' : 'reply');
       bubble.setAttribute('data-testid', msg.role === 'user' ? 'msg-user' : 'msg-assistant');
+      // The copy source has to match what renderReply stores while streaming:
+      // citations normalized, reasoning stripped. Handing addBubbleChrome the
+      // untouched msg.content is why copying a reply that came back from
+      // history pasted raw <think> tags — the live path stripped, this one
+      // never did. User text is copied verbatim; only replies carry reasoning.
+      var copySource = String(msg.content || '');
       if (msg.role === 'assistant') {
         // AC-92: normalize Qwen 【N†…】 citations to [N] on the reload path,
         // matching renderReply's live-stream transform in app.js.
-        var content = String(msg.content || '').replace(/【(\d+)[†‡]?[^】]*】/g, '[$1]');
+        var content = copySource.replace(/【(\d+)[†‡]?[^】]*】/g, '[$1]');
         bubble.innerHTML = MD.renderThink(content);
+        copySource = MD.stripThink(content);
       } else {
         bubble.textContent = msg.content;
       }
-      addBubbleChrome(bubble, msg.content, msg.ts || 0, msg.role === 'assistant' ? (msg.model || '') : '', i);
+      addBubbleChrome(bubble, copySource, msg.ts || 0, msg.role === 'assistant' ? (msg.model || '') : '', i);
       if (msg.role === 'assistant' && msg.sources && msg.sources.length) addSources(bubble, msg.sources, '');
       container.appendChild(bubble);
     }
@@ -263,6 +272,9 @@ function addSources(bubble, sources, notice) {
         var item = document.createElement('div');
         item.className = 'thread-item' + (thread.id === TC.activeThreadId ? ' active' : '');
         item.setAttribute('data-testid', 'thread-item');
+        // AC-121: exactly one row carries data-active="true".
+        item.setAttribute('data-active', thread.id === TC.activeThreadId ? 'true' : 'false');
+        item.setAttribute('data-thread-id', thread.id);
 
         var title = document.createElement('span');
         title.className = 'thread-title';
@@ -298,6 +310,9 @@ function addSources(bubble, sources, notice) {
         threadListEl.appendChild(item);
       })(TC.threads[i]);
     }
+    // AC-119: every path that re-renders the sidebar also re-syncs the header
+    // (switch, create, delete, retitle, sidebar rename).
+    if (window.CurrentChat) window.CurrentChat.refresh();
   }
 
   function startRename(thread, titleEl, itemEl) {
@@ -339,7 +354,9 @@ function addSources(bubble, sources, notice) {
       persistThreads();
       if (TC.activeThreadId === id) {
         if (TC.threads.length) {
-          switchThread(TC.threads[0].id);
+          // AC-122/123: fall back to the NEWEST remaining thread — the row the
+          // sidebar renders at the top — not the oldest.
+          switchThread(TC.threads[TC.threads.length - 1].id);
         } else {
           createThread();
         }
@@ -349,12 +366,19 @@ function addSources(bubble, sources, notice) {
     });
   }
 
+  // Titles are stored in full and truncated at render time by
+  // .thread-title's text-overflow — baking '...' into the string at 30 chars
+  // made a widened sidebar unable to ever reveal more, and pushed the ellipsis
+  // into the header title and its tooltip too. TITLE_CAP only stops a
+  // pathological first message from becoming a pathological title.
+  var TITLE_CAP = 120;
+
+  function capTitle(text) {
+    return text.length > TITLE_CAP ? text.substring(0, TITLE_CAP) : text;
+  }
+
   function updateTitle(thread, firstMessage) {
-    var title = firstMessage.trim();
-    if (title.length > 30) {
-      title = title.substring(0, 30) + '...';
-    }
-    thread.title = title;
+    thread.title = capTitle(firstMessage.trim());
     renderSidebar();
   }
 
@@ -368,9 +392,8 @@ function addSources(bubble, sources, notice) {
     }
     if (!reply) return;
     var t = MD.stripThink(reply.content).replace(/[#*`>_]/g, '').replace(/\s+/g, ' ').trim();
-    if (t.length > 30) t = t.substring(0, 30) + '...';
     if (t) {
-      thread.title = t;
+      thread.title = capTitle(t);
       renderSidebar();
     }
   }
@@ -378,11 +401,23 @@ function addSources(bubble, sources, notice) {
   function createThread() {
     TC.threadCounter++;
     var modelSelect = el('model-select');
+    // Don't inherit the dropdown's current value unconditionally — with an
+    // unloaded model showing it produced new chats born pinned to something
+    // Send would 422 on. Prefer whichever option is actually loaded; leave
+    // model empty (placeholder) when nothing is loaded.
+    var picked = '';
+    for (var i = 0; i < modelSelect.options.length; i++) {
+      var o = modelSelect.options[i];
+      if (o.value && o.dataset.loaded === 'true') { picked = o.value; break; }
+    }
+    if (!picked && modelSelect.value && modelSelect.options[modelSelect.selectedIndex] && modelSelect.options[modelSelect.selectedIndex].dataset.loaded === 'true') {
+      picked = modelSelect.value;
+    }
     var thread = {
       id: TC.threadCounter,
       title: 'New Chat',
       messages: [],
-      model: modelSelect.value,
+      model: picked,
       locked: false
     };
     TC.threads.push(thread);
@@ -391,12 +426,19 @@ function addSources(bubble, sources, notice) {
     container.innerHTML = '';
     container.classList.toggle('show-thinking', TC.showThinking);
     modelSelect.disabled = false;
+    // Push the chosen (or empty) value to the field so a lingering selection
+    // from the prior thread doesn't visually contradict the new thread.model.
+    modelSelect.value = picked;
+    modelSelect.classList.toggle('select-empty', !picked);
     renderSidebar();
     el('message-input').focus();
     persistThreads();
   }
 
   function switchThread(id) {
+    // AC-118: an open header rename belongs to the thread being left, so it
+    // has to land before activeThreadId moves.
+    if (window.CurrentChat) window.CurrentChat.commitPending();
     saveThreadModelState();
     TC.activeThreadId = id;
     var container = el('chat-container');

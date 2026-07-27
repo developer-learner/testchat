@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chat</title>
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/current-chat.css">
+  <link rel="stylesheet" href="/static/sidebar-resize.css">
 </head>
 <body>
   <div class="app-wrapper">
@@ -18,6 +20,7 @@
       </div>
       <div class="thread-list" id="thread-list"></div>
     </aside>
+    <div class="sidebar-resizer" id="sidebar-resizer" data-testid="sidebar-resizer" role="separator" aria-orientation="vertical" title="Drag to resize · double-click to reset"></div>
     <main class="chat-panel">
       <div class="terminal-titlebar" data-testid="terminal-titlebar">
         <span class="tl-dot"></span>
@@ -30,6 +33,8 @@
           <select id="model-select" data-testid="model-select"><option value="">Loading models...</option></select>
           <button type="button" class="theme-toggle no-auto-margin" id="eject-model-btn" data-testid="eject-model-btn" title="Unload the active model" hidden>⏏</button>
         </div>
+        <span class="current-chat-title" id="current-thread-title" data-testid="current-thread-title" title=""></span>
+        <input type="text" class="current-chat-title-input" id="current-thread-title-input" data-testid="current-thread-title-input" autocomplete="off" hidden>
         <button type="button" class="theme-toggle" id="settings-toggle" data-testid="settings-toggle" title="System prompt">⚙</button>
         <button type="button" class="theme-toggle no-auto-margin" id="theme-toggle" data-testid="theme-toggle" title="Switch theme">☀️</button>
         <button type="button" class="theme-toggle no-auto-margin" id="fullscreen-toggle" data-testid="fullscreen-toggle" title="Focus mode (Esc to exit)">⛶</button>
@@ -100,6 +105,8 @@
   <script src="/static/rain.js"></script>
   <script src="/static/markdown.js"></script>
   <script src="/static/threads.js"></script>
+  <script src="/static/current-chat.js"></script>
+  <script src="/static/sidebar-resize.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>
