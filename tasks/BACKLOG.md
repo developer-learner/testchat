@@ -42,8 +42,15 @@ obvious model. Draft ACs in
 `docs/POSTMORTEM-2026-07-25-unload-spec-lint.md` §6.
 **Rough size:** Spec + test + `services/models.py`
 
-### Invert the `no_edit_files` default — untouched unless the delta names it
-**Priority:** P0
+### ~~Invert the `no_edit_files` default~~ — DONE 2026-07-26 (`2144d12`)
+**Priority:** ~~P0~~ — shipped. Permitted set is now derived from the frozen
+delta via `--affected` instead of hand-listed; an existing file the delta does
+not touch never reaches the coder, while a not-yet-existing file stays editable
+so greenfield builds still work. Verified on the M29 plan: 8 of 12 files
+blocked, up from 3. **Residual:** `--affected` includes transitive dependents,
+so `app.js` and `chat.py` remain editable for a models-only delta, and `app.js`
+maps 0 tests (smoke_check only). Tightening to direct hits is a separate call.
+**Original entry:**
 **Why:** Near-miss 2026-07-26 during M29. `.pipeline-state/tasks/` had lost its
 per-task `done` markers, so the EM planned all 12 files with every task
 `pending`. `contracts.no_edit_files` protects only 3 (`markdown.js`, `rain.js`,
@@ -58,8 +65,13 @@ rather than fair game. Derive the no-edit set at refreeze instead of hand-listin
 it, so it cannot drift.
 **Rough size:** `refreeze.sh` + `orchestrate.sh` no-edit lookup + a DECISIONS entry
 
-### Fail closed when pipeline task-state is missing
-**Priority:** P0
+### ~~Fail closed when pipeline task-state is missing~~ — DONE 2026-07-26 (`6557283`)
+**Priority:** ~~P0~~ — shipped. Pre-flight halts when `.pipeline-state/tasks/`
+is empty while the repo has prior `[task ` commits: that combination is lost
+state, never a greenfield start. Verified by simulation — orchestrate halted at
+pre-flight with recovery guidance before touching anything. An intended rebuild
+stays one explicit `rm -rf .pipeline-state` away.
+**Original entry:**
 **Why:** Same 2026-07-26 near-miss, other half. An empty
 `.pipeline-state/tasks/` is indistinguishable from a greenfield repo, so
 orchestrate treats "state lost" as "nothing built yet" and rebuilds everything.
