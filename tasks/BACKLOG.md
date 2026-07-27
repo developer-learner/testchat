@@ -112,6 +112,19 @@ lint failure — it encodes "the whole world is ready" and silently couples
 unrelated subsystems.
 **Rough size:** `check-test-surface.py` or a new refreeze lint
 
+### Halve the full-suite wall clock (freeze-time floor)
+**Priority:** P2
+**Why:** The Playwright suite takes ~4.5 min per full run on the host (176
+tests at v65) and grows with every milestone. Post-D-86/D-87, freeze
+discipline runs the staged suite before every refreeze, so suite runtime is
+now the floor on every spec change — v65's staging spent ~9 of its ~30
+minutes inside two full runs.
+**What:** (a) `pytest-xdist` sharding for the browser tests (each test is
+already isolated per-context), and/or (b) a changed-tests-first ordering so
+a red staged suite fails in seconds. Tests-lane infra: `conftest.py` +
+possibly CI config, so it lands via a refreeze.
+**Rough size:** conftest fixture scoping audit + one dependency addition
+
 ### Fold `mypy` into the sandbox run
 **Priority:** P2
 **Why:** CI's type-check is a gate nothing local exercises — the sandbox runs
