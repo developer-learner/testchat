@@ -39,7 +39,7 @@ unbound*, regardless of whether a handle is tracked or who spawned the process.
 Implementation must reach servers it did not spawn — `src/api/status.py`
 `_script_model_rss_gb` already does PID discovery by launch command and is the
 obvious model. Draft ACs in
-`docs/POSTMORTEM-2026-07-25-unload-spec-lint.md` §6.
+`project-trail/2026-07-25-unload-spec-lint.md` §6.
 **Rough size:** Spec + test + `services/models.py`
 
 ### ~~Invert the `no_edit_files` default~~ — DONE 2026-07-26 (`2144d12`)

@@ -78,7 +78,7 @@ through `150dc22` (+ this note).
   ** or * renders literally. 7-case node harness + in-browser
   renderThink path verified.
 
-**M28 postmortem filed:** `docs/POSTMORTEM-2026-07-19-m28.md`
+**M28 postmortem filed:** `project-trail/2026-07-19-m28-impossible-spec.md`
 (`14e2260`, placement rationale corrected `7cb3ceb`). Finding: all four
 M28 recuts (v51→v54) were spec-layer TPM defects; the two local-EM
 "failures" were an unimplementable v51 spec (catalog route frozen
@@ -331,7 +331,7 @@ Three filed claims independently verified against `c4710cc` (confirmed
 byte-identical to `1204546`). **All three confirmed**; two were understated by
 the original report and one carried two factual overreaches. Full evidence,
 reproduction steps and the spec lint:
-`docs/POSTMORTEM-2026-07-25-unload-spec-lint.md`.
+`project-trail/2026-07-25-unload-spec-lint.md`.
 
 - **Defect 1 (P0)** — unload reports success without verifying the process died;
   RAM mutual exclusion silently fails. `--reload` orphaning verified directly.
