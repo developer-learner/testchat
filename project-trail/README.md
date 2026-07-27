@@ -33,6 +33,12 @@ Rules:
   runs.
 - **Flat and dated:** `YYYY-MM-DD-short-slug.md`, grep over hierarchy.
   Incident writeups keep `status: historical`.
+- **In testchat, existing postmortems stay in `docs/`.** The two
+  `docs/POSTMORTEM-*.md` files (M28, and the 2026-07-25 unload spec lint)
+  are cited from `scripts/.approved/PRD.md`, which is frozen — relocating
+  them would force a refreeze to change a documentation path. They are the
+  trail's incident writeups in everything but location; read them together.
+  New notes land here.
 - **DECISIONS.md remains the single decision log.** When a note graduates
   into a rule or spec, it travels the normal decision/refreeze flow; the
   note stays behind as the why-trail.
