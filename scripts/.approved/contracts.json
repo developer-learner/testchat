@@ -1,5 +1,5 @@
 {
-  "erd_version": 62,
+  "erd_version": 63,
   "files": [
     "src/services/websearch.py",
     "src/api/status.py",
