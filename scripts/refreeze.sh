@@ -265,6 +265,21 @@ if [ -f "$IN/contracts.json" ]; then
     || die "satisfiability preflight rejected the delta (D-78) — add the named implementing file(s) to contracts.files (or fix the entry_point) and restage"
 fi
 
+# --- D-89: per-file ERD prose mass advisory ---
+# The plan gate's MAX_BRIEF_CHARS cap fires AFTER the EM has produced the
+# whole plan (~250-280s per call on the 4-bit seat) — ~10 minutes to learn
+# what the ERD already implied at freeze time (testchat M31 v64). The freeze-
+# time signal is spec mass per inventory file: warn when any file's ERD
+# prose section is too big to transcribe into a passing brief. Advisory only;
+# the plan-gate cap is the hard backstop.
+ERD_MASS_ERD="$APPROVED/ERD.md"
+ERD_MASS_CONTRACTS="$APPROVED/contracts.json"
+[ -f "$IN/ERD.md" ] && ERD_MASS_ERD="$IN/ERD.md"
+[ -f "$IN/contracts.json" ] && ERD_MASS_CONTRACTS="$IN/contracts.json"
+if [ -f "$ERD_MASS_ERD" ] && [ -f "$ERD_MASS_CONTRACTS" ]; then
+  python3 scripts/validate-plan.py --erd-mass "$ERD_MASS_ERD" "$ERD_MASS_CONTRACTS" || true
+fi
+
 # --- Build the full diff (deterministic — its hash is the approval token) ---
 DIFF_FILE=".pipeline-state/refreeze-pending.diff"
 mkdir -p .pipeline-state
@@ -461,6 +476,14 @@ done
 # anything. pytest is tried second as a SUPPLEMENT: if it succeeds and
 # finds MORE node-ids (parametrized tests expand at collect time), its set
 # replaces the AST set. If it fails or finds fewer, AST wins.
+#
+# pytest runs in the sandbox first (the canonical environment), then on the
+# host when the sandbox attempt is unreachable or incomplete: refreezes run
+# where TPM operators actually run them, and on the macOS host the podman
+# sandbox lives only inside the dev VM — testchat v64 AND v65 silently froze
+# AST-shaped, suffix-less node-id sets (no parametrized expansion, no
+# Playwright [chromium]) exactly this way. Which path won is printed;
+# falling all the way to AST is loud and names both failed attempts.
 echo "collecting test node-ids..."
 AST_NODEIDS=$(python3 - <<'PYEOF'
 import ast
@@ -489,19 +512,32 @@ echo "  AST: $AST_COUNT node-ids"
 
 COLLECT_OUT=".pipeline-state/refreeze-collect.out"
 COLLECT_ERR=".pipeline-state/refreeze-collect.err"
+COLLECT_VIA="sandbox"
 scripts/sandbox-run.sh -- pytest --collect-only -q -p no:cacheprovider \
   >"$COLLECT_OUT" 2>"$COLLECT_ERR" || true
 PYTEST_NODEIDS=$(grep '::' "$COLLECT_OUT" || true)
 PYTEST_COUNT=$(printf '%s\n' "$PYTEST_NODEIDS" | grep -c '::' || true)
 
+if [ "$PYTEST_COUNT" -lt "$AST_COUNT" ]; then
+  PYTHONPATH=. python3 -m pytest --collect-only -q -p no:cacheprovider \
+    >"$COLLECT_OUT" 2>"$COLLECT_ERR" || true
+  HOST_NODEIDS=$(grep '::' "$COLLECT_OUT" || true)
+  HOST_COUNT=$(printf '%s\n' "$HOST_NODEIDS" | grep -c '::' || true)
+  if [ "$HOST_COUNT" -gt "$PYTEST_COUNT" ]; then
+    PYTEST_NODEIDS="$HOST_NODEIDS"
+    PYTEST_COUNT="$HOST_COUNT"
+    COLLECT_VIA="host (sandbox unreachable or incomplete)"
+  fi
+fi
+
 if [ "$PYTEST_COUNT" -gt "$AST_COUNT" ]; then
-  echo "  pytest: $PYTEST_COUNT node-ids (>AST, using pytest — parametrized expansion)"
+  echo "  pytest: $PYTEST_COUNT node-ids via $COLLECT_VIA (>AST, using pytest — parametrized expansion)"
   NODEIDS="$PYTEST_NODEIDS"
 elif [ "$PYTEST_COUNT" -eq "$AST_COUNT" ]; then
-  echo "  pytest: $PYTEST_COUNT node-ids (matches AST, using pytest)"
+  echo "  pytest: $PYTEST_COUNT node-ids via $COLLECT_VIA (matches AST, using pytest)"
   NODEIDS="$PYTEST_NODEIDS"
 else
-  echo "  pytest: $PYTEST_COUNT node-ids (<AST — import errors likely, using AST)"
+  echo "  pytest: $PYTEST_COUNT node-ids (<AST after sandbox AND host attempts — import errors likely, using AST)"
   NODEIDS="$AST_NODEIDS"
 fi
 rm -f "$COLLECT_OUT" "$COLLECT_ERR"
@@ -580,18 +616,45 @@ if [ -n "$RED_IDS" ]; then
   mkdir -p .cache
   RED_ARGS=()
   while IFS= read -r _t; do [ -n "$_t" ] && RED_ARGS+=("$_t"); done <<< "$RED_IDS"
+  rm -f .cache/redcheck-report.json .cache/redcheck-report.xml
+  RED_VIA="sandbox"
   scripts/sandbox-run.sh --rw .cache -- pytest -p no:cacheprovider --json-report \
     --json-report-file=.cache/redcheck-report.json "${RED_ARGS[@]}" >/dev/null 2>&1 || true
-  python3 - <<'PYEOF'
-import json
+  if ! python3 -c 'import json; json.load(open(".cache/redcheck-report.json"))' 2>/dev/null; then
+    # Sandbox unreachable or its report unreadable — the macOS-host case
+    # (podman lives only in the dev VM, and refreezes run where TPM
+    # operators run them). Run the delta on the host interpreter rather
+    # than degrade the freeze's only mechanical test check to an advisory
+    # (testchat v65: INCONCLUSIVE at the exact freeze it existed for).
+    # junitxml, not --json-report: junit is pytest core — no plugin to be
+    # missing on a host — and stdlib-parseable.
+    RED_VIA="host (sandbox unreachable)"
+    PYTHONPATH=. python3 -m pytest -p no:cacheprovider \
+      --junitxml=.cache/redcheck-report.xml "${RED_ARGS[@]}" >/dev/null 2>&1 || true
+  fi
+  SWBP_RED_VIA="$RED_VIA" python3 - <<'PYEOF'
+import json, os
+import xml.etree.ElementTree as ET
+passed = None
 try:
     r = json.load(open(".cache/redcheck-report.json"))
-except (FileNotFoundError, json.JSONDecodeError):
-    print("  red-check INCONCLUSIVE: no readable report (sandbox or collection problem)"
-          " — verify manually that the new tests fail before their tasks run")
-else:
     passed = sorted(t["nodeid"] for t in r.get("tests", [])
                     if t.get("outcome") == "passed")
+except (FileNotFoundError, json.JSONDecodeError):
+    try:
+        root = ET.parse(".cache/redcheck-report.xml").getroot()
+        passed = sorted(
+            f"{tc.get('classname', '')}::{tc.get('name', '')}"
+            for tc in root.iter("testcase")
+            if all(tc.find(k) is None for k in ("failure", "error", "skipped"))
+        )
+    except (FileNotFoundError, ET.ParseError):
+        pass
+if passed is None:
+    print("  red-check INCONCLUSIVE: no readable report from the sandbox OR the host"
+          " — verify manually that the new tests fail before their tasks run")
+else:
+    print(f"  red-check ran via: {os.environ['SWBP_RED_VIA']}")
     if passed:
         print("")
         print("  WARNING (D-75): delta test(s) ALREADY PASS with no implementation done:")
@@ -603,7 +666,7 @@ else:
     else:
         print("  red-check: all delta tests red pre-implementation, as INV-1 expects")
 PYEOF
-  rm -f .cache/redcheck-report.json
+  rm -f .cache/redcheck-report.json .cache/redcheck-report.xml
 else
   echo "red-before-green check (D-75): delta carries no runnable test changes — nothing to check"
 fi

@@ -1579,6 +1579,312 @@ def test_preflight_new_python_file_is_not_an_asset(tmp_path):
     assert r.returncode == 0, (r.stdout, r.stderr)
 
 
+# --- preflight: quote-brittle smoke_checks (D-88) ----------------------------
+# testchat M31 v61: the frozen contract carried
+#   grep -q '[data-active="true"]' src/static/current-chat.css
+# The coder wrote `[data-active='true']` — byte-different, semantically
+# identical CSS. The spec oracle failed a correct file; the ladder cannot
+# recover from a spec defect below the TPM rung. Cost: 4 coder strikes + 2 EM
+# diagnosis calls + an escalation halt. Provable at freeze time: only the
+# robustness class of the pattern is checkable, and that is exactly what
+# failed.
+
+BRITTLE_CONTRACT = {
+    "erd_version": 2,
+    "files": ["src/static/current-chat.css"],
+    "entry_points": [],
+    "smoke_checks": {
+        "src/static/current-chat.css":
+            "grep -q '\\[data-active=\"true\"\\]' src/static/current-chat.css"
+    },
+}
+SAFE_CONTRACT = {
+    "erd_version": 2,
+    "files": ["src/static/current-chat.css"],
+    "entry_points": [],
+    "smoke_checks": {
+        "src/static/current-chat.css":
+            "grep -qE \"\\[data-active=['\\\"]true['\\\"]\\]\""
+            " src/static/current-chat.css"
+    },
+}
+
+
+def test_preflight_v61_double_quote_in_grep_pattern_fails(tmp_path):
+    """The exact v61 shape: a literal `\"` inside a grep pattern rejects a
+    single-quoted implementation. The failure must name the entry AND print
+    a quote-agnostic rewrite — the rewrite IS the fix."""
+    r = run_preflight(tmp_path, {}, BRITTLE_CONTRACT)
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    assert "src/static/current-chat.css" in r.stderr, r.stderr
+    assert "M31 v61" in r.stderr, r.stderr
+    # The rewrite guidance carries the char class that would have worked.
+    assert "['\\\"]" in r.stderr, r.stderr
+
+
+def test_preflight_v61_fix_char_class_passes(tmp_path):
+    """The corrected form: `['\"]` covers either quote character. Same delta
+    that failed above must pass once rewritten."""
+    r = run_preflight(tmp_path, {}, SAFE_CONTRACT)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+
+
+def test_preflight_brittle_single_quote_pattern_fails(tmp_path):
+    """Symmetric direction: literal `'` in the pattern is equally brittle."""
+    contract = {
+        "erd_version": 2, "files": ["src/x.py"], "entry_points": [],
+        "smoke_checks": {"src/x.py": "grep -q \"attr='val'\" src/x.py"},
+    }
+    r = run_preflight(tmp_path, {}, contract)
+    assert r.returncode != 0, (r.stdout, r.stderr)
+
+
+def test_preflight_single_quote_only_bracket_class_fails(tmp_path):
+    """A bracket expression with only ONE quote type is still brittle — the
+    fix requires BOTH quotes so the alternative implementation matches."""
+    contract = {
+        "erd_version": 2, "files": ["src/x.py"], "entry_points": [],
+        "smoke_checks": {"src/x.py": "grep -qE \"attr=[']val[']\" src/x.py"},
+    }
+    r = run_preflight(tmp_path, {}, contract)
+    assert r.returncode != 0, (r.stdout, r.stderr)
+
+
+def test_preflight_no_quotes_in_pattern_passes(tmp_path):
+    """A pattern that names no quote at all is not this class of defect."""
+    contract = {
+        "erd_version": 2, "files": ["src/x.py"], "entry_points": [],
+        "smoke_checks": {"src/x.py": "grep -q handler src/x.py"},
+    }
+    r = run_preflight(tmp_path, {}, contract)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+
+
+def test_preflight_fixed_string_grep_with_quote_fails(tmp_path):
+    """`grep -F` cannot express a character class; a literal quote in a
+    fixed-string pattern is brittle by construction. The fix is to switch
+    to `-E`, which the failure names."""
+    contract = {
+        "erd_version": 2, "files": ["src/x.py"], "entry_points": [],
+        "smoke_checks": {
+            "src/x.py": "grep -qF 'attr=\"true\"' src/x.py"},
+    }
+    r = run_preflight(tmp_path, {}, contract)
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    assert "grep -qE" in r.stderr, r.stderr
+
+
+def test_preflight_carried_forward_brittle_pattern_passes(tmp_path):
+    """A pre-existing brittle smoke_check unchanged in the delta must NOT
+    fail the freeze — the class is grandfathered, same convention as
+    entry_points/routes only checking new/changed."""
+    old = {
+        "erd_version": 1,
+        "files": ["src/static/current-chat.css"],
+        "entry_points": [],
+        "smoke_checks": BRITTLE_CONTRACT["smoke_checks"],
+    }
+    new = {**BRITTLE_CONTRACT, "erd_version": 2}
+    r = run_preflight(tmp_path, old, new)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+
+
+def test_preflight_non_grep_smoke_check_passes(tmp_path):
+    """A smoke_check that isn't a grep-family invocation carries no signal
+    for this gate — fail open (no false positives on `python3 -c ...`,
+    `test -f …`, compound pipelines)."""
+    contract = {
+        "erd_version": 2, "files": ["src/x.py"], "entry_points": [],
+        "smoke_checks": {
+            "src/x.py": "python3 -c 'import src.x; assert src.x.OK == \"yes\"'"},
+    }
+    r = run_preflight(tmp_path, {}, contract)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+
+
+def test_preflight_compound_command_bails(tmp_path):
+    """A compound command (`grep … && grep …`) has more than one pattern and
+    reasoning about it correctly is out of scope — bail rather than
+    false-positive on a legitimate multi-step check."""
+    contract = {
+        "erd_version": 2, "files": ["src/x.py"], "entry_points": [],
+        "smoke_checks": {
+            "src/x.py": "grep -q handler src/x.py && grep -q result src/x.py"},
+    }
+    r = run_preflight(tmp_path, {}, contract)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+
+
+# --- preflight: per-file ERD prose mass advisory (D-89) ----------------------
+# testchat M31 v64: 12 behavioral items concentrated on src/static/app.js. The
+# EM's brief came out 2697 chars against MAX_BRIEF_CHARS=2500, but the plan-
+# gate cap fires AFTER two EM plan calls (~250-280s each on the 4-bit seat) —
+# ~10 min to learn what the ERD already implied at freeze time. This is
+# advisory, not blocking: the correlation between ERD mass and brief size is
+# strong but heuristic, and the plan gate is the hard backstop.
+
+# Derived from the script under test — a threshold bump must not require
+# retuning these tests (same discipline as MAX_BRIEF above).
+ERD_THRESHOLD = int(re.search(
+    r"^ERD_MASS_ADVISORY_THRESHOLD = (\d+)", VALIDATE_PLAN.read_text(),
+    re.M).group(1))
+
+
+def run_erd_mass(tmp_path, erd_text, contracts):
+    erd_p = tmp_path / "ERD.md"
+    erd_p.write_text(erd_text)
+    c_p = tmp_path / "contracts.json"
+    c_p.write_text(json.dumps(contracts))
+    return subprocess.run(
+        [sys.executable, str(VALIDATE_PLAN), "--erd-mass", str(erd_p), str(c_p)],
+        cwd=tmp_path, capture_output=True, text=True,
+    )
+
+
+def test_erd_mass_flags_oversized_section(tmp_path):
+    """The v64 shape: one inventory file's ERD section far exceeds the
+    threshold. The advisory must name that file and its char count."""
+    heavy = "x" * (ERD_THRESHOLD + 800)
+    erd = (
+        "# ERD\n\n"
+        "## As-built\n\n"
+        f"* `src/static/app.js` — {heavy}\n"
+        "* `src/static/threads.js` — small.\n"
+    )
+    r = run_erd_mass(tmp_path, erd, {
+        "files": ["src/static/app.js", "src/static/threads.js"]})
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "ERD MASS ADVISORY" in r.stderr, r.stderr
+    assert "src/static/app.js" in r.stderr, r.stderr
+    assert "src/static/threads.js" not in r.stderr, r.stderr
+
+
+def test_erd_mass_within_threshold_stays_quiet(tmp_path):
+    """A well-scoped ERD makes no noise — no advisory to consume, no false
+    positives to train the CEO to ignore the message."""
+    erd = (
+        "# ERD\n\n"
+        "## As-built\n\n"
+        "* `src/main.py` — a compact description of the module.\n"
+        "* `src/util.py` — another compact description.\n"
+    )
+    r = run_erd_mass(tmp_path, erd, {"files": ["src/main.py", "src/util.py"]})
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "ERD MASS ADVISORY" not in r.stderr, r.stderr
+
+
+def test_erd_mass_heading_caps_last_file_section(tmp_path):
+    """The last file in a list must NOT absorb every subsequent section —
+    if it did, threads.js in testchat's v65 ERD would report ~5.5KB and
+    a well-scoped file would false-positive on every freeze. A `#`-heading
+    ends the current file's section."""
+    trailing = "x" * (ERD_THRESHOLD + 500)
+    erd = (
+        "# ERD\n\n"
+        "## As-built\n\n"
+        "* `src/a.py` — compact.\n"
+        "* `src/b.py` — also compact.\n"
+        "\n## Behavior locked\n\n"
+        + trailing
+        + "\n"
+    )
+    r = run_erd_mass(tmp_path, erd, {"files": ["src/a.py", "src/b.py"]})
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "ERD MASS ADVISORY" not in r.stderr, r.stderr
+
+
+def test_erd_mass_file_not_mentioned_no_signal(tmp_path):
+    """A file with no section-start mention yields no measurement — no
+    signal, no advisory (a mid-sentence mention or absence is not proof
+    the file is oversized OR undersized)."""
+    erd = "# ERD\n\n## As-built\n\n* `src/a.py` — small.\n"
+    r = run_erd_mass(tmp_path, erd,
+                     {"files": ["src/a.py", "src/never_mentioned.py"]})
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "ERD MASS ADVISORY" not in r.stderr, r.stderr
+
+
+def test_erd_mass_table_format_recognized(tmp_path):
+    """sparkv3-style file inventory tables (`| \\`src/main.py\\` |`) must
+    match — the heuristic can't require a bullet marker or every non-
+    testchat spec silently produces zero measurements."""
+    heavy = "x" * (ERD_THRESHOLD + 400)
+    erd = (
+        "# ERD\n\n"
+        "## Inventory\n\n"
+        "| File | Purpose |\n"
+        "|---|---|\n"
+        f"| `src/main.py` | {heavy} |\n"
+        "| `src/util.py` | small. |\n"
+    )
+    r = run_erd_mass(tmp_path, erd, {"files": ["src/main.py", "src/util.py"]})
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "ERD MASS ADVISORY" in r.stderr, r.stderr
+    assert "src/main.py" in r.stderr, r.stderr
+
+
+def test_erd_mass_missing_erd_file_is_not_an_error(tmp_path):
+    """A contracts-only delta may not stage ERD.md — the advisory has no
+    input, exits 0, prints nothing."""
+    c_p = tmp_path / "contracts.json"
+    c_p.write_text(json.dumps({"files": ["src/a.py"]}))
+    r = subprocess.run(
+        [sys.executable, str(VALIDATE_PLAN), "--erd-mass",
+         str(tmp_path / "no-such-ERD.md"), str(c_p)],
+        cwd=tmp_path, capture_output=True, text=True,
+    )
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert r.stderr == "", r.stderr
+
+
+def test_plan_gate_brief_overflow_names_erd_mass(tmp_path):
+    """D-89 back-half: the plan-gate halt message for a >MAX_BRIEF_CHARS
+    brief names the file's ERD section size, so a future TPM restage
+    routes to spec size (`the spec is oversized`) rather than another
+    actor swap (`the EM wrote long`)."""
+    # Stand up a repo layout the plan gate expects: scripts/.approved/{VERSION,
+    # contracts.json, test-nodeids, ERD.md}, and tasks/plan.json.
+    approved = tmp_path / "scripts" / ".approved"
+    approved.mkdir(parents=True)
+    (approved / "VERSION").write_text("2")
+    contracts = {
+        "erd_version": 2,
+        "files": ["src/app.py"],
+        "entry_points": [],
+        "routes": [],
+    }
+    (approved / "contracts.json").write_text(json.dumps(contracts))
+    (approved / "test-nodeids").write_text("tests/test_app.py::test_x\n")
+    heavy = "x" * (ERD_THRESHOLD + 700)
+    (approved / "ERD.md").write_text(
+        "# ERD\n\n## As-built\n\n"
+        f"* `src/app.py` — {heavy}\n"
+    )
+    (tmp_path / "tasks").mkdir()
+    long_brief = "y" * (MAX_BRIEF + 50)
+    plan = {
+        "erd_version": 2,
+        "tasks": [{
+            "id": "T1", "file": "src/app.py",
+            "depends_on": [], "brief": long_brief,
+            "contracts": [], "tests": ["tests/test_app.py::test_x"],
+        }],
+    }
+    (tmp_path / "tasks" / "plan.json").write_text(json.dumps(plan))
+    (tmp_path / ".gate-paths").write_text("src/\n")
+    r = subprocess.run(
+        [sys.executable, str(VALIDATE_PLAN)],
+        cwd=tmp_path, capture_output=True, text=True,
+    )
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    combined = r.stdout + r.stderr
+    # The base error is still there — this is a plan-gate defect regardless.
+    assert "brief is" in combined and "max" in combined, combined
+    # The hint that D-89 adds: the file's ERD section size.
+    assert "ERD section for src/app.py" in combined, combined
+    assert "D-89" in combined, combined
+
+
 # --- refreeze.sh wires the preflight before approval (D-78) ------------------
 
 def refreeze_scripts(repo):
@@ -1603,6 +1909,34 @@ def test_refreeze_diff_mode_runs_preflight(stageable_repo):
     combined = r.stdout + r.stderr
     assert "D-78" in combined, combined
     assert "DIFF-SHA" not in combined, combined
+
+
+def test_refreeze_diff_mode_prints_erd_mass_advisory(stageable_repo):
+    """D-89: refreeze --diff must surface the ERD-mass advisory before the
+    human approval prompt on a staged ERD with an oversized file section,
+    so the CEO sees the size at the moment approval is possible."""
+    repo = stageable_repo
+    refreeze_scripts(repo)
+    (repo / "src").mkdir()
+    (repo / "src" / "app.py").write_text("# empty\n")
+    contracts = {"erd_version": 2, "files": ["src/app.py"],
+                 "entry_points": [], "routes": []}
+    (repo / "scripts" / ".approved" / "contracts.json").write_text(
+        json.dumps(contracts))
+    (repo / "scripts" / ".approved" / "ERD.md").write_text("# ERD v1\n")
+    heavy = "x" * (ERD_THRESHOLD + 800)
+    (repo / "scripts" / ".approved" / "incoming" / "contracts.json").write_text(
+        json.dumps(contracts))
+    (repo / "scripts" / ".approved" / "incoming" / "ERD.md").write_text(
+        "# ERD\n\n## As-built\n\n"
+        f"* `src/app.py` — {heavy}\n"
+    )
+    r = _run_refreeze_diff(repo)
+    combined = r.stdout + r.stderr
+    assert "ERD MASS ADVISORY" in combined, combined
+    assert "src/app.py" in combined, combined
+    # Advisory-only: --diff must still reach the DIFF-SHA gate.
+    assert "DIFF-SHA" in combined, combined
 
 
 # --- refreeze.sh D-68 debt sweep at freeze time (D-80) -----------------------
@@ -2070,3 +2404,416 @@ def test_ci_override_skips_even_a_red_build(tmp_path):
     assert r.returncode == 0, (r.stdout, r.stderr)
     assert "SKIPPED" in r.stdout
     assert "RC=0" in r.stdout
+
+
+# --- refreeze.sh host fallbacks (proportionality Fix B) ----------------------
+# testchat v64 and v65 froze on the macOS host, where the podman sandbox is
+# unreachable: node-id collection silently fell back to AST (suffix-less, no
+# parametrized expansion) and the D-75 red-check degraded to INCONCLUSIVE —
+# the freeze's only mechanical test check went dark exactly where TPM
+# operators run refreezes. Both steps now try the host interpreter before
+# giving up. These tests run a REAL refreeze (--diff for the hash, then
+# --approve — the full apply path) in a fixture repo that has NO
+# sandbox-run.sh at all, the unreachable-sandbox shape, and pin both
+# fallbacks end-to-end against the frozen artifacts they produce.
+
+
+@pytest.fixture()
+def freezable_repo(tmp_path):
+    """A repo complete enough for refreeze.sh to run the FULL apply path:
+    a prior freeze v1 (VERSION, contracts, node-ids, manifest), one carried
+    test, and staging holding one new test file. The staged test is
+    parametrized AND trivially passing on purpose: AST sees one id where
+    pytest collection expands two (the collection pin), and D-75 must run
+    it and fire the already-passing warning (the red-check pin)."""
+    approved = tmp_path / "scripts" / ".approved"
+    (approved / "incoming" / "tests").mkdir(parents=True)
+    (tmp_path / "tests").mkdir()
+    for name in ("refreeze.sh", "check-test-surface.py"):
+        target = tmp_path / "scripts" / name
+        target.write_bytes((SCRIPTS / name).read_bytes())
+        target.chmod(0o755)
+    (approved / "VERSION").write_text("1\n")
+    (approved / "contracts.json").write_text(json.dumps({
+        "files": ["src/app.py"], "entry_points": [], "routes": [],
+        "schemas": [], "errors": [], "erd_version": 1,
+    }))
+    (tmp_path / "tests" / "test_carried.py").write_text(
+        "def test_carried():\n    assert True\n")
+    (approved / "test-nodeids").write_text(
+        "tests/test_carried.py::test_carried\n")
+    # regenerated by refreeze; any content satisfies the pre-apply phase
+    (approved / "frozen-manifest").write_text("")
+    (approved / "incoming" / "tests" / "test_delta.py").write_text(
+        "import pytest\n"
+        "\n"
+        "\n"
+        '@pytest.mark.parametrize("x", ["a", "b"])\n'
+        "def test_param(x):\n"
+        "    assert True\n"
+    )
+    _init_git(tmp_path)
+    # refreeze's own `git commit -m "[refreeze vN]"` needs repo identity
+    subprocess.run(["git", "config", "user.email", "t@t"],
+                   cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "t"],
+                   cwd=tmp_path, check=True)
+    return tmp_path
+
+
+def _run_refreeze_approve(repo):
+    """--diff to get the hash, then --approve <hash>: the D-42 agent flow,
+    which is the only non-interactive way through the apply path."""
+    d = subprocess.run(
+        ["bash", "scripts/refreeze.sh", "--diff", "scripts/.approved/incoming"],
+        cwd=repo, capture_output=True, text=True,
+    )
+    assert d.returncode == 0, (d.stdout, d.stderr)
+    m = re.search(r"DIFF-SHA: ([0-9a-f]{64})", d.stdout)
+    assert m, d.stdout
+    return subprocess.run(
+        ["bash", "scripts/refreeze.sh", "--approve", m.group(1),
+         "scripts/.approved/incoming"],
+        cwd=repo, capture_output=True, text=True,
+    )
+
+
+def test_refreeze_collection_falls_back_to_host(freezable_repo):
+    """The v64/v65 regression: with the sandbox unreachable, collection
+    must reach the host interpreter and freeze the EXPANDED node-id set —
+    parametrized ids AST structurally cannot see — and print which path
+    won (Rule 4). Pre-fix code froze the AST-shaped set silently."""
+    r = _run_refreeze_approve(freezable_repo)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "via host" in r.stdout, r.stdout
+    frozen = (freezable_repo / "scripts" / ".approved" / "test-nodeids").read_text()
+    assert "tests/test_delta.py::test_param[a]" in frozen, frozen
+    assert "tests/test_delta.py::test_param[b]" in frozen, frozen
+    assert "using AST" not in r.stdout, r.stdout
+
+
+def test_refreeze_redcheck_falls_back_to_host(freezable_repo):
+    """The v65 regression: the D-75 red-check must not report INCONCLUSIVE
+    merely because the sandbox is unreachable — it runs the delta on the
+    host (junitxml: pytest core, no host plugin to be missing), records
+    which path ran, and still fires the already-passing warning on a
+    vacuous delta test."""
+    r = _run_refreeze_approve(freezable_repo)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "red-check ran via: host" in r.stdout, r.stdout
+    assert "INCONCLUSIVE" not in r.stdout, r.stdout
+    assert "ALREADY PASS" in r.stdout, r.stdout
+    assert "test_param" in r.stdout, r.stdout
+
+
+# --- subtree re-plan: --subtree-scope / --merge-subtree (Fix A) --------------
+# On a re-freeze the EM used to re-emit the ENTIRE plan — O(inventory) cost
+# for an O(delta) change (testchat M31: 282s = 68% of the run, re-emitting
+# 19,572 chars for a 3-task delta). Fix A: the shell computes the delta's
+# scope against the prior validated plan, the EM emits only that subtree,
+# the shell merges, and the full validate() gate judges the merged artifact
+# unchanged — the D-64 bijection is a property of the artifact, not of who
+# authored which part. Id discipline is rejected, never repaired: silent
+# renumbering would make depends_on references ambiguous.
+
+SUB_CONTRACTS = {
+    "files": ["src/a.py", "src/b.py", "src/c.py"],   # c is NEW at v2
+    "entry_points": [],
+    "routes": [],
+    "erd_version": 2,
+}
+SUB_NODEIDS = [
+    "tests/test_a.py::test_one",
+    "tests/test_b.py::test_two",
+    "tests/test_b.py::test_three",                    # new at v2
+    "tests/test_c.py::test_four",                     # new at v2
+]
+SUB_PRIOR = {
+    "version": 3,
+    "erd_version": 1,
+    "tasks": [
+        {"id": "T1", "file": "src/a.py", "depends_on": [],
+         "brief": "build a", "contracts": [],
+         "tests": ["tests/test_a.py::test_one"]},
+        {"id": "T2", "file": "src/b.py", "depends_on": ["T1"],
+         "brief": "build b", "contracts": [],
+         "tests": ["tests/test_b.py::test_two"]},
+    ],
+}
+SUB_DELTA = {
+    "changed_contract_ids": [],
+    "changed_tests": ["tests/test_b.py::test_two",
+                      "tests/test_b.py::test_three",
+                      "tests/test_c.py::test_four"],
+    "changed_files": ["src/b.py"],
+}
+SUB_GOOD_REPLY = {
+    "version": 1,
+    "erd_version": 2,
+    "tasks": [
+        {"id": "T2", "file": "src/b.py", "depends_on": ["T1"],
+         "brief": "rebuild b", "contracts": [],
+         "tests": ["tests/test_b.py::test_two",
+                   "tests/test_b.py::test_three"]},
+        {"id": "T3", "file": "src/c.py", "depends_on": ["T2"],
+         "brief": "build c", "contracts": [],
+         "tests": ["tests/test_c.py::test_four"]},
+    ],
+}
+
+
+@pytest.fixture()
+def subtree_repo(tmp_path):
+    """Spec frozen at v2 with a still-on-disk plan validated against v1 —
+    the exact state ensure_plan sees right after a re-freeze."""
+    approved = tmp_path / "scripts" / ".approved"
+    approved.mkdir(parents=True)
+    (approved / "contracts.json").write_text(json.dumps(SUB_CONTRACTS))
+    (approved / "test-nodeids").write_text("\n".join(SUB_NODEIDS) + "\n")
+    (approved / "VERSION").write_text("2\n")
+    (approved / "DELTA-v2.json").write_text(json.dumps(SUB_DELTA))
+    (tmp_path / "tasks").mkdir()
+    (tmp_path / ".pipeline-state").mkdir()
+    (tmp_path / ".pipeline-state" / "plan-prior.json").write_text(
+        json.dumps(SUB_PRIOR))
+    return tmp_path
+
+
+def run_scope(repo, *deltas):
+    return subprocess.run(
+        [sys.executable, str(VALIDATE_PLAN), "--subtree-scope",
+         ".pipeline-state/plan-prior.json", *deltas],
+        cwd=repo, capture_output=True, text=True,
+    )
+
+
+def _scoped(repo, *deltas):
+    """Run --subtree-scope and stage its output where the merge reads it,
+    exactly as orchestrate.sh does."""
+    r = run_scope(repo, *(deltas or ("scripts/.approved/DELTA-v2.json",)))
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    (repo / ".pipeline-state" / "subtree-scope.json").write_text(r.stdout)
+    return json.loads(r.stdout)
+
+
+def run_merge(repo, subtree):
+    return subprocess.run(
+        [sys.executable, str(VALIDATE_PLAN), "--merge-subtree",
+         ".pipeline-state/plan-prior.json", subtree,
+         ".pipeline-state/subtree-scope.json"],
+        cwd=repo, capture_output=True, text=True,
+    )
+
+
+def test_subtree_scope_computes_delta(subtree_repo):
+    """Direct hit via changed_files, a new inventory file, and the map list
+    = still-current changed tests ∪ everything the re-emitted task had."""
+    s = _scoped(subtree_repo)
+    assert s["reemit"] == [{"file": "src/b.py", "keep_id": "T2"}]
+    assert s["new_files"] == ["src/c.py"]
+    assert set(s["map_nodeids"]) == {
+        "tests/test_b.py::test_two", "tests/test_b.py::test_three",
+        "tests/test_c.py::test_four"}
+    assert s["carried"] == [{"id": "T1", "file": "src/a.py", "depends_on": []}]
+    assert s["em_needed"] is True
+
+
+def test_subtree_scope_transitive_dependents(subtree_repo):
+    """A delta hitting T1 drags its dependent T2 into the re-emit set —
+    same closure rule cmd_affected applies to task-state resets."""
+    (subtree_repo / "d.json").write_text(json.dumps(
+        {"changed_contract_ids": [], "changed_tests": [],
+         "changed_files": ["src/a.py"]}))
+    s = json.loads(run_scope(subtree_repo, "d.json").stdout)
+    assert {e["keep_id"] for e in s["reemit"]} == {"T1", "T2"}
+    assert s["carried"] == []
+
+
+def test_subtree_scope_refuses_inventory_removal(subtree_repo):
+    """A file leaving the inventory can invalidate carried briefs and
+    dependencies in ways no subtree can express — full emission."""
+    c = dict(SUB_CONTRACTS, files=["src/b.py", "src/c.py"])
+    (subtree_repo / "scripts" / ".approved" / "contracts.json").write_text(
+        json.dumps(c))
+    r = run_scope(subtree_repo, "scripts/.approved/DELTA-v2.json")
+    assert r.returncode == 1
+    assert "left the inventory" in r.stderr, r.stderr
+
+
+def test_subtree_scope_refuses_unhomeable_mappings(subtree_repo):
+    """A changed current test with NO file re-planned would need its
+    mapping to land on a carried task — a subtree reply cannot express
+    that; refuse so the caller re-plans in full."""
+    c = dict(SUB_CONTRACTS, files=["src/a.py", "src/b.py"])
+    (subtree_repo / "scripts" / ".approved" / "contracts.json").write_text(
+        json.dumps(c))
+    (subtree_repo / "d.json").write_text(json.dumps(
+        {"changed_contract_ids": [],
+         "changed_tests": ["tests/test_b.py::test_three"],
+         "changed_files": []}))
+    r = run_scope(subtree_repo, "d.json")
+    assert r.returncode == 1
+    assert "re-plans no file" in r.stderr, r.stderr
+
+
+def test_subtree_scope_docs_only_em_not_needed(subtree_repo):
+    """A delta that invalidates nothing (docs-only re-freeze) yields an
+    empty scope with em_needed=False — the D-86 empty-delta class gets a
+    zero-EM-call path instead of a full re-emission."""
+    c = dict(SUB_CONTRACTS, files=["src/a.py", "src/b.py"])
+    (subtree_repo / "scripts" / ".approved" / "contracts.json").write_text(
+        json.dumps(c))
+    (subtree_repo / "d.json").write_text(json.dumps(
+        {"changed_contract_ids": [], "changed_tests": [],
+         "changed_files": []}))
+    s = json.loads(run_scope(subtree_repo, "d.json").stdout)
+    assert s["reemit"] == [] and s["new_files"] == []
+    assert s["map_nodeids"] == []
+    assert s["em_needed"] is False
+
+
+def test_merge_subtree_produces_fully_valid_plan(subtree_repo):
+    """THE Fix A property: carried tasks verbatim + EM subtree, and the
+    merged artifact passes the FULL validate() gate unchanged — bijection,
+    mapping, DAG — proving the gate never weakened."""
+    _scoped(subtree_repo)
+    (subtree_repo / "tasks" / "plan-subtree.json").write_text(
+        json.dumps(SUB_GOOD_REPLY))
+    r = run_merge(subtree_repo, "tasks/plan-subtree.json")
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "1 carried + 2 subtree" in r.stdout, r.stdout
+    v = subprocess.run([sys.executable, str(VALIDATE_PLAN)],
+                       cwd=subtree_repo, capture_output=True, text=True)
+    assert v.returncode == 0, (v.stdout, v.stderr)
+    merged = json.loads((subtree_repo / "tasks" / "plan.json").read_text())
+    assert merged["erd_version"] == 2
+    assert merged["version"] == 4                     # prior 3, shell-bumped
+    by_id = {t["id"]: t for t in merged["tasks"]}
+    assert by_id["T1"]["brief"] == "build a"          # carried byte-identical
+    assert by_id["T2"]["brief"] == "rebuild b"
+    assert set(by_id) == {"T1", "T2", "T3"}
+
+
+def test_merge_rejects_wrong_keep_id(subtree_repo):
+    """A re-planned file under a different id would dangle every carried
+    depends_on reference — rejected with the id named, never renumbered."""
+    _scoped(subtree_repo)
+    bad = json.loads(json.dumps(SUB_GOOD_REPLY))
+    bad["tasks"][0]["id"] = "T9"
+    (subtree_repo / "tasks" / "plan-subtree.json").write_text(json.dumps(bad))
+    r = run_merge(subtree_repo, "tasks/plan-subtree.json")
+    assert r.returncode == 1
+    assert "must keep the carried plan's id T2" in r.stderr, r.stderr
+
+
+def test_merge_rejects_new_file_id_collision(subtree_repo):
+    """A new-file task reusing a carried id would make its references
+    ambiguous (carried T1 or this task?) — rejected, never repaired."""
+    _scoped(subtree_repo)
+    bad = json.loads(json.dumps(SUB_GOOD_REPLY))
+    bad["tasks"][1]["id"] = "T1"
+    bad["tasks"][1]["depends_on"] = ["T2"]
+    (subtree_repo / "tasks" / "plan-subtree.json").write_text(json.dumps(bad))
+    r = run_merge(subtree_repo, "tasks/plan-subtree.json")
+    assert r.returncode == 1
+    assert "collides with a carried task id" in r.stderr, r.stderr
+
+
+def test_merge_rejects_overreach_and_omission(subtree_repo):
+    """The subtree must cover the scope exactly: a task outside it is
+    overreach (the D-65 no-edit philosophy applied to planning), a scope
+    file without a task is an incomplete reply. Both are named."""
+    _scoped(subtree_repo)
+    over = json.loads(json.dumps(SUB_GOOD_REPLY))
+    over["tasks"].append({"id": "T4", "file": "src/z.py", "depends_on": [],
+                          "brief": "sneak", "contracts": [], "tests": []})
+    (subtree_repo / "tasks" / "plan-subtree.json").write_text(json.dumps(over))
+    r = run_merge(subtree_repo, "tasks/plan-subtree.json")
+    assert r.returncode == 1
+    assert "outside the delta scope" in r.stderr and "src/z.py" in r.stderr
+
+    short = json.loads(json.dumps(SUB_GOOD_REPLY))
+    del short["tasks"][1]                             # no task for new src/c.py
+    (subtree_repo / "tasks" / "plan-subtree.json").write_text(json.dumps(short))
+    r = run_merge(subtree_repo, "tasks/plan-subtree.json")
+    assert r.returncode == 1
+    assert "missing task(s)" in r.stderr and "src/c.py" in r.stderr
+
+
+def test_merge_empty_subtree_docs_only(subtree_repo):
+    """'-' merge: carried tasks only, versions stamped, defensively
+    stripped stale mappings — and the result passes the full gate."""
+    c = dict(SUB_CONTRACTS, files=["src/a.py", "src/b.py"])
+    (subtree_repo / "scripts" / ".approved" / "contracts.json").write_text(
+        json.dumps(c))
+    prior = json.loads(json.dumps(SUB_PRIOR))
+    prior["tasks"][0]["tests"].append("tests/test_gone.py::test_gone")
+    (subtree_repo / ".pipeline-state" / "plan-prior.json").write_text(
+        json.dumps(prior))
+    (subtree_repo / "d.json").write_text(json.dumps(
+        {"changed_contract_ids": [], "changed_tests": [],
+         "changed_files": []}))
+    _scoped(subtree_repo, "d.json")
+    r = run_merge(subtree_repo, "-")
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "2 carried + 0 subtree" in r.stdout, r.stdout
+    merged = json.loads((subtree_repo / "tasks" / "plan.json").read_text())
+    assert merged["erd_version"] == 2 and merged["version"] == 4
+    by_id = {t["id"]: t for t in merged["tasks"]}
+    assert by_id["T1"]["tests"] == ["tests/test_a.py::test_one"]  # stale gone
+    v = subprocess.run([sys.executable, str(VALIDATE_PLAN)],
+                       cwd=subtree_repo, capture_output=True, text=True)
+    assert v.returncode == 0, (v.stdout, v.stderr)
+
+
+# --- ensure_plan drives the subtree path end-to-end (bash, drive-plan.sh) ----
+
+def test_plan_subtree_replan_one_em_call(tmp_path):
+    """Fix A through the REAL ensure_plan: a re-freeze with a valid prior
+    plan takes ONE subtree EM call whose prompt is the delta instruction
+    (carried briefs deliberately absent), the merge lands, the full gate
+    passes, carried briefs survive byte-identical, temps are cleaned."""
+    work = plan_workdir(tmp_path, dict(SUB_CONTRACTS),
+                        [json.dumps(SUB_GOOD_REPLY)])
+    (work / "scripts" / ".approved" / "test-nodeids").write_text(
+        "\n".join(SUB_NODEIDS) + "\n")
+    (work / "scripts" / ".approved" / "DELTA-v2.json").write_text(
+        json.dumps(SUB_DELTA))
+    (work / "tasks").mkdir()
+    (work / "tasks" / "plan.json").write_text(json.dumps(SUB_PRIOR))
+    r = run_drive_plan(work)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "subtree re-plan armed" in r.stdout, r.stdout
+    assert (work / ".calls").read_text().strip() == "1", r.stdout
+    prompt = (work / "prompts" / "1").read_text()
+    assert "Delta re-plan" in prompt
+    assert "src/b.py (keep id T2)" in prompt
+    assert "src/c.py (new file)" in prompt
+    assert "build a" not in prompt        # carried briefs stay out of the call
+    merged = json.loads((work / "tasks" / "plan.json").read_text())
+    assert merged["erd_version"] == 2 and merged["version"] == 4
+    by_id = {t["id"]: t for t in merged["tasks"]}
+    assert by_id["T1"]["brief"] == "build a"
+    assert by_id["T2"]["brief"] == "rebuild b"
+    assert not (work / ".pipeline-state" / "plan-prior.json").exists()
+    assert not (work / "tasks" / "plan-subtree.json").exists()
+
+
+def test_plan_docs_only_delta_zero_em_calls(tmp_path):
+    """A delta invalidating nothing merges the carried plan mechanically:
+    ZERO EM calls, no plan-revision budget consumed, gate green."""
+    contracts = dict(SUB_CONTRACTS, files=["src/a.py", "src/b.py"])
+    work = plan_workdir(tmp_path, contracts, ["SHOULD-NEVER-BE-CALLED"])
+    (work / "scripts" / ".approved" / "DELTA-v2.json").write_text(json.dumps(
+        {"changed_contract_ids": [], "changed_tests": [],
+         "changed_files": []}))
+    (work / "tasks").mkdir()
+    (work / "tasks" / "plan.json").write_text(json.dumps(SUB_PRIOR))
+    r = run_drive_plan(work)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "no EM call" in r.stdout, r.stdout
+    assert not (work / ".calls").exists(), r.stdout
+    merged = json.loads((work / "tasks" / "plan.json").read_text())
+    assert merged["erd_version"] == 2 and merged["version"] == 4
+    # budget untouched: the mechanical path never writes the counter
+    assert not (work / ".pipeline-state" / "plan_revisions").exists()

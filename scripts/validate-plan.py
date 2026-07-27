@@ -40,11 +40,41 @@ Modes:
                                             implementable by NEW's contracts.files;
                                             exit 0/1. Run by refreeze.sh BEFORE the
                                             human approval prompt.
+  validate-plan.py --erd-mass ERD CONTRACTS
+                                            D-89 freeze-time advisory: print a
+                                            warning for each inventory file whose
+                                            ERD prose section exceeds the advisory
+                                            threshold — the correlation with
+                                            brief-size overflow is heuristic; the
+                                            plan gate is the hard backstop. Exit 0
+                                            regardless. Run by refreeze.sh.
+  validate-plan.py --subtree-scope PRIOR DELTA [DELTA...]
+                                            print the delta re-plan scope (JSON)
+                                            for a re-freeze: which prior tasks the
+                                            delta(s) invalidate, which inventory
+                                            files are new, which node-ids the EM
+                                            must map. Loads PRIOR leniently (it
+                                            validated against the PREVIOUS spec,
+                                            not this one). Exits 1 with the reason
+                                            whenever a subtree re-plan cannot
+                                            soundly express the delta — the
+                                            orchestrator then falls back to full
+                                            emission.
+  validate-plan.py --merge-subtree PRIOR SUBTREE SCOPE
+                                            merge the EM's subtree reply over the
+                                            carried-forward PRIOR plan and write
+                                            tasks/plan.json ('-' as SUBTREE = the
+                                            delta needed no EM tasks). The merged
+                                            artifact then faces the FULL validate()
+                                            gate unchanged — the D-64 bijection is
+                                            a property of the validated artifact,
+                                            not of who authored which part.
 """
 import ast
 import hashlib
 import json
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -58,6 +88,14 @@ VERSION = APPROVED / "VERSION"
 TASK_REQUIRED = {"id", "file", "depends_on", "brief", "contracts", "tests"}
 TASK_ALLOWED = TASK_REQUIRED
 MAX_BRIEF_CHARS = 2500
+# D-89: advisory threshold for per-file ERD prose mass at freeze time. Tuned
+# against testchat history: v63's app.js section transcribed to a brief that
+# fit the 2500-char plan-gate limit; v64's did not (12 behavioral items on
+# one file → 2697-char brief). No hard cap — the correlation between ERD
+# mass and brief size is strong but heuristic, and the plan gate is the hard
+# backstop. Never blocking; warnings only.
+ERD_MASS_ADVISORY_THRESHOLD = 2000
+ERD_PATH = APPROVED / "ERD.md"
 VERDICTS = {"brief_wrong", "decomposition_wrong", "contract_or_test_wrong"}
 HTTP_METHODS = {"get", "post", "put", "delete", "patch", "head", "options"}
 # Method-agnostic registration calls (Flask .route/.add_url_rule, FastAPI
@@ -213,9 +251,29 @@ def validate():
         if not isinstance(t["brief"], str) or not t["brief"].strip():
             errs.append(f"{where}: brief must be a non-empty string")
         elif len(t["brief"]) > MAX_BRIEF_CHARS:
+            # D-89: name the file's ERD prose mass if we can compute it —
+            # the future TPM should see "the spec is oversized," not "the EM
+            # wrote long," so a re-freeze routes to the spec rather than
+            # another actor swap.
+            hint = ""
+            try:
+                erd_text = ERD_PATH.read_text()
+                mass = _erd_mass_per_file(erd_text, contracts.get("files", []))
+                fm = mass.get(f)
+                if fm is not None:
+                    hint = (
+                        f" (the ERD section for {f} is {fm} chars"
+                        + (f", above the D-89 advisory threshold "
+                           f"{ERD_MASS_ADVISORY_THRESHOLD}"
+                           if fm > ERD_MASS_ADVISORY_THRESHOLD else "")
+                        + ")"
+                    )
+            except OSError:
+                pass
             errs.append(
                 f"{where}: brief is {len(t['brief'])} chars (max {MAX_BRIEF_CHARS}) "
                 f"— split the task or tighten the brief (Rule 8)"
+                + hint
             )
         for key in ("depends_on", "contracts", "tests"):
             if not isinstance(t[key], list) or not all(isinstance(x, str) for x in t[key]):
@@ -624,6 +682,252 @@ def literal_registers(method, path, reg_method, literal):
     return all(seg_matches(ts, ls) for ts, ls in zip(tail, l_segs))
 
 
+GREP_FAMILY = {"grep", "egrep", "rg", "ripgrep", "ack"}
+
+
+def _grep_pattern(cmd):
+    """If cmd is a single grep-family invocation, return (pattern, mode) where
+    mode is 'fixed' for -F/fgrep and 'regex' otherwise. Return (None, None) for
+    anything else — compound commands (|, ;, &&), non-grep tools, or grep
+    invocations we cannot confidently parse (a shell substitution as the
+    pattern, `-e` with no argument). Silent no-signal by design: this check
+    only speaks about patterns it can read.
+    """
+    try:
+        toks = shlex.split(cmd, posix=True)
+    except ValueError:
+        return None, None
+    if not toks:
+        return None, None
+    # Bail on anything that isn't a single simple command. shlex.split does not
+    # split on shell operators; a literal `|`/`;`/`&&`/`||` token means the
+    # command has more than one clause and we can't reason about the pattern.
+    if any(t in ("|", ";", "&&", "||", "&") for t in toks):
+        return None, None
+    i = 0
+    # `git grep …` — accept the same flag surface.
+    if toks[0] == "git" and len(toks) > 1 and toks[1] == "grep":
+        i = 2
+        head = "grep"
+    elif toks[0] == "fgrep":
+        return None, "fixed"  # legacy alias; treat as fixed-string, no signal
+    elif toks[0] in GREP_FAMILY:
+        head = toks[0]
+        i = 1
+    else:
+        return None, None
+    mode = "regex"
+    if head == "grep":
+        mode = "basic"
+    # Walk flags. `-e PATTERN` explicitly names the pattern; otherwise the
+    # first non-flag argument is the pattern.
+    while i < len(toks):
+        t = toks[i]
+        if t == "--":
+            i += 1
+            if i < len(toks):
+                return toks[i], mode
+            return None, None
+        if t in ("-e", "--regexp"):
+            if i + 1 < len(toks):
+                return toks[i + 1], mode
+            return None, None
+        if t.startswith("--"):
+            # Long options with =value are self-contained; without =, we don't
+            # know if the next token is a value or the pattern. Conservative:
+            # if it's a known value-taking option, skip its argument.
+            if "=" not in t and t in ("--file", "--regexp", "--include",
+                                       "--exclude", "--exclude-dir"):
+                i += 2
+                continue
+            i += 1
+            continue
+        if t.startswith("-") and len(t) > 1:
+            if "F" in t[1:]:
+                mode = "fixed"
+            if "E" in t[1:] or "P" in t[1:]:
+                mode = "regex"
+            i += 1
+            continue
+        return t, mode
+    return None, None
+
+
+_BRIGHT_QUOTES = ('"', "'")
+
+
+def _quote_brittle(pattern):
+    """Return the literal quote character in `pattern` that makes it
+    quote-brittle, or None if the pattern is safe.
+
+    Safe forms:
+      - no literal quote characters at all
+      - every literal quote appears inside a bracket expression `[...]` that
+        contains BOTH `'` and `"` (so either quote in source matches)
+
+    Brittle forms (any is enough to flag):
+      - a literal quote outside any bracket expression
+      - a bracket expression containing only one quote type
+    """
+    i, n = 0, len(pattern)
+    while i < n:
+        c = pattern[i]
+        if c == "\\" and i + 1 < n:
+            # backslash-escape: the escaped char is literal, so a `\"` counts
+            # as a literal quote just as a bare `"` would.
+            nxt = pattern[i + 1]
+            if nxt in _BRIGHT_QUOTES:
+                return nxt
+            i += 2
+            continue
+        if c == "[":
+            j = i + 1
+            if j < n and pattern[j] == "^":
+                j += 1
+            # A `]` as the first character of a bracket expression is literal.
+            if j < n and pattern[j] == "]":
+                j += 1
+            has_dq = has_sq = False
+            end = None
+            while j < n:
+                if pattern[j] == "\\" and j + 1 < n:
+                    if pattern[j + 1] == '"':
+                        has_dq = True
+                    elif pattern[j + 1] == "'":
+                        has_sq = True
+                    j += 2
+                    continue
+                if pattern[j] == "]":
+                    end = j
+                    break
+                if pattern[j] == '"':
+                    has_dq = True
+                elif pattern[j] == "'":
+                    has_sq = True
+                j += 1
+            if end is None:
+                # Unterminated bracket: treat the rest as ordinary chars and
+                # let any bare quote fail via the outer branch.
+                i += 1
+                continue
+            if (has_dq or has_sq) and not (has_dq and has_sq):
+                return '"' if has_dq else "'"
+            i = end + 1
+            continue
+        if c in _BRIGHT_QUOTES:
+            return c
+        i += 1
+    return None
+
+
+def _quote_agnostic_rewrite(pattern):
+    """Rewrite `pattern` so every literal `'`/`"` becomes a `['\"]` char class.
+    Purely advisory — printed in the failure to save the TPM a moment of
+    guessing at the fix. Preserves backslash escaping so the caller can drop
+    the string straight into their command."""
+    out = []
+    i, n = 0, len(pattern)
+    while i < n:
+        c = pattern[i]
+        if c == "\\" and i + 1 < n:
+            nxt = pattern[i + 1]
+            if nxt in _BRIGHT_QUOTES:
+                out.append("['\\\"]")
+                i += 2
+                continue
+            out.append(c)
+            out.append(nxt)
+            i += 2
+            continue
+        if c in _BRIGHT_QUOTES:
+            out.append("['\\\"]")
+            i += 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _erd_mass_per_file(erd_text, inventory):
+    """Return {file: char_count} — the ERD prose mass attributed to each
+    inventory file. Heuristic: for each file, find its first "section-start"
+    mention (at line start, optionally after a bullet/heading marker,
+    optionally wrapped in backticks/bold), then the section extends from that
+    position to the next file's section-start (or end of text). Files with no
+    section-start mention yield no entry (no signal, no advisory).
+
+    The ERD is prose, not a schema; this is an approximation whose only job
+    is to name the file whose section is heaviest at freeze time so the same
+    signal doesn't have to travel through two EM plan calls (testchat M31 v64:
+    12 behavioral items concentrated on src/static/app.js, brief overshot
+    MAX_BRIEF_CHARS by 197 chars, ~10 min to discover post-plan)."""
+    positions = {}
+    for f in inventory:
+        if not isinstance(f, str):
+            continue
+        # Line-anchored: filename must sit near the start of a line, with
+        # optional list/heading markers and optional bold/backtick wrapping.
+        # A mid-sentence mention doesn't open a section.
+        pat = re.compile(
+            r"(?:\A|\n)[ \t]*"
+            r"(?:[-*+][ \t]+|\d+\.[ \t]+|#+[ \t]+|\|[ \t]*)?"
+            r"(?:\*\*[ \t]*)?"
+            r"[`'\"]?"
+            + re.escape(f)
+            + r"[`'\"]?"
+        )
+        m = pat.search(erd_text)
+        if m:
+            positions[f] = m.start()
+    if not positions:
+        return {}
+    # A `#`-heading closes the current file's section — otherwise the last
+    # file in an "As-built architecture" list absorbs the whole "Behavior
+    # locked" section that follows and every file after, dominating the mass
+    # measurement of the file that actually has the most prose.
+    heading_positions = [m.start() for m in
+                         re.finditer(r"\n#{1,6}[ \t]+", erd_text)]
+    order = sorted(positions.items(), key=lambda kv: kv[1])
+    mass = {}
+    for i, (f, start) in enumerate(order):
+        next_file = order[i + 1][1] if i + 1 < len(order) else len(erd_text)
+        next_heading = next((h for h in heading_positions if h > start),
+                            len(erd_text))
+        mass[f] = min(next_file, next_heading) - start
+    return mass
+
+
+def cmd_erd_mass(erd_path, contracts_path):
+    """D-89 advisory: warn on inventory files whose ERD section prose exceeds
+    the threshold. Never fails — exits 0 whether or not any file is flagged.
+    Called by refreeze.sh after --spec-preflight, before the human sees the
+    approval prompt."""
+    erd_p = Path(erd_path)
+    if not erd_p.is_file():
+        return  # no staged ERD (contracts-only delta); no advisory possible
+    try:
+        erd_text = erd_p.read_text()
+    except OSError:
+        return
+    contracts = load_json(Path(contracts_path), "staged contracts")
+    inventory = contracts.get("files", [])
+    mass = _erd_mass_per_file(erd_text, inventory)
+    flagged = sorted(((f, m) for f, m in mass.items()
+                      if m > ERD_MASS_ADVISORY_THRESHOLD),
+                     key=lambda kv: -kv[1])
+    if not flagged:
+        return
+    for f, m in flagged:
+        print(
+            f"ERD MASS ADVISORY (D-89): {f} carries {m} chars of ERD prose "
+            f"(threshold {ERD_MASS_ADVISORY_THRESHOLD}). The EM will attempt "
+            f"to transcribe this into a single brief; the plan gate rejects "
+            f"briefs over {MAX_BRIEF_CHARS} chars (Rule 8: one concern per "
+            f"brief — split the feature into its own file).",
+            file=sys.stderr,
+        )
+
+
 def spec_preflight(old_path, new_path):
     """D-78: freeze-time satisfiability. The plan gate's exact plan↔inventory
     bijection means a task may only target contracts.files members — so a
@@ -828,6 +1132,54 @@ def spec_preflight(old_path, new_path):
                 )
             # else: no host references this asset type — no signal, fail open.
 
+    # D-88: quote-brittle smoke_checks. A spec-authored grep pattern that
+    # names a literal `"` or `'` in the matched source rejects a
+    # semantically-equivalent implementation using the other quote character —
+    # the failure mode is a spec oracle failing a correct file, which the
+    # ladder cannot recover from below the TPM (testchat M31 v61:
+    # `grep -q '[data-active="true"]' …` failed a CSS that wrote
+    # `[data-active='true']`; 4 coder strikes + 2 EM diagnosis calls + an
+    # escalation halt, all against a file that satisfied the spec).
+    # Only checked for smoke_checks that are new or changed vs `old` — a
+    # carried-forward entry has already earned its way through a freeze.
+    old_sc = old.get("smoke_checks", {}) if isinstance(
+        old.get("smoke_checks"), dict) else {}
+    for sc_file, sc_cmd in sorted(new.get("smoke_checks", {}).items()):
+        if not isinstance(sc_cmd, str):
+            continue
+        if old_sc.get(sc_file) == sc_cmd:
+            continue  # unchanged
+        pattern, mode = _grep_pattern(sc_cmd)
+        if pattern is None:
+            continue  # not a grep-family invocation we can reason about
+        if mode == "fixed":
+            # -F/fgrep: char classes don't apply. Any literal quote is
+            # brittle by construction; the fix is to switch to -E.
+            if any(q in pattern for q in _BRIGHT_QUOTES):
+                checked += 1
+                errs.append(
+                    f"smoke_checks['{sc_file}'] uses fixed-string matching "
+                    f"(-F) on a pattern containing a literal quote, which "
+                    f"rejects a semantically-equivalent implementation using "
+                    f"the other quote character (the M31 v61 class). Switch "
+                    f"to `grep -qE` and use a `['\\\"]` character class."
+                )
+            continue
+        checked += 1
+        offender = _quote_brittle(pattern)
+        if offender is not None:
+            rewrite = _quote_agnostic_rewrite(pattern)
+            errs.append(
+                f"smoke_checks['{sc_file}'] pattern contains a literal "
+                f"{offender!r} that would reject an implementation using the "
+                f"other quote character (the M31 v61 class: "
+                f"`[data-active=\"true\"]` vs `[data-active='true']` is "
+                f"semantically identical in HTML/CSS but byte-different, and "
+                f"grep sees only bytes). Rewrite the quote(s) as a `['\\\"]` "
+                f"character class, e.g. `{rewrite}`. If -E is not already set, "
+                f"add it (`grep -qE`)."
+            )
+
     if errs:
         for e in errs:
             print(f"SPEC PREFLIGHT FAIL (D-78): {e}", file=sys.stderr)
@@ -836,16 +1188,17 @@ def spec_preflight(old_path, new_path):
           f"implementable by the inventory")
 
 
-def cmd_affected(delta_path):
-    plan, _ = validate()
-    delta = load_json(Path(delta_path), "delta")
+def _hit_task_ids(tasks, delta):
+    """Task ids a delta invalidates: direct hits (a mapped test changed, a
+    referenced contract changed, or the task's file is in the declared
+    changed_files) plus transitive dependents."""
     changed_tests = set(delta.get("changed_tests", []))
     changed_contracts = set(delta.get("changed_contract_ids", []))
     changed_files = set(delta.get("changed_files", []))
-    tasks = {t["id"]: t for t in plan["tasks"]}
+    by_id = {t["id"]: t for t in tasks}
     hit = {
         tid
-        for tid, t in tasks.items()
+        for tid, t in by_id.items()
         if set(t["tests"]) & changed_tests
         or set(t["contracts"]) & changed_contracts
         or t["file"] in changed_files
@@ -854,12 +1207,189 @@ def cmd_affected(delta_path):
     grew = True
     while grew:
         grew = False
-        for tid, t in tasks.items():
+        for tid, t in by_id.items():
             if tid not in hit and set(t["depends_on"]) & hit:
                 hit.add(tid)
                 grew = True
-    for tid in sorted(hit):
+    return hit
+
+
+def cmd_affected(delta_path):
+    plan, _ = validate()
+    delta = load_json(Path(delta_path), "delta")
+    for tid in sorted(_hit_task_ids(plan["tasks"], delta)):
         print(tid)
+
+
+def _load_plan_lenient(path, what="prior plan"):
+    """Structural load of a plan that validated against a PREVIOUS spec —
+    the full validate() would rightly reject it as stale, but the subtree
+    machinery only needs its task graph to be well-formed."""
+    plan = load_json(Path(path), what)
+    if not isinstance(plan, dict) or not isinstance(plan.get("tasks"), list) \
+            or not plan["tasks"]:
+        fail([f"{what}: not a plan-shaped object (non-empty tasks array required)"])
+    errs = []
+    for i, t in enumerate(plan["tasks"]):
+        if not isinstance(t, dict) or TASK_REQUIRED - set(t):
+            errs.append(f"{what}: tasks[{i}] is not a complete task object")
+            continue
+        if not isinstance(t["id"], str) or not isinstance(t["file"], str):
+            errs.append(f"{what}: tasks[{i}]: id and file must be strings")
+        for key in ("depends_on", "contracts", "tests"):
+            if not isinstance(t[key], list) \
+                    or not all(isinstance(x, str) for x in t[key]):
+                errs.append(f"{what}: task {t.get('id')}: {key} must be an "
+                            f"array of strings")
+    if errs:
+        fail(errs)
+    return plan
+
+
+def cmd_subtree_scope(prior_path, delta_paths):
+    """What must a delta re-plan cover? Computed against the prior plan and
+    the CURRENT frozen spec. Prints a scope JSON for the orchestrator.
+    Refuses (exit 1, reason on stderr) whenever a subtree re-plan cannot
+    soundly express the delta; the caller falls back to full emission."""
+    prior = _load_plan_lenient(prior_path)
+    contracts = load_json(CONTRACTS, "frozen contracts")
+    if not NODEIDS.exists():
+        fail(["frozen test-nodeids missing — run scripts/refreeze.sh first"])
+    current_ids = {l.strip() for l in NODEIDS.read_text().splitlines() if l.strip()}
+    inventory = list(contracts.get("files", []))
+    tasks = prior["tasks"]
+    prior_files = {t["file"] for t in tasks}
+    removed = sorted(prior_files - set(inventory))
+    if removed:
+        fail([f"subtree scope refused: file(s) left the inventory: {removed} "
+              f"— carried briefs and dependencies may assume them; re-plan "
+              f"in full"])
+    deltas = [load_json(Path(p), f"delta {p}") for p in delta_paths]
+    hit = set()
+    changed_tests = set()
+    for d in deltas:
+        hit |= _hit_task_ids(tasks, d)
+        changed_tests |= set(d.get("changed_tests", []))
+    reemit = [{"file": t["file"], "keep_id": t["id"]}
+              for t in tasks if t["id"] in hit]
+    new_files = sorted(set(inventory) - prior_files)
+    # Node-ids the EM must (re)map: the deltas' still-current changed tests,
+    # plus everything previously mapped to a task being re-emitted. Any
+    # changed id that was previously mapped belongs to a hit task by
+    # construction (the mapping intersection is what made the task hit), so
+    # nothing here is still mapped on a carried task — no overmap possible.
+    map_ids = sorted(
+        (changed_tests & current_ids)
+        | {n for t in tasks if t["id"] in hit for n in t["tests"]
+           if n in current_ids}
+    )
+    if map_ids and not (reemit or new_files):
+        fail(["subtree scope refused: the delta changes mapped/new tests but "
+              "re-plans no file — the mappings would have to land on carried "
+              "tasks, which a subtree reply cannot express; re-plan in full"])
+    carried = [{"id": t["id"], "file": t["file"], "depends_on": t["depends_on"]}
+               for t in tasks if t["id"] not in hit]
+    print(json.dumps({
+        "prior_version": prior.get("version", 1),
+        "reemit": reemit,
+        "new_files": new_files,
+        "map_nodeids": map_ids,
+        "carried": carried,
+        "em_needed": bool(reemit or new_files),
+    }, indent=2))
+
+
+def cmd_merge_subtree(prior_path, subtree_path, scope_path):
+    """Merge the EM's subtree reply over the carried-forward prior plan and
+    write tasks/plan.json. '-' as SUBTREE means the delta needed no EM
+    tasks (docs-only / test-removal-only re-freeze): carried tasks merge
+    mechanically with zero EM involvement.
+
+    Id discipline is REJECTED, never repaired: a task for a re-planned file
+    must carry that file's prior id (carried depends_on references stay
+    valid by construction), and a new-file task id must collide with
+    nothing. Silent renumbering would make depends_on references ambiguous
+    — a wrong id is validator feedback for the EM's revision, not something
+    to guess around. The merged artifact then faces the FULL validate()
+    gate, unchanged."""
+    prior = _load_plan_lenient(prior_path)
+    scope = load_json(Path(scope_path), "subtree scope")
+    if not VERSION.exists():
+        fail(["frozen VERSION missing — run scripts/refreeze.sh first"])
+    frozen_v = int(VERSION.read_text().strip())
+    current_ids = set()
+    if NODEIDS.exists():
+        current_ids = {l.strip() for l in NODEIDS.read_text().splitlines()
+                       if l.strip()}
+    keep_id = {r["file"]: r["keep_id"] for r in scope.get("reemit", [])}
+    allowed = set(keep_id) | set(scope.get("new_files", []))
+    hit_ids = set(keep_id.values())
+    carried = [t for t in prior["tasks"] if t["id"] not in hit_ids]
+    carried_ids = {t["id"] for t in carried}
+
+    sub_tasks = []
+    if subtree_path == "-":
+        if allowed:
+            fail([f"empty subtree ('-') but the scope requires tasks for: "
+                  f"{sorted(allowed)}"])
+    else:
+        sub = load_json(Path(subtree_path), "subtree reply")
+        if not isinstance(sub, dict) or not isinstance(sub.get("tasks"), list):
+            fail(["subtree reply: a tasks array is required"])
+        sub_tasks = sub["tasks"]
+        errs = []
+        for i, t in enumerate(sub_tasks):
+            if not isinstance(t, dict) or TASK_REQUIRED - set(t):
+                errs.append(f"subtree reply: tasks[{i}] is not a complete "
+                            f"task object")
+        if errs:
+            fail(errs)
+        sub_files = [t["file"] for t in sub_tasks]
+        dupes = sorted({f for f in sub_files if sub_files.count(f) > 1})
+        if dupes:
+            fail([f"subtree reply plans the same file twice: {dupes}"])
+        over = sorted(set(sub_files) - allowed)
+        if over:
+            fail([f"subtree reply plans file(s) outside the delta scope: "
+                  f"{over} — emit tasks ONLY for: {sorted(allowed)}"])
+        missing = sorted(allowed - set(sub_files))
+        if missing:
+            fail([f"subtree reply is missing task(s) for: {missing}"])
+        errs = []
+        used = set(carried_ids)
+        for t in sub_tasks:
+            if t["file"] in keep_id:
+                if t["id"] != keep_id[t["file"]]:
+                    errs.append(
+                        f"subtree reply: the task for {t['file']} must keep "
+                        f"the carried plan's id {keep_id[t['file']]}, got "
+                        f"{t['id']} — carried tasks reference that id")
+            elif t["id"] in used:
+                errs.append(
+                    f"subtree reply: new-file task id {t['id']} collides "
+                    f"with a carried task id — use a fresh T-id")
+            used.add(t["id"])
+        if errs:
+            fail(errs)
+
+    all_ids = carried_ids | {t["id"] for t in sub_tasks}
+    for t in carried:
+        # Stale mappings cannot survive on carried tasks by construction
+        # (a removed id was mapped -> its task was hit -> re-emitted), but
+        # the delta files are computed by refreeze.sh — filter defensively
+        # rather than trust a second tool's invariant.
+        t["tests"] = [n for n in t["tests"] if n in current_ids]
+        t["depends_on"] = [d for d in t["depends_on"] if d in all_ids]
+    merged = {
+        "version": int(prior.get("version", 1)) + 1,
+        "erd_version": frozen_v,
+        "tasks": carried + sub_tasks,
+    }
+    PLAN.parent.mkdir(parents=True, exist_ok=True)
+    PLAN.write_text(json.dumps(merged, indent=2) + "\n")
+    print(f"merged: {len(carried)} carried + {len(sub_tasks)} subtree "
+          f"task(s) -> {PLAN} (erd_version {frozen_v}, "
+          f"version {merged['version']})")
 
 
 def cmd_diagnosis(path):
@@ -925,11 +1455,20 @@ def main(argv):
     if argv[0] == "--affected" and len(argv) == 2:
         cmd_affected(argv[1])
         return
+    if argv[0] == "--subtree-scope" and len(argv) >= 3:
+        cmd_subtree_scope(argv[1], argv[2:])
+        return
+    if argv[0] == "--merge-subtree" and len(argv) == 4:
+        cmd_merge_subtree(argv[1], argv[2], argv[3])
+        return
     if argv[0] == "--diagnosis" and len(argv) == 2:
         cmd_diagnosis(argv[1])
         return
     if argv[0] == "--spec-preflight" and len(argv) == 3:
         spec_preflight(argv[1], argv[2])
+        return
+    if argv[0] == "--erd-mass" and len(argv) == 3:
+        cmd_erd_mass(argv[1], argv[2])
         return
     fail([f"usage error: {' '.join(argv)} (see module docstring)"])
 
