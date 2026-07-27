@@ -1446,6 +1446,139 @@ def test_plan_valid_first_emit_needs_no_rung(tmp_path):
     assert "SPEC DEFECT" not in r.stdout, r.stdout
 
 
+# --- preflight: TPM scope declaration (D-86) ---------------------------------
+# changed_files reaches the coder's editable set through --affected. An entry
+# the plan gate can never map to a task declares nothing, silently — the
+# failure mode D-86 exists to remove, so it must not be reintroduced by a typo.
+
+INDEX_HTML = (
+    "<html><head>\n"
+    '<link rel="stylesheet" href="/static/style.css">\n'
+    "</head><body></body></html>\n"
+)
+
+
+def asset_repo(tmp_path, index=INDEX_HTML):
+    static = tmp_path / "src" / "static"
+    static.mkdir(parents=True)
+    (static / "index.html").write_text(index)
+    (static / "style.css").write_text("body { margin: 0; }\n")
+    return tmp_path
+
+
+def asset_contracts(files, no_edit=None, changed=None):
+    c = {"erd_version": 2, "files": files, "entry_points": []}
+    if no_edit is not None:
+        c["no_edit_files"] = no_edit
+    if changed is not None:
+        c["changed_files"] = changed
+    return c
+
+
+ASSET_OLD = asset_contracts(["src/static/index.html", "src/static/style.css"])
+
+
+def test_preflight_changed_files_outside_inventory_fails(tmp_path):
+    """A declared file absent from contracts.files can never map to a task
+    (the plan gate's bijection is over files), so it scopes nothing."""
+    r = run_preflight(
+        asset_repo(tmp_path), ASSET_OLD,
+        asset_contracts(["src/static/index.html"],
+                        changed=["src/static/app.js"]))
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    assert "not in contracts.files" in r.stderr, r.stderr
+
+
+def test_preflight_changed_files_also_no_edit_fails(tmp_path):
+    """Declaring a file both in-scope and unchanged is self-contradictory."""
+    r = run_preflight(
+        asset_repo(tmp_path), ASSET_OLD,
+        asset_contracts(["src/static/index.html", "src/static/style.css"],
+                        no_edit=["src/static/style.css"],
+                        changed=["src/static/style.css"]))
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    assert "no_edit_files" in r.stderr, r.stderr
+
+
+def test_preflight_changed_files_editable_member_passes(tmp_path):
+    r = run_preflight(
+        asset_repo(tmp_path), ASSET_OLD,
+        asset_contracts(["src/static/index.html", "src/static/style.css"],
+                        no_edit=["src/static/style.css"],
+                        changed=["src/static/index.html"]))
+    assert r.returncode == 0, (r.stdout, r.stderr)
+
+
+def test_preflight_absent_changed_files_is_not_an_error(tmp_path):
+    """The field is optional — every pre-D-86 spec must still freeze."""
+    r = run_preflight(asset_repo(tmp_path), ASSET_OLD,
+                      asset_contracts(["src/static/index.html"]))
+    assert r.returncode == 0, (r.stdout, r.stderr)
+
+
+# --- preflight: static-asset reachability (D-87) -----------------------------
+# testchat M31 v62: the spec added src/static/current-chat.css to the
+# inventory. The only <link> lives in index.html, which the delta could not
+# reach, and style.css was no_edit — so the coder would have written a correct
+# stylesheet nothing could ever load, the task would go green, and the ACs
+# would fail naming nothing. Routes and entry_points are proved reachable by
+# registration and import; an asset's only signal is a textual reference.
+
+def test_preflight_new_asset_with_no_editable_host_fails(tmp_path):
+    """The exact v62 shape. The failure must name the host file — it IS the
+    fix (put index.html in the inventory, or fold the content into scope)."""
+    r = run_preflight(
+        asset_repo(tmp_path), ASSET_OLD,
+        asset_contracts(["src/static/style.css", "src/static/current-chat.css"],
+                        no_edit=["src/static/style.css"]))
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    assert "current-chat.css" in r.stderr, r.stderr
+    assert "src/static/index.html" in r.stderr, r.stderr
+
+
+def test_preflight_new_asset_with_editable_host_passes(tmp_path):
+    """Same delta with index.html pulled into the inventory: a task can add
+    the <link>, so the asset is reachable."""
+    r = run_preflight(
+        asset_repo(tmp_path), ASSET_OLD,
+        asset_contracts(["src/static/index.html", "src/static/style.css",
+                         "src/static/current-chat.css"],
+                        no_edit=["src/static/style.css"]))
+    assert r.returncode == 0, (r.stdout, r.stderr)
+
+
+def test_preflight_new_asset_already_referenced_passes(tmp_path):
+    """A host that already names the asset needs no edit at all."""
+    repo = asset_repo(tmp_path, index=INDEX_HTML.replace(
+        "</head>", '<link rel="stylesheet" href="/static/current-chat.css">\n</head>'))
+    r = run_preflight(
+        repo, ASSET_OLD,
+        asset_contracts(["src/static/style.css", "src/static/current-chat.css"],
+                        no_edit=["src/static/style.css"]))
+    assert r.returncode == 0, (r.stdout, r.stderr)
+
+
+def test_preflight_new_asset_no_host_fails_open(tmp_path):
+    """No file in the tree references assets of this type — the spec carries
+    no signal about where the reference belongs. Fail open, as D-78 does for
+    a brand-new route family."""
+    repo = asset_repo(tmp_path, index="<html><head></head><body></body></html>")
+    r = run_preflight(
+        repo, ASSET_OLD,
+        asset_contracts(["src/static/style.css", "src/static/current-chat.css"],
+                        no_edit=["src/static/style.css"]))
+    assert r.returncode == 0, (r.stdout, r.stderr)
+
+
+def test_preflight_new_python_file_is_not_an_asset(tmp_path):
+    """.py files are reached by import, which the entry_point check already
+    proves — the asset rule must not double-gate them."""
+    r = run_preflight(
+        asset_repo(tmp_path), ASSET_OLD,
+        asset_contracts(["src/static/index.html", "src/services/new.py"]))
+    assert r.returncode == 0, (r.stdout, r.stderr)
+
+
 # --- refreeze.sh wires the preflight before approval (D-78) ------------------
 
 def refreeze_scripts(repo):
