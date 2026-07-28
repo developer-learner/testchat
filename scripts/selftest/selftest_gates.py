@@ -2506,6 +2506,75 @@ def test_refreeze_redcheck_falls_back_to_host(freezable_repo):
     assert "test_param" in r.stdout, r.stdout
 
 
+# --- refreeze.sh D-95 auto mode (retires the ceremonial y/N) -----------------
+# The pre-D-95 default prompted the CEO for y/N after every mechanical
+# preflight had already passed — the material verdict was the gates
+# green, and the extra keystroke rubber-stamped 5 straight testchat
+# refreezes (v60–v64). D-95 makes auto the default: on preflight-green
+# the freeze applies, printing an audit line with the DIFF-SHA; on ANY
+# preflight failure the script still `die`s with the specific finding.
+# The interactive path is preserved as an opt-in flag.
+
+
+def test_refreeze_auto_proceeds_without_terminal(freezable_repo):
+    """No flags, no tty (subprocess pipes stdin) — auto mode applies the
+    freeze and prints the D-95 audit line. Pre-D-95 this would have died
+    at the `[ -t 0 ]` check demanding a terminal for the y/N prompt."""
+    r = subprocess.run(
+        ["bash", "scripts/refreeze.sh", "scripts/.approved/incoming"],
+        cwd=freezable_repo, capture_output=True, text=True,
+    )
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "auto-approved (D-95)" in r.stdout, r.stdout
+    assert "DIFF-SHA" in r.stdout, r.stdout
+    # No y/N prompt reached the user (the string the old interactive path printed).
+    assert "Approve this delta" not in r.stdout, r.stdout
+    # The freeze commit landed — this is a real apply, not a dry-run.
+    log = subprocess.run(
+        ["git", "log", "-1", "--format=%s"],
+        cwd=freezable_repo, capture_output=True, text=True, check=True,
+    )
+    assert log.stdout.strip() == "[refreeze v2]", log.stdout
+
+
+def test_refreeze_auto_halts_on_preflight_fail(stageable_repo):
+    """A v51-shaped delta (route without an implementing file) MUST die at
+    D-78 in auto mode — auto is not "proceed regardless," it's "proceed
+    when every gate is green." The audit line must NOT print."""
+    repo = stageable_repo
+    refreeze_scripts(repo)
+    (repo / "src" / "api").mkdir(parents=True)
+    (repo / "src" / "api" / "models.py").write_text(V51_SRC)
+    (repo / "scripts" / ".approved" / "contracts.json").write_text(
+        json.dumps(V51_OLD))
+    (repo / "scripts" / ".approved" / "incoming" / "contracts.json").write_text(
+        json.dumps(v51_new(["src/api/chat.py"])))
+    r = subprocess.run(
+        ["bash", "scripts/refreeze.sh", "scripts/.approved/incoming"],
+        cwd=repo, capture_output=True, text=True,
+    )
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    combined = r.stdout + r.stderr
+    assert "D-78" in combined, combined
+    assert "auto-approved" not in combined, combined
+
+
+def test_refreeze_interactive_flag_requires_terminal(freezable_repo):
+    """--interactive is the opt-in eyeball path — under subprocess (no tty)
+    it must die with a message pointing back to the D-95 auto default and
+    the D-42 explicit flow. Preserves the escape hatch without silently
+    degrading to auto when the user asked for interactive."""
+    r = subprocess.run(
+        ["bash", "scripts/refreeze.sh", "--interactive",
+         "scripts/.approved/incoming"],
+        cwd=freezable_repo, capture_output=True, text=True,
+    )
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    combined = r.stdout + r.stderr
+    assert "--interactive" in combined, combined
+    assert "D-95" in combined, combined
+
+
 # --- subtree re-plan: --subtree-scope / --merge-subtree (Fix A) --------------
 # On a re-freeze the EM used to re-emit the ENTIRE plan — O(inventory) cost
 # for an O(delta) change (testchat M31: 282s = 68% of the run, re-emitting
@@ -3033,3 +3102,275 @@ def test_plan_trivial_one_file_zero_em_calls(tmp_path):
     assert set(by_id["T2"]["tests"]) == {
         "tests/test_b.py::test_two",
         "tests/test_b.py::test_three"}
+
+
+# --- update-template.sh D-96 auto mode (mirrors D-95) ------------------------
+# The doc had already conceded (script line 36 pre-D-96) that this y/N was
+# an "authorization that the control plane changed with a human aware — not
+# a code review." An authorization with no defect-catching role is exactly
+# what the CEO's rubber-stamp complaint targets. Correctness upstream: the
+# template's own selftests ran green before the template committed the
+# change. Correctness downstream: phase-gate.sh manifest HEAD runs
+# fail-closed post-apply. The middle keystroke was ceremony.
+
+
+def _run_ut(cmd, cwd):
+    """Subprocess wrapper for update-template tests — plain capture, no env."""
+    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+
+
+@pytest.fixture()
+def template_pull_pair(tmp_path):
+    """A minimal (child repo, template clone) pair with a real diff.
+
+    Template clone ships scripts/hello.sh with "new" content and a
+    scripts/.manifest-template pinning it. Child ships hello.sh with "old"
+    content, a matching .manifest-template pinning the OLD hash, an empty
+    .manifest-project (regen-manifest tolerates zero entries), a
+    .template-version pointing at a fake ref (CLAIMS falls back cleanly on
+    a base ref not in the clone), and the three scripts the pull needs:
+    update-template.sh, regen-manifest.sh, phase-gate.sh. Post-apply,
+    phase-gate.sh manifest HEAD passes because hello.sh matches its
+    newly-installed template manifest hash and .manifest-project is empty."""
+    child = tmp_path / "child"
+    clone = tmp_path / "clone"
+    (child / "scripts").mkdir(parents=True)
+    (clone / "scripts").mkdir(parents=True)
+
+    # Template clone: one committed version of hello.sh + a manifest pinning it.
+    hello_new = "#!/bin/sh\necho new-content\n"
+    (clone / "scripts" / "hello.sh").write_text(hello_new)
+    (clone / "scripts" / "hello.sh").chmod(0o755)
+    new_hash = subprocess.run(
+        ["sha256sum", "scripts/hello.sh"],
+        cwd=clone, capture_output=True, text=True, check=True,
+    ).stdout.split()[0]
+    (clone / "scripts" / ".manifest-template").write_text(
+        f"{new_hash}  scripts/hello.sh\n")
+    _init_git(clone)
+
+    # Child: old content + template manifest pinning the OLD hash. This diff
+    # is what update-template.sh will detect and offer to apply.
+    hello_old = "#!/bin/sh\necho old-content\n"
+    (child / "scripts" / "hello.sh").write_text(hello_old)
+    (child / "scripts" / "hello.sh").chmod(0o755)
+    old_hash = subprocess.run(
+        ["sha256sum", "scripts/hello.sh"],
+        cwd=child, capture_output=True, text=True, check=True,
+    ).stdout.split()[0]
+    (child / "scripts" / ".manifest-template").write_text(
+        f"{old_hash}  scripts/hello.sh\n")
+    (child / "scripts" / ".manifest-project").write_text("")
+
+    (child / ".template-version").write_text(
+        "repo=fake/template\n"
+        "ref=0000000000000000000000000000000000000000\n"
+    )
+
+    for name in ("update-template.sh", "regen-manifest.sh", "phase-gate.sh"):
+        target = child / "scripts" / name
+        target.write_bytes((SCRIPTS / name).read_bytes())
+        target.chmod(0o755)
+
+    _init_git(child)
+    subprocess.run(["git", "config", "user.email", "t@t"],
+                   cwd=child, check=True)
+    subprocess.run(["git", "config", "user.name", "t"],
+                   cwd=child, check=True)
+    return child, clone
+
+
+def test_update_template_auto_proceeds_without_terminal(template_pull_pair):
+    """No flags, no tty — auto applies the pull and prints the D-96 audit
+    line. Pre-D-96 this died at the `[ -t 0 ]` check demanding a terminal
+    for the y/N prompt. Verifies the [template-update ...] commit lands
+    (real apply, not a dry-run) and phase-gate integrity holds post-apply."""
+    child, clone = template_pull_pair
+    r = _run_ut(["bash", "scripts/update-template.sh", "--from", str(clone)], child)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "auto-approved (D-96)" in r.stdout, r.stdout
+    # The rubber-stamp prompt must not print in auto mode.
+    assert "Apply this template update?" not in r.stdout, r.stdout
+    # A real commit landed — not a dry-run degrade.
+    log = subprocess.run(
+        ["git", "log", "-1", "--format=%s"],
+        cwd=child, capture_output=True, text=True, check=True,
+    )
+    assert log.stdout.strip().startswith("[template-update "), log.stdout
+    # And the file actually changed to the template's content.
+    assert "new-content" in (child / "scripts" / "hello.sh").read_text()
+
+
+def test_update_template_interactive_flag_requires_terminal(template_pull_pair):
+    """--interactive is the opt-in eyeball path — under subprocess (no tty)
+    it must die with a message pointing back to the D-96 auto default,
+    D-61 hash-bound apply, or --review. Preserves the escape hatch without
+    silently degrading to auto when the operator asked for interactive."""
+    child, clone = template_pull_pair
+    r = _run_ut(
+        ["bash", "scripts/update-template.sh", "--interactive",
+         "--from", str(clone)],
+        child,
+    )
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    combined = r.stdout + r.stderr
+    assert "--interactive" in combined, combined
+    assert "D-96" in combined, combined
+    # No accidental apply.
+    log = subprocess.run(
+        ["git", "log", "-1", "--format=%s"],
+        cwd=child, capture_output=True, text=True, check=True,
+    )
+    assert not log.stdout.strip().startswith("[template-update "), log.stdout
+
+
+# --- status.sh / teardown.sh (D-97 housekeeping) -----------------------------
+# The pipeline had no answer for "what's resident right now?" and no protocol
+# for "wrap up now." status.sh is the read-only reporter (never writes,
+# tolerates missing limactl/nc/lms/podman); teardown.sh is the operator-
+# invoked reclaimer (default-safe, --dry-run available, --lima and
+# --em-archive opt-in outside --all — the two flags whose consequences the
+# operator should say by name).
+
+
+@pytest.fixture()
+def housekeeping_repo(tmp_path):
+    """Sandboxed repo for the two housekeeping scripts.
+
+    Layout: tmp_path/repo (the tree the scripts act on), tmp_path/stubbin
+    (argv-logging no-op stubs for lms/limactl/pkill/nc), tmp_path/stub.log
+    (what the stubs were invoked with — kept OUTSIDE repo/ so status.sh's
+    read-only invariant holds while the stubs still log).
+
+    The stubs exist because teardown's --lm-studio/--containers/--lima
+    actions act on HOST processes and the VM, not the repo tree: a real
+    `--all` under the inherited host PATH executed `lms server stop`
+    against the host's live LM Studio server (2026-07-27). tmp_path
+    confines file scope only — the process/VM boundary must be stubbed
+    explicitly. File-scoped behavior stays real. The limactl stub reports
+    dev-vm as Stopped so both scripts take their skip branches
+    deterministically; the nc stub exits 1 ("not reachable") so no host
+    port state leaks into assertions."""
+    repo = tmp_path / "repo"
+    (repo / "scripts").mkdir(parents=True)
+    for name in ("status.sh", "teardown.sh"):
+        target = repo / "scripts" / name
+        target.write_bytes((SCRIPTS / name).read_bytes())
+        target.chmod(0o755)
+    stubbin = tmp_path / "stubbin"
+    stubbin.mkdir()
+    stub = (
+        "#!/bin/sh\n"
+        '# argv-logging no-op stub — housekeeping selftests never touch host state\n'
+        'echo "$(basename "$0") $*" >> "${STUB_LOG:?}"\n'
+        'case "$(basename "$0")" in\n'
+        '  limactl) [ "$1" = list ] && echo "Stopped" ;;\n'
+        "  nc) exit 1 ;;\n"
+        "esac\n"
+        "exit 0\n"
+    )
+    for name in ("lms", "limactl", "pkill", "nc"):
+        s = stubbin / name
+        s.write_text(stub)
+        s.chmod(0o755)
+    return repo
+
+
+def _run_hk(cmd, repo):
+    """Housekeeping runner: PATH-shadows the host-global tools with the
+    fixture's stubs. Everything else (rm, find, du, df, awk...) resolves
+    normally, so the file-scoped behavior under test is the real thing.
+    (_run_ut inherits the host env on purpose — the update-template tests
+    need real git — so housekeeping gets its own runner.)"""
+    env = dict(os.environ)
+    env["PATH"] = f"{repo.parent / 'stubbin'}:{env['PATH']}"
+    env["STUB_LOG"] = str(repo.parent / "stub.log")
+    return subprocess.run(cmd, cwd=repo, capture_output=True, text=True, env=env)
+
+
+def test_status_writes_nothing_and_reports_every_section(housekeeping_repo):
+    """Read-only invariant: after running, the directory tree must be
+    byte-identical to what it was before. And every declared section must
+    appear so a partial-report regression is loud."""
+    before = sorted((p.relative_to(housekeeping_repo), p.stat().st_mtime_ns)
+                    for p in housekeeping_repo.rglob("*") if p.is_file())
+    r = _run_hk(["bash", "scripts/status.sh"], housekeeping_repo)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    for section in ("Lima dev-vm", "LLM servers", "podman containers",
+                    "pipeline state", "repo disk"):
+        assert section in r.stdout, (section, r.stdout)
+    after = sorted((p.relative_to(housekeeping_repo), p.stat().st_mtime_ns)
+                   for p in housekeeping_repo.rglob("*") if p.is_file())
+    assert before == after, "status.sh mutated the tree — read-only invariant broken"
+
+
+def test_teardown_bare_invocation_prints_help(housekeeping_repo):
+    """Nothing defaults to destructive: `teardown.sh` with no flags must
+    print help and exit 0 — never wipe state on a mis-typed command."""
+    r = _run_hk(["bash", "scripts/teardown.sh"], housekeeping_repo)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "Flags:" in r.stdout, r.stdout
+    assert "--dry-run" in r.stdout, r.stdout
+
+
+def test_teardown_dry_run_does_not_touch_the_tree(housekeeping_repo):
+    """--dry-run must run the full plan but leave the filesystem alone."""
+    (housekeeping_repo / ".pipeline-state").mkdir()
+    (housekeeping_repo / ".pipeline-state" / "victim").write_text("x")
+    r = _run_hk(
+        ["bash", "scripts/teardown.sh", "--state", "--dry-run"],
+        housekeeping_repo,
+    )
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "DRY RUN" in r.stdout, r.stdout
+    assert (housekeeping_repo / ".pipeline-state" / "victim").exists()
+
+
+def test_teardown_state_flag_removes_pipeline_state(housekeeping_repo):
+    """--state removes .pipeline-state/ end-to-end — and a REAL run must not
+    carry the dry-run banner. The banner shipped printing on every run
+    (${DRY:+} fires on DRY=0 — "0" is a non-empty string); the dry-run test
+    asserting the banner PRESENT was vacuously green the whole time. For any
+    mode banner, the absence assertion on the opposite mode is the one that
+    detects."""
+    (housekeeping_repo / ".pipeline-state").mkdir()
+    (housekeeping_repo / ".pipeline-state" / "victim").write_text("x")
+    r = _run_hk(["bash", "scripts/teardown.sh", "--state"], housekeeping_repo)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert not (housekeeping_repo / ".pipeline-state").exists(), r.stdout
+    assert "DRY RUN" not in r.stdout, r.stdout
+
+
+def test_teardown_all_does_not_touch_em_archive_or_lima(housekeeping_repo):
+    """--all is safe to type without regret: it must NOT prune .em-archive/
+    (feeds the M28 diagnosis-brief A/B) and must NOT stop Lima (biggest
+    cost to reverse). Those two need explicit --em-archive / --lima."""
+    (housekeeping_repo / ".em-archive").mkdir()
+    (housekeeping_repo / ".em-archive" / "keep").write_text("x")
+    r = _run_hk(
+        ["bash", "scripts/teardown.sh", "--all", "--dry-run"],
+        housekeeping_repo,
+    )
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "--em-archive" not in r.stdout, r.stdout   # section header absent
+    assert "--lima" not in r.stdout, r.stdout
+    # The corpus survives even a real (non-dry-run) --all.
+    r2 = _run_hk(["bash", "scripts/teardown.sh", "--all"], housekeeping_repo)
+    assert r2.returncode == 0, (r2.stdout, r2.stderr)
+    assert (housekeeping_repo / ".em-archive" / "keep").exists()
+    # Process-level proof via the stub log: the real --all DID invoke the
+    # lm-studio stop (wiring exercised — against the stub, never the host)
+    # and never told Lima to stop.
+    log = (housekeeping_repo.parent / "stub.log").read_text()
+    assert "lms server stop" in log, log
+    assert "limactl stop" not in log, log
+
+
+def test_teardown_rejects_unknown_flag(housekeeping_repo):
+    """Unknown flag → non-zero and a pointer to --help. No silent no-op."""
+    r = _run_hk(
+        ["bash", "scripts/teardown.sh", "--wipe-everything"],
+        housekeeping_repo,
+    )
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    assert "--help" in r.stdout + r.stderr
