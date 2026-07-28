@@ -47,7 +47,7 @@ def save_settings(settings: dict) -> None:
         try:
             os.unlink(tmp_path)
         except OSError:
-            pass
+            pass  # best-effort cleanup; the primary write exception is re-raised below
         raise
 
 
