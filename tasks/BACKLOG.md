@@ -230,8 +230,17 @@ must stay `window.confirm` because frozen AC-47
 threads.js (one-line swap, code path already exists).
 **Rough size:** Spec/test + one-line code change
 
-### M13 — app.js module split (spec backfill)
-**Priority:** P2
+### ~~M13 — app.js module split (spec backfill)~~ — DONE 2026-07-27 (v66, `361fbe4`)
+**Priority:** ~~P2~~ — shipped. The 2026-07-27 second split (chrome.js +
+catalog.js, commit `2579f07`) plus the v66 ratify freeze cover the full
+current module layout: `app.js` (chat surface), `chrome.js` (themes /
+focus / settings / modal chrome), `catalog.js` (model dropdown lifecycle),
+`threads.js`, `markdown.js`, `rain.js`, `current-chat.js`,
+`sidebar-resize.js`. ERD `As-built architecture` names each; smoke_checks
+present for all. The first split's files (markdown.js, threads.js) were
+already in the inventory pre-v66. See
+`project-trail/2026-07-27-appjs-split-handoff.md`.
+**Original entry:**
 **Why:** Split already landed as live-fix (markdown.js, threads.js, app.js);
 needs TPM spec coverage if pipeline work resumes
 **Rough size:** Spec-only (code done)
