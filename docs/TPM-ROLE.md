@@ -81,33 +81,39 @@ every test was green because no AC ever asked). The mechanical backstop
 (`check-swallowed-errors.py`) rejects silent swallows in code — this rule is
 the spec-side half: decide what the user sees, don't leave it to the coder.
 
-**The ERD may split into a standing doc and a per-delta doc (optional).**
-Once the standing content has grown enough that per-milestone freeze diffs
-would otherwise be un-reviewable — the failure mode that quietly turned the
-CEO's y/N approval into a rubber-stamp for five straight testchat refreezes
-(v60–v64) — split the ERD:
+**The ERD is a standing doc plus a required behavioral-delta doc (D-107).**
+The standing content eventually grows too large for a planner to reliably
+separate current instructions from history. M32 demonstrated the failure:
+the PRD and tests were correct while four successive ERDs omitted the
+implementation change. Split the responsibilities:
 
 - **`ERD.md`** (standing) — architecture, file inventory, conventions, suite
   properties, standing risks. Changes rarely; a freeze that only bumps
   `ERD-DELTA.md` leaves this file's hash and content untouched.
-- **`ERD-DELTA.md`** (per-delta) — this milestone's ACs, test-to-file
-  mapping notes, inventory diffs, and per-file behavioral detail. Replaced
-  each freeze; this is the doc the CEO actually reads at the approval gate.
+- **`ERD-DELTA.md`** (per-delta) — this milestone's ACs, supersessions,
+  changed files, test-to-file mapping, and per-file behavioral detail. It is
+  required whenever tests, test removals, new AC ids, or substantive
+  contracts change. Use these exact headings:
+
+  - `## Changed acceptance criteria`
+  - `## Superseded acceptance criteria` (write `None.` when empty)
+  - `## Changed files`
+  - `## Test-to-file mapping`
 
 Both are staged in `scripts/.approved/incoming/`, pinned together in
 `scripts/.approved/frozen-manifest` under a single freeze, and both reach
-the EM as combined context — treat them as one logical ERD. The plan
+the EM as combined context. The delta is authoritative for the current
+milestone when it explicitly supersedes standing prose. A later
+non-behavioral freeze that refreshes `ERD.md` retires the old delta; that is
+the explicit consolidation point. The plan
 gate's `MAX_BRIEF_CHARS` and D-89's per-file mass advisory both scan the
 union, so moving prose from one doc to the other does not silence either
-signal (`refreeze.sh` concatenates before running D-89). The split is
-opportunistic — introduce it at the next spec cut when the current ERD
-crosses roughly the ~20 KB size where the freeze diff stops being
-reviewable at a glance; child projects that keep everything in `ERD.md`
-work exactly as before.
+signal (`refreeze.sh` concatenates before running D-89).
 
 Deliver all artifacts as complete files (never fragments) in the staging
 layout `docs/ESCALATION.md` specifies: `PRD.md`, `ERD.md`,
-`ERD-DELTA.md` (optional), `contracts.json`, `tests/<file>.py`.
+`ERD-DELTA.md` (required for behavioral deltas), `contracts.json`,
+`tests/<file>.py`.
 
 **Delivery format (mandatory):** wrap every artifact in sentinels, exactly —
 

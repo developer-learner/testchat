@@ -277,6 +277,7 @@ Seven rules for agents working in this repo, derived from failures in prior sess
 | Date | Mistake | Guard Added |
 |------|---------|-------------|
 | <!-- add rows below --> | | |
+| 2026-07-28 | M32 had correct PRD/tests from v67 but stale ERD implementation guidance through v70, so repeated EM attempts planned the wrong behavior. At v71 the validator enforced D-64 without the EM prompt stating it. Six removed UI lines and one replacement took five spec versions to reach a coder that passed both tasks first try. | D-107 makes `ERD-DELTA.md` mandatory for behavioral freezes, validates its sections plus new AC/file coverage, makes it authoritative to the EM, and retires it when a later standing-ERD refresh consolidates the completed milestone. Validator-only D-64 and empty-contract-list rules now appear verbatim in both EM prompt surfaces. |
 | 2026-06-04 | Table-driven "fill in the blanks" missed files not in the table; `[NAME]` survived. | Use a placeholder-shaped grep as the verification gate — never rely on a maintained list for completeness. |
 | 2026-06-04 | Feature-complete had no defined end state (stale CURRENT.md, open backlog, "active development" voice). | Add a Project Completion / Maintenance Transition section with a checklist and curated cleanup step. |
 | 2026-06-04 | Bootstrap expected user to run scripts and opencode manually; no agent-driven path from URL + name alone. | Agent-driven flow: create, read, spec-or-ask, adapt, fill, grep-gate, commit — user runs nothing. |

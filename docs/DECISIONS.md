@@ -21,6 +21,14 @@
 
 ## Decisions
 
+## D-107 — 2026-07-28 — Behavioral freezes carry a fresh, checked current-change ERD
+
+**Decision:** Every post-v1 re-freeze that changes tests, retires tests, introduces AC ids, or substantively changes contracts must stage `ERD-DELTA.md`. It has mechanically recognizable sections for changed ACs, superseded ACs, changed files, and test-to-file mapping. `scripts/check-spec-delta.py` rejects missing sections, newly introduced AC ids absent from the delta, and `contracts.changed_files` entries absent from the delta. The EM treats this file as the authoritative current-milestone slice when it explicitly supersedes standing ERD prose. A later non-behavioral freeze that refreshes `ERD.md` without a new delta consolidates the completed behavior and retires the prior delta. The EM prompt also states the already-enforced D-64 Playwright final-task rule and the empty-contract-list rule verbatim.
+
+**Reason:** M32 carried the correct PRD and frozen tests from v67, but the selector-unlock implementation was absent from the ERD through v70. Repeated retries therefore gave the EM the same stale source. At v71, `validate-plan.py` enforced D-64 while the prompt never told the EM the rule. The final change was six removed lines and one replacement, and both MTPLX coder tasks passed first try; most elapsed work was artifact and plan repair.
+
+**Do not suggest:** Making the delta optional; asking the EM to infer which conflicting statement is newer; relying on TPM memory instead of a cross-artifact gate.
+
 ## D-55 — 2026-07-05 — Linux dev VM boundary; D-53 partial reversal for cross-boundary model access
 
 **Decision:** Conductors move inside a persistent Lima VM (Ubuntu 24.04, virtiofs mount of `~/dev`). The VM is the structural boundary that replaces advisory conductor constraints; agents run with permissions bypassed because the VM is the containment. `orchestrate.sh` refuses to run on macOS (`uname -s` check, hard halt). D-30 Podman lanes run unchanged inside the VM as native rootless containers — same nesting depth as the previous `podman machine` arrangement on the host.

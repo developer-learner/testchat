@@ -55,6 +55,7 @@ preserving paths:
 scripts/.approved/incoming/
 ├── contracts.json        # only if contracts changed
 ├── ERD.md                # only if the ERD prose changed
+├── ERD-DELTA.md          # required for every behavioral delta (D-107)
 ├── PRD.md                # only if the PRD changed
 └── tests/
     └── test_items.py     # only the changed test files
@@ -66,8 +67,10 @@ then runs:
 scripts/refreeze.sh scripts/.approved/incoming
 ```
 
-refreeze shows the diff, requires an interactive human y/N (the approval
-gate), re-freezes as version N+1, and records `DELTA-vN.json`. On the next
+`ERD-DELTA.md` uses the four required sections from `docs/TPM-ROLE.md`;
+refreeze checks that newly introduced AC ids and `contracts.changed_files`
+are represented there. Refreeze runs the normal preflights, re-freezes as
+version N+1, and records `DELTA-vN.json`. On the next
 `scripts/orchestrate.sh` run, only the affected subtree (tasks whose mapped
 tests, contracts, or file were touched by the delta, plus transitive
 dependents) is reset and re-run (D-31).
