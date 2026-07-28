@@ -7,6 +7,7 @@
 // window.App.appendBubble lazily (defined in app.js, which loads AFTER).
 window.Catalog = (function () {
   var TC = window.TC;
+  var previousModelValue = null;
 
   var modelSelect = document.getElementById('model-select');
   var ejectModelBtn = document.getElementById('eject-model-btn');
@@ -44,54 +45,47 @@ window.Catalog = (function () {
       .then(function (results) {
         var lmData = results[0];
         var catalogData = results[1];
-        populateModelOptions(lmData, catalogData);
+        var lmModels = lmData.models || [];
+        var catalogModels = catalogData ? (catalogData.models || []) : [];
+        var options = [];
+        for (var i = 0; i < lmModels.length; i++) {
+          options.push({ id: lmModels[i].id, loaded: true });
+        }
+        for (var j = 0; j < catalogModels.length; j++) {
+          options.push({ id: catalogModels[j].id, loaded: catalogModels[j].loaded === true });
+        }
+        populateModelOptions(options);
       })
       .catch(function () {
         return lmPromise.then(function (lmData) {
-          populateModelOptions(lmData, null);
+          var lmModels = lmData.models || [];
+          var options = [];
+          for (var i = 0; i < lmModels.length; i++) {
+            options.push({ id: lmModels[i].id, loaded: true });
+          }
+          populateModelOptions(options);
         }).catch(function () {
           modelSelect.innerHTML = '<option value="">Failed to load models</option>';
         });
       });
   }
 
-  function populateModelOptions(lmData, catalogData) {
+  function populateModelOptions(models) {
     var previous = modelSelect.value;
-    // Startup race: if the threads hydrate resolves before the first
-    // models response, restoreThreadModelState's value-set silently
-    // no-ops (no matching option yet). Fall back to the active thread's
-    // saved model so the selection still lands once options exist.
     if (!previous) {
       var activeThread = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
       if (activeThread && activeThread.model) previous = activeThread.model;
     }
     modelSelect.innerHTML = '';
-    var lmModels = lmData.models || [];
-    var catalogModels = catalogData ? (catalogData.models || []) : [];
 
     TC.scriptModelLoaded = false;
-    for (var c = 0; c < catalogModels.length; c++) {
-      if (catalogModels[c].loaded === true) { TC.scriptModelLoaded = true; break; }
+    for (var c = 0; c < models.length; c++) {
+      if (models[c].loaded === true) { TC.scriptModelLoaded = true; break; }
     }
     ejectModelBtn.disabled = !TC.scriptModelLoaded;
     ejectModelBtn.hidden = !TC.scriptModelLoaded;
 
-    var lmMap = {};
-    for (var k = 0; k < lmModels.length; k++) {
-      lmMap[lmModels[k].id] = true;
-    }
-
-    var options = [];
-    for (var i = 0; i < lmModels.length; i++) {
-      options.push({ id: lmModels[i].id, loaded: true });
-    }
-    for (var j = 0; j < catalogModels.length; j++) {
-      if (!lmMap[catalogModels[j].id]) {
-        options.push({ id: catalogModels[j].id, loaded: catalogModels[j].loaded === true });
-      }
-    }
-
-    if (options.length === 0) {
+    if (models.length === 0) {
       var opt = document.createElement('option');
       opt.value = '';
       opt.textContent = 'No models available';
@@ -99,13 +93,14 @@ window.Catalog = (function () {
       return;
     }
 
-    for (var m = 0; m < options.length; m++) {
+    for (var m = 0; m < models.length; m++) {
       var o = document.createElement('option');
-      var id = options[m].id;
-      var loaded = options[m].loaded;
+      var id = models[m].id;
+      var loaded = models[m].loaded;
       o.value = id;
       o.dataset.loaded = loaded ? 'true' : 'false';
       var prefix = loaded ? '🟢 ' : '○ ';
+      if (id === previous) prefix = '✓ ' + prefix;
       o.textContent = prefix + id;
       modelSelect.appendChild(o);
     }
@@ -115,32 +110,23 @@ window.Catalog = (function () {
     for (var n = 0; n < opts.length; n++) {
       if (opts[n].value === previous) {
         modelSelect.value = previous;
-        // AC-100 (v57): no label glyph for the selection — the native
-        // <select> already marks it, and a "✓ " prefix duplicated
-        // the OS checkmark on macOS.
         var thread2 = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
         if (thread2) thread2.model = previous;
         matched = true;
         break;
       }
     }
-    // Nothing saved to match against — prefer a live-loaded model over the
-    // native default (which is whichever option happened to appear first,
-    // and until today was an unloaded deepseek that Send silently 422'd on).
     if (!matched) {
-      for (var q = 0; q < options.length; q++) {
-        if (options[q].loaded) {
-          modelSelect.value = options[q].id;
+      for (var q = 0; q < models.length; q++) {
+        if (models[q].loaded) {
+          modelSelect.value = models[q].id;
           var t = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
-          if (t) t.model = options[q].id;
+          if (t) t.model = models[q].id;
           matched = true;
           break;
         }
       }
     }
-    // Still nothing — show a placeholder option ("Select model...") the
-    // way the message-input placeholder reads, so an empty field is
-    // visibly empty rather than looking like a live selection.
     if (!matched) {
       var ph = document.createElement('option');
       ph.value = '';
@@ -152,9 +138,6 @@ window.Catalog = (function () {
       var t2 = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
       if (t2) t2.model = '';
     }
-    // Saved model vanished from the dropdown: native <select> silently
-    // shows the first option, but thread.model kept the stale id until
-    // the next send. Sync it now so the UI and stored state agree.
     if (previous && !opts.length) {
       var thread3 = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
       if (thread3) thread3.model = modelSelect.value || '';
@@ -210,7 +193,6 @@ window.Catalog = (function () {
   // Native <select> fires 'change' AFTER value updates, so capture the
   // pre-change value on focus/mousedown — needed so load-cancel can
   // actually revert (bug: prior was reading the just-picked value).
-  var previousModelValue = modelSelect.value;
   var ejectHideTimer = null;
   modelSelect.addEventListener('focus', function () {
     previousModelValue = modelSelect.value;
