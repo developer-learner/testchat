@@ -1,4 +1,31 @@
-ERD — testchat M31 as built + hand-build coverage (erd_version 65)
+ERD — testchat M31 as built + hand-build coverage (erd_version 66)
+
+## What changes v65 → v66
+
+A ratify freeze, not a build delta. The 2026-07-27 hand-build split
+`src/static/app.js` (959 lines) into three files at commit `2579f07`:
+the chat surface stays in `app.js` (550 lines), themes / focus mode /
+settings / generic modal chrome move to a new `src/static/chrome.js`
+(171 lines), and model dropdown lifecycle moves to a new
+`src/static/catalog.js` (304 lines). Behavior is unchanged — no new or
+retired ACs, no test changes. This version records the tree as it now
+is: two new files in the inventory, an `app.js` smoke_check re-authored
+to landmarks that stayed (the prior version grepped `ejectModelBtn` and
+`models/catalog`, both of which moved to `catalog.js`), and two new
+smoke_checks for the added files. `no_edit_files` still resolves via
+`--affected` and is unaffected.
+
+**Why hand-build then ratify, not a coder milestone.** A
+behavior-preserving refactor produces zero new red tests; INV-1 / D-75
+have nothing to grip, and the brief degenerates to "move code, change
+nothing" — the Rule 8 negative-constraint shape that damaged
+`index.html` in M16. The frozen oracle observes DOM testids, not JS
+wiring: a lift-and-shift wiring break is the least detectable failure
+class this suite has. Precedent: the first split (markdown.js /
+threads.js) and the M31 files (current-chat.js / sidebar-resize.js)
+all landed as hand-builds then were ratified. See
+`project-trail/2026-07-27-appjs-split-handoff.md` for the full
+rationale and the shipped-record addendum.
 
 ## What changes v64 → v65
 
@@ -19,6 +46,27 @@ property of the file).
 
 ## As-built architecture
 
+* **`src/static/chrome.js`** (new v66) — themes (10 including matrix and
+  phosphor with their side effects: matrix-rain canvas start/stop,
+  phosphor titlebar `display: flex`), focus mode (fullscreen enter /
+  exit / zen class), settings modal (open/save/close, backdrop click),
+  and the generic modal chrome shared with the confirm modals owned by
+  other files: backdrop-click dismissal for `load-confirm-modal`,
+  `unload-confirm-modal`, `delete-confirm-modal`, and the Escape
+  keydown handler that fires each modal's cancel button (or exits zen
+  if no modal is open). Exposes `window.Chrome = {}` (self-contained;
+  references `window.App.appendBubble` lazily inside `fsDiag`).
+* **`src/static/catalog.js`** (new v66) — model dropdown lifecycle:
+  `fetchModels` (parallel `/api/v1/models` + `/api/v1/models/catalog`
+  with LM-Studio-first merging), `populateModelOptions` (preserves
+  previous selection, prefers a loaded model over the native default,
+  installs a "Select model..." placeholder when nothing matches), the
+  eject/unload confirm flow, and the `change` handler with pre-change
+  value capture on `focus`/`mousedown` (AC-104 cancel-reverts) plus
+  the AC-28 overlapping-load guard (`TC.modelLoading` reverts a second
+  pick without opening a modal). Exposes
+  `window.Catalog = { fetchModels, refreshModels }`; references
+  `window.App.pollStatus` and `window.App.appendBubble` lazily.
 * **`src/static/current-chat.js`** (new) — owns the header title for the
   active thread: display + tooltip refresh, inline rename (click → input
   focused and pre-selected; Enter/blur commit; Escape reverts; empty or
@@ -58,14 +106,26 @@ property of the file).
   matching the live-stream path (AC-128); `createThread` prefers a
   *loaded* model over the dropdown's sticky value and leaves the model
   empty (placeholder) when nothing is loaded.
-* **`src/static/app.js`** — initial-load hydration opens the **newest**
-  thread (`threads[]` is oldest-first, so the last element — AC-123);
-  `populateModelOptions` prefers a loaded model when nothing matches,
-  else prepends a disabled hidden "Select model..." option and tags the
-  field `select-empty` (AC-130); the submit path guards empty-model
-  (guidance bubble `msg-error`, AC-131) and unloaded-model (load-confirm
-  modal, then auto-resubmit on success) before any request; error bubbles
-  carry `data-testid="msg-error"`.
+* **`src/static/app.js`** — post-split (v66) scope is the chat surface:
+  initial-load hydration opens the **newest** thread (`threads[]` is
+  oldest-first, so the last element — AC-123); the submit path guards
+  empty-model (guidance bubble `msg-error`, AC-131) and unloaded-model
+  (opens the shared load-confirm modal, then auto-resubmits on load
+  success) before any request; SSE stream (`token` / `think` / `done`
+  / `error` / `sources` frames), Stop button (`AbortController`),
+  bubble helpers, per-message hover actions (copy, delete pair),
+  code-block copy, thinking toggle, new-thread button; `pollStatus`
+  (5s interval — coupled to `modelSelect` / `sendBtn.disabled` /
+  `webToggle.disabled` from `/api/v1/status`, so it stays here rather
+  than in chrome or catalog); publishes
+  `window.App = { appendBubble, pollStatus }` for chrome and catalog
+  to call lazily. Load-confirm modal element handles are grabbed here
+  because the Send-with-unloaded-model flow reassigns
+  `loadCancel.onclick` / `loadConfirm.onclick`; catalog's `change`
+  handler reassigns the same properties for its own flow — only one
+  flow runs at a time, latest write wins. `populateModelOptions` and
+  the eject/unload/load flow moved to `catalog.js`; themes / focus /
+  settings / modal chrome moved to `chrome.js`.
 
 ## Behavior locked by this version (beyond the v64 set)
 
@@ -89,18 +149,18 @@ against the as-built code.
 
 ## File inventory
 
-16 files. Added this version (all new, all shipped):
+18 files. Added this version (both new, both shipped at `2579f07`):
 
-* `src/static/current-chat.js`
-* `src/static/current-chat.css`
-* `src/static/sidebar-resize.js`
-* `src/static/sidebar-resize.css`
+* `src/static/chrome.js`
+* `src/static/catalog.js`
 
-`no_edit_files` unchanged: `markdown.js`, `rain.js`, `style.css`.
+`no_edit_files` unchanged as a set: `markdown.js`, `rain.js`,
+`style.css` (also resolved via `--affected` per the M29 fix).
 
-`contracts.changed_files` (D-86) declares the seven files the hand-build
-touched: the four above plus `app.js`, `threads.js`, `index.html`. This
-documents provenance; no coder run is pending against this version.
+`contracts.changed_files` (D-86) declares the four files the hand-build
+touched relative to v65: the two new files plus `app.js` and
+`index.html`. This documents provenance; no coder run is pending against
+this version.
 
 ## Oracle mapping
 
@@ -113,8 +173,21 @@ documents provenance; no coder run is pending against this version.
 
 ## Smoke checks
 
-The four new files get presence checks, quote-agnostic per the v61 lesson
-(single- and double-quoted forms both match):
+New in v66:
+
+* `chrome.js` — `window.Chrome`, `applyTheme`, `fullscreenEl`, and
+  `THEMES` present.
+* `catalog.js` — `window.Catalog`, `fetchModels`, `refreshModels`, and
+  `previousModelValue` present.
+
+Re-authored in v66:
+
+* `app.js` — landmarks that stayed post-split: `webToggle`,
+  `pendingSources`, the citation glyph `【`, `pollStatus`, `queueRender`.
+  The prior version's `ejectModelBtn` and `models/catalog` greps were
+  removed because both moved to `catalog.js`.
+
+Carried forward from v65 unchanged:
 
 * `current-chat.js` — `CurrentChat` and `commitPending` present.
 * `current-chat.css` — `grep -qE "data-active=['\"]true['\"]"` and
@@ -122,7 +195,7 @@ The four new files get presence checks, quote-agnostic per the v61 lesson
 * `sidebar-resize.js` — `SidebarResize` and `tc-sidebar-width` present.
 * `sidebar-resize.css` — `sidebar-resizer` and `col-resize` present.
 
-Existing entries unchanged.
+All other entries unchanged.
 
 ## Rollback / risk
 
