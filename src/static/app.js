@@ -17,104 +17,16 @@
       });
       var modelSelect = document.getElementById('model-select');
       var ejectModelBtn = document.getElementById('eject-model-btn');
+      // The load-confirm modal is shared: catalog.js drives it for the
+      // change-handler flow; app.js drives it here for the "Send with
+      // unloaded model → offer load, then auto-resubmit" flow. Both paths
+      // reassign loadCancelBtn.onclick / loadConfirmBtn.onclick; latest
+      // write wins, which is fine because only one flow runs at a time.
       var loadConfirmModal = document.getElementById('load-confirm-modal');
       var loadConfirmBtn = document.getElementById('load-confirm');
       var loadCancelBtn = document.getElementById('load-cancel');
       var loadConfirmText = document.getElementById('load-confirm-text');
-      var unloadConfirmModal = document.getElementById('unload-confirm-modal');
-      var unloadConfirmBtn = document.getElementById('unload-confirm');
-      var unloadCancelBtn = document.getElementById('unload-cancel');
-      var unloadConfirmText = document.getElementById('unload-confirm-text');
       var newThreadBtn = document.getElementById('new-thread-btn');
-      var themeToggle = document.getElementById('theme-toggle');
-
-      var THEMES = ['light', 'dark', 'matrix', 'phosphor', 'midnight', 'neon', 'crisp', 'ember', 'graphite-amber', 'graphite-forest'];
-      var THEME_ICONS = { light: '☀️', dark: '🌙', matrix: '💊', phosphor: '>_ ', midnight: '🌃', neon: '⚡', crisp: '🌤', ember: '🔥', 'graphite-amber': '🔶', 'graphite-forest': '🌲' };
-
-      function applyTheme(theme) {
-        if (THEMES.indexOf(theme) === -1) theme = 'light';
-        document.documentElement.setAttribute('data-theme', theme);
-        if (theme === 'matrix') {
-          if (typeof window.MatrixRain !== 'undefined') { window.MatrixRain.start(); }
-        } else {
-          if (typeof window.MatrixRain !== 'undefined') { window.MatrixRain.stop(); }
-        }
-        var titlebar = document.querySelector('[data-testid="terminal-titlebar"]');
-        if (titlebar) {
-          titlebar.style.display = theme === 'phosphor' ? 'flex' : 'none';
-        }
-        themeToggle.textContent = THEME_ICONS[theme];
-        try { localStorage.setItem('testchat-theme', theme); } catch (e) { /* private mode */ }
-      }
-
-      themeToggle.addEventListener('click', function () {
-        var current = document.documentElement.getAttribute('data-theme') || 'light';
-        applyTheme(THEMES[(THEMES.indexOf(current) + 1) % THEMES.length]);
-      });
-
-      try { applyTheme(localStorage.getItem('testchat-theme') || 'light'); } catch (e) { applyTheme('light'); }
-
-      // Focus mode
-      var fullscreenToggle = document.getElementById('fullscreen-toggle');
-
-      function fullscreenEl() {
-        return document.fullscreenElement || document.webkitFullscreenElement || null;
-      }
-
-      function exitZen() {
-        document.body.classList.remove('zen');
-        if (!fullscreenEl()) return;
-        if (document.exitFullscreen) {
-          document.exitFullscreen().catch(function () { /* already out of fullscreen — nothing to exit */ });
-        } else if (document.webkitExitFullscreen) {
-          document.webkitExitFullscreen();
-        }
-      }
-
-      function fsDiag(lastErr, method) {
-        var d = document;
-        var activation = 'n/a';
-        if (navigator.userActivation) activation = String(navigator.userActivation.isActive);
-        var msg = lastErr && lastErr.message ? lastErr.message : String(lastErr || 'unknown');
-        var info = msg +
-          ' | via: ' + (method || '?') +
-          ', gestureActive: ' + activation +
-          ', fullscreenEnabled: ' + (d.fullscreenEnabled !== undefined ? d.fullscreenEnabled : (d.webkitFullscreenEnabled !== undefined ? d.webkitFullscreenEnabled : 'unknown'));
-        try { console.warn('fullscreen failed:', info); } catch (e) { /* console unavailable — diag is best-effort */ }
-        if (statusTps) statusTps.textContent = 'fullscreen: ' + msg;
-        appendBubble('Browser fullscreen failed — ' + info, 'error');
-      }
-
-      fullscreenToggle.addEventListener('click', function () {
-        var gestureAtClick = navigator.userActivation ? String(navigator.userActivation.isActive) : 'n/a';
-        var el = document.documentElement || document.body;
-        var methodName = el.webkitRequestFullscreen ? 'webkitRequestFullscreen' : (el.requestFullscreen ? 'requestFullscreen' : null);
-        var label = methodName + ' on ' + (el.className || el.tagName) + ', gestureAtClick: ' + gestureAtClick;
-        if (methodName) {
-          try {
-            var p = el[methodName]();
-            if (p && p.catch) {
-              p.catch(function (err) { fsDiag(err, label); });
-            } else {
-              setTimeout(function () {
-                if (!fullscreenEl()) fsDiag('request returned without entering fullscreen', label);
-              }, 400);
-            }
-          } catch (err) {
-            fsDiag(err, label);
-          }
-        } else {
-          fsDiag('no Fullscreen API method on element', label);
-        }
-        document.body.classList.add('zen');
-      });
-
-      function onFullscreenChange() {
-        if (!fullscreenEl()) document.body.classList.remove('zen');
-      }
-
-      document.addEventListener('fullscreenchange', onFullscreenChange);
-      document.addEventListener('webkitfullscreenchange', onFullscreenChange);
 
       var replyText = '';
       var chunkCount = 0;
@@ -168,67 +80,6 @@
 
       setInterval(pollStatus, 5000);
       pollStatus();
-
-      // Settings modal
-      var settingsToggle = document.getElementById('settings-toggle');
-      var settingsModal = document.getElementById('settings-modal');
-      var systemPromptInput = document.getElementById('system-prompt-input');
-
-      function openSettings() {
-        fetch('/api/v1/settings')
-          .then(function (r) { return r.json(); })
-          .then(function (d) { systemPromptInput.value = d.system_prompt || ''; })
-          .catch(function () { systemPromptInput.value = ''; })
-          .finally(function () {
-            settingsModal.hidden = false;
-            systemPromptInput.focus();
-          });
-      }
-
-      function closeSettings() {
-        settingsModal.hidden = true;
-      }
-
-      settingsToggle.addEventListener('click', openSettings);
-      document.getElementById('settings-cancel').addEventListener('click', closeSettings);
-      document.getElementById('settings-save').addEventListener('click', function () {
-        fetch('/api/v1/settings', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ system_prompt: systemPromptInput.value })
-        }).then(closeSettings).catch(closeSettings);
-      });
-      settingsModal.addEventListener('click', function (e) {
-        if (e.target === settingsModal) closeSettings();
-      });
-      // Confirm-modal dismissals: click on the overlay backdrop = cancel.
-      // Each modal keeps its cancel button as the primary dismiss path;
-      // this is a convenience mirror, so it just triggers that button.
-      loadConfirmModal.addEventListener('click', function (e) {
-        if (e.target === loadConfirmModal) loadCancelBtn.click();
-      });
-      unloadConfirmModal.addEventListener('click', function (e) {
-        if (e.target === unloadConfirmModal) unloadCancelBtn.click();
-      });
-      var deleteConfirmModal = document.getElementById('delete-confirm-modal');
-      var deleteCancelBtn = document.getElementById('delete-cancel');
-      deleteConfirmModal.addEventListener('click', function (e) {
-        if (e.target === deleteConfirmModal) deleteCancelBtn.click();
-      });
-      document.addEventListener('keydown', function (e) {
-        if (e.key !== 'Escape') return;
-        if (!settingsModal.hidden) {
-          closeSettings();
-        } else if (!loadConfirmModal.hidden) {
-          loadCancelBtn.click();
-        } else if (!unloadConfirmModal.hidden) {
-          unloadCancelBtn.click();
-        } else if (!deleteConfirmModal.hidden) {
-          deleteCancelBtn.click();
-        } else if (document.body.classList.contains('zen')) {
-          exitZen();
-        }
-      });
 
       // Bubble helpers
       function appendBubble(text, type) {
@@ -326,7 +177,7 @@
                 // (which reads the DOM, not the server) lets it through.
                 sel.dataset.loaded = 'true';
                 sel.textContent = '🟢 ' + loadId;
-                refreshModels();
+                window.Catalog.refreshModels();
                 form.dispatchEvent(new Event('submit', { cancelable: true }));
               })
               .catch(function (err) { appendBubble(err.message || 'Failed to load model', 'error'); })
@@ -662,272 +513,12 @@
         Threads.createThread();
       });
 
-      function fetchModels() {
-        var lmPromise = fetch('/api/v1/models').then(function (r) {
-          if (!r.ok) throw new Error('Failed to fetch models');
-          return r.json();
-        });
-        var catalogPromise = fetch('/api/v1/models/catalog').then(function (r) {
-          if (!r.ok) throw new Error('Failed to fetch catalog');
-          return r.json();
-        });
-
-        Promise.all([lmPromise, catalogPromise])
-          .then(function (results) {
-            var lmData = results[0];
-            var catalogData = results[1];
-            populateModelOptions(lmData, catalogData);
-          })
-          .catch(function () {
-            return lmPromise.then(function (lmData) {
-              populateModelOptions(lmData, null);
-            }).catch(function () {
-              modelSelect.innerHTML = '<option value="">Failed to load models</option>';
-            });
-          });
-      }
-
-      function populateModelOptions(lmData, catalogData) {
-        var previous = modelSelect.value;
-        // Startup race: if the threads hydrate resolves before the first
-        // models response, restoreThreadModelState's value-set silently
-        // no-ops (no matching option yet). Fall back to the active thread's
-        // saved model so the selection still lands once options exist.
-        if (!previous) {
-          var activeThread = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
-          if (activeThread && activeThread.model) previous = activeThread.model;
-        }
-        modelSelect.innerHTML = '';
-        var lmModels = lmData.models || [];
-        var catalogModels = catalogData ? (catalogData.models || []) : [];
-
-        TC.scriptModelLoaded = false;
-        for (var c = 0; c < catalogModels.length; c++) {
-          if (catalogModels[c].loaded === true) { TC.scriptModelLoaded = true; break; }
-        }
-        ejectModelBtn.disabled = !TC.scriptModelLoaded;
-        ejectModelBtn.hidden = !TC.scriptModelLoaded;
-
-        var lmMap = {};
-        for (var k = 0; k < lmModels.length; k++) {
-          lmMap[lmModels[k].id] = true;
-        }
-
-        var options = [];
-        for (var i = 0; i < lmModels.length; i++) {
-          options.push({ id: lmModels[i].id, loaded: true });
-        }
-        for (var j = 0; j < catalogModels.length; j++) {
-          if (!lmMap[catalogModels[j].id]) {
-            options.push({ id: catalogModels[j].id, loaded: catalogModels[j].loaded === true });
-          }
-        }
-
-        if (options.length === 0) {
-          var opt = document.createElement('option');
-          opt.value = '';
-          opt.textContent = 'No models available';
-          modelSelect.appendChild(opt);
-          return;
-        }
-
-        for (var m = 0; m < options.length; m++) {
-          var o = document.createElement('option');
-          var id = options[m].id;
-          var loaded = options[m].loaded;
-          o.value = id;
-          o.dataset.loaded = loaded ? 'true' : 'false';
-          var prefix = loaded ? '\ud83d\udfe2 ' : '\u25cb ';
-          o.textContent = prefix + id;
-          modelSelect.appendChild(o);
-        }
-
-        var opts = modelSelect.options;
-        var matched = false;
-        for (var n = 0; n < opts.length; n++) {
-          if (opts[n].value === previous) {
-            modelSelect.value = previous;
-            // AC-100 (v57): no label glyph for the selection \u2014 the native
-            // <select> already marks it, and a "\u2713 " prefix duplicated
-            // the OS checkmark on macOS.
-            var thread2 = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
-            if (thread2) thread2.model = previous;
-            matched = true;
-            break;
-          }
-        }
-        // Nothing saved to match against \u2014 prefer a live-loaded model over the
-        // native default (which is whichever option happened to appear first,
-        // and until today was an unloaded deepseek that Send silently 422'd on).
-        if (!matched) {
-          for (var q = 0; q < options.length; q++) {
-            if (options[q].loaded) {
-              modelSelect.value = options[q].id;
-              var t = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
-              if (t) t.model = options[q].id;
-              matched = true;
-              break;
-            }
-          }
-        }
-        // Still nothing \u2014 show a placeholder option ("Select model...") the
-        // way the message-input placeholder reads, so an empty field is
-        // visibly empty rather than looking like a live selection.
-        if (!matched) {
-          var ph = document.createElement('option');
-          ph.value = '';
-          ph.disabled = true;
-          ph.hidden = true;
-          ph.textContent = 'Select model...';
-          modelSelect.insertBefore(ph, modelSelect.firstChild);
-          modelSelect.value = '';
-          var t2 = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
-          if (t2) t2.model = '';
-        }
-        // Saved model vanished from the dropdown: native <select> silently
-        // shows the first option, but thread.model kept the stale id until
-        // the next send. Sync it now so the UI and stored state agree.
-        if (previous && !opts.length) {
-          var thread3 = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
-          if (thread3) thread3.model = modelSelect.value || '';
-        }
-        modelSelect.classList.toggle('select-empty', !modelSelect.value);
-      }
-
-      function refreshModels() {
-        fetchModels();
-      }
-
-      ejectModelBtn.addEventListener('click', function () {
-        fetch('/api/v1/models/catalog')
-          .then(function (response) {
-            if (!response.ok) throw new Error('Failed to fetch catalog');
-            return response.json();
-          })
-          .then(function (data) {
-            var models = data.models || [];
-            var loadedModel = null;
-            for (var i = 0; i < models.length; i++) {
-              if (models[i].loaded === true) {
-                loadedModel = models[i];
-                break;
-              }
-            }
-            if (!loadedModel) return;
-            unloadConfirmModal.dataset.modelId = loadedModel.id;
-            unloadConfirmText.textContent = 'Unload ' + loadedModel.id + '?';
-            unloadConfirmModal.hidden = false;
-          })
-          .catch(function () { /* silently ignore catalog fetch failures */ });
-      });
-
-      unloadCancelBtn.addEventListener('click', function () {
-        unloadConfirmModal.hidden = true;
-      });
-
-      unloadConfirmBtn.addEventListener('click', function () {
-        unloadConfirmModal.hidden = true;
-        var id = unloadConfirmModal.dataset.modelId || '';
-        fetch('/api/v1/script-models/' + encodeURIComponent(id) + '/unload', { method: 'POST' })
-          .then(function (response) {
-            if (!response.ok) throw new Error('Failed to unload model');
-            refreshModels();
-            pollStatus();
-          })
-          .catch(function (err) {
-            appendBubble(err.message || 'Failed to unload model', 'error');
-          });
-      });
-
-      // Native <select> fires 'change' AFTER value updates, so capture the
-      // pre-change value on focus/mousedown — needed so load-cancel can
-      // actually revert (bug: prior was reading the just-picked value).
-      var previousModelValue = modelSelect.value;
-      var ejectHideTimer = null;
-      modelSelect.addEventListener('focus', function () {
-        previousModelValue = modelSelect.value;
-        ejectModelBtn.hidden = false;
-        if (ejectHideTimer) { clearTimeout(ejectHideTimer); ejectHideTimer = null; }
-      });
-      modelSelect.addEventListener('blur', function () {
-        ejectHideTimer = setTimeout(function () {
-          ejectModelBtn.hidden = !TC.scriptModelLoaded;
-          ejectHideTimer = null;
-        }, 200);
-      });
-      modelSelect.addEventListener('mousedown', function () {
-        previousModelValue = modelSelect.value;
-      });
-
-      modelSelect.addEventListener('change', function () {
-        modelSelect.classList.toggle('select-empty', !modelSelect.value);
-        var selected = modelSelect.options[modelSelect.selectedIndex];
-        if (selected && selected.dataset.loaded === 'false') {
-          // Overlapping-load guard: mid-load thread-switch can re-enable the
-          // selector on an unlocked thread, letting a second load start
-          // before the first .finally fires. Both loads'
-          // _unload_other_script_models then race for the same process
-          // handle. Only unloaded picks can start a load, so loaded-model
-          // selections stay usable during the (up to 180s) load window.
-          if (TC.modelLoading) {
-            modelSelect.value = previousModelValue;
-            modelSelect.classList.toggle('select-empty', !modelSelect.value);
-            return;
-          }
-          var prior = previousModelValue;
-          var id = modelSelect.value;
-          loadConfirmText.textContent = 'Start ' + id + '? Uses significant RAM. ' + statusRam.textContent;
-          loadConfirmModal.hidden = false;
-          pollStatus();
-          loadCancelBtn.onclick = function () {
-            loadConfirmModal.hidden = true;
-            modelSelect.value = prior;
-            modelSelect.classList.toggle('select-empty', !modelSelect.value);
-            pollStatus();
-          };
-          loadConfirmBtn.onclick = function () {
-            loadConfirmModal.hidden = true;
-            modelSelect.disabled = true;
-            TC.modelLoading = true;
-            var opt = modelSelect.options[modelSelect.selectedIndex];
-            var baseText = opt.value;
-            var interval = setInterval(function () {
-              var current = opt.textContent;
-              if (current.indexOf('\ud83d\udfe2 ') === 0) {
-                opt.textContent = '\u25cb ' + baseText;
-              } else {
-                opt.textContent = '\ud83d\udfe2 ' + baseText;
-              }
-            }, 600);
-            fetch('/api/v1/script-models/' + encodeURIComponent(id) + '/load', { method: 'POST' })
-              .then(function (response) {
-                if (!response.ok) throw new Error('Failed to load model');
-                clearInterval(interval);
-                previousModelValue = id;
-                refreshModels();
-              })
-              .catch(function (err) {
-                clearInterval(interval);
-                // The blink can stop on the 🟢 half-cycle; a failed model
-                // must not sit in the list looking loaded.
-                opt.textContent = '○ ' + baseText;
-                modelSelect.value = prior;
-                appendBubble(err.message || 'Failed to load model', 'error');
-              })
-              .finally(function () {
-                TC.modelLoading = false;
-                var active = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
-                modelSelect.disabled = active ? !!active.locked : false;
-                pollStatus();
-              });
-          };
-        } else {
-          previousModelValue = modelSelect.value;
-          var thread = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
-          if (thread) thread.model = modelSelect.value;
-          pollStatus();
-        }
-      });
+      // Exposed for chrome.js (fsDiag error) and catalog.js (load/unload
+      // error paths, plus pollStatus after unload / around a load confirm).
+      window.App = {
+        appendBubble: appendBubble,
+        pollStatus: pollStatus
+      };
 
       // Initial load
       fetch('/api/v1/threads')
@@ -954,6 +545,6 @@
         .catch(function () {
           Threads.createThread();
         });
-      fetchModels();
+      window.Catalog.fetchModels();
       input.focus();
     })();
