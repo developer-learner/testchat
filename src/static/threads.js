@@ -42,7 +42,6 @@ window.Threads = (function () {
   function restoreThreadModelState(thread) {
     var ms = el('model-select');
     ms.value = thread.model || '';
-    ms.disabled = !!thread.locked;
     ms.classList.toggle('select-empty', !ms.value);
   }
 
@@ -489,9 +488,6 @@ function addSources(bubble, sources, notice) {
     lockThread: function (thread) {
       if (!thread || thread.locked) return;
       thread.locked = true;
-      if (thread.id === TC.activeThreadId) {
-        el('model-select').disabled = true;
-      }
     }
   };
 })();
