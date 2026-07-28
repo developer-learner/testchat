@@ -1,0 +1,215 @@
+{
+  "version": 15,
+  "erd_version": 58,
+  "tasks": [
+    {
+      "id": "T1",
+      "file": "src/services/websearch.py",
+      "depends_on": [],
+      "brief": "Implementation constraints: synchronous Python, stdlib only. No edits — file already carries ratified behavior (AC-93). Carry forward as-is.\n\nBehavioral specification: No changes. The file src/services/websearch.py is part of the M29 inventory but requires no modifications in this milestone.\n\nAcceptance: grep -q 'WebSearchError' src/services/websearch.py && grep -q 'TAVILY_ENDPOINT' src/services/websearch.py && grep -q 'def build_prompt' src/services/websearch.py && grep -q 'plain square' src/services/websearch.py",
+      "contracts": [],
+      "tests": [
+        "tests/test_websearch_service.py::test_unconfigured_when_key_missing",
+        "tests/test_websearch_service.py::test_configured_with_key",
+        "tests/test_websearch_service.py::test_search_sends_bearer_and_query",
+        "tests/test_websearch_service.py::test_search_returns_at_most_four_sources",
+        "tests/test_websearch_service.py::test_source_content_capped",
+        "tests/test_websearch_service.py::test_search_http_error_raises",
+        "tests/test_websearch_service.py::test_build_prompt_numbers_sources_and_keeps_question",
+        "tests/test_websearch_service.py::test_prompt_forbids_full_width_citations"
+      ]
+    },
+    {
+      "id": "T2",
+      "file": "src/api/status.py",
+      "depends_on": [],
+      "brief": "Implementation constraints: synchronous Python, no edits. File already carries ratified behavior (AC-90). Carry forward as-is.\n\nBehavioral specification: No changes. The file src/api/status.py is part of the M29 inventory but requires no modifications in this milestone.\n\nAcceptance: grep -q 'web_configured' src/api/status.py",
+      "contracts": [],
+      "tests": [
+        "tests/test_status_api.py::test_status_returns_json_object",
+        "tests/test_status_api.py::test_status_is_repeatable",
+        "tests/test_status_api.py::test_status_reports_loadable_gb",
+        "tests/test_status_api.py::test_status_existing_fields_survive",
+        "tests/test_websearch_api.py::test_status_reports_web_configured"
+      ]
+    },
+    {
+      "id": "T3",
+      "file": "src/api/chat.py",
+      "depends_on": [
+        "T11"
+      ],
+      "brief": "Implementation constraints: synchronous Python, no edits. File already carries ratified behavior including DeepSeek V4 Flash routing (get_script_model + is_script_model_loaded). Carry forward as-is.\n\nBehavioral specification: No changes. The file src/api/chat.py already implements script-model routing for both nemotron and deepseek-v4-flash.\n\nAcceptance: grep -q \"get_script_model\" src/api/chat.py && grep -q \"event: sources\" src/api/chat.py",
+      "contracts": [],
+      "tests": [
+        "tests/test_chat_api.py::TestM3ChatRouteCarried::test_chat_opens_event_stream_200",
+        "tests/test_chat_api.py::TestM3ChatRouteCarried::test_chat_streams_token_events_in_order",
+        "tests/test_chat_api.py::TestM3ChatRouteCarried::test_chat_emits_done_after_tokens",
+        "tests/test_chat_api.py::TestM3ChatRouteCarried::test_chat_connection_error_emits_error_only",
+        "tests/test_chat_api.py::TestM3ChatRouteCarried::test_chat_mid_stream_failure_emits_error_after_tokens",
+        "tests/test_chat_api.py::TestM3ChatRouteCarried::test_chat_missing_message_is_422_no_stream",
+        "tests/test_chat_api.py::TestM4ChatHistory::test_chat_with_history_streams_correctly",
+        "tests/test_chat_api.py::TestM4ChatHistory::test_chat_history_passed_to_upstream",
+        "tests/test_chat_api.py::TestM4ChatHistory::test_chat_history_defaults_to_empty",
+        "tests/test_chat_api.py::TestM4ChatHistory::test_chat_invalid_history_role_is_422",
+        "tests/test_chat_api.py::TestM4ChatHistory::test_chat_history_missing_fields_is_422",
+        "tests/test_chat_api.py::TestM4ChatHistory::test_chat_history_missing_role_is_422",
+        "tests/test_chat_api.py::TestM4ChatHistory::test_chat_empty_history_array_is_valid",
+        "tests/test_chat_api.py::TestM4ChatHistory::test_chat_history_with_system_prompt_ordering",
+        "tests/test_chat_model_routing.py::test_chat_routes_to_nemotron_and_passes_model",
+        "tests/test_chat_model_routing.py::test_chat_routes_to_lmstudio_and_passes_model",
+        "tests/test_chat_model_routing.py::test_chat_invalid_model_type_is_422",
+        "tests/test_chat_model_routing.py::test_chat_nemotron_selected_but_not_loaded_is_422",
+        "tests/test_chat_model_routing.py::test_chat_routes_to_deepseek_and_passes_model",
+        "tests/test_chat_model_routing.py::test_chat_deepseek_selected_but_not_loaded_is_422",
+        "tests/test_websearch_api.py::test_web_false_issues_no_search",
+        "tests/test_websearch_api.py::test_web_true_emits_sources_before_tokens",
+        "tests/test_websearch_api.py::test_web_true_augments_prompt",
+        "tests/test_websearch_api.py::test_search_failure_falls_back_with_notice"
+      ]
+    },
+    {
+      "id": "T4",
+      "file": "src/api/threads.py",
+      "depends_on": [],
+      "brief": "Implementation constraints: synchronous Python, no edits. File already carries ratified behavior. Carry forward as-is.\n\nBehavioral specification: No changes. The file src/api/threads.py is part of the M29 inventory but requires no modifications in this milestone.\n\nAcceptance: grep -q 'class SourceLink' src/api/threads.py && grep -q 'exclude_none=True' src/api/threads.py",
+      "contracts": [],
+      "tests": [
+        "tests/test_threads_api.py::test_get_with_no_saved_data_returns_empty",
+        "tests/test_threads_api.py::test_put_then_get_roundtrips",
+        "tests/test_threads_api.py::test_put_malformed_payload_is_422_and_preserves_stored",
+        "tests/test_threads_api.py::test_delete_clears_snapshot",
+        "tests/test_threads_api.py::test_optional_fields_default",
+        "tests/test_threads_api.py::test_put_invalid_role_rejected",
+        "tests/test_threads_api.py::test_get_reports_quarantine_after_corrupt_snapshot",
+        "tests/test_websearch_api.py::test_put_threads_roundtrips_sources"
+      ]
+    },
+    {
+      "id": "T5",
+      "file": "src/static/index.html",
+      "depends_on": [],
+      "brief": "Implementation constraints: static HTML, no JS logic. Modify src/static/index.html.\n\nBehavioral specification: In the div class='top-bar': DELETE the four buttons with ids load-nemotron, unload-nemotron, load-deepseek, unload-deepseek. INSERT directly after the closing </select> of model-select:\n<button type=\"button\" class=\"theme-toggle no-auto-margin\" id=\"eject-model-btn\" data-testid=\"eject-model-btn\" title=\"Unload the active model\" hidden>⏏</button>\nBefore the closing </body>, after the existing settings-modal overlay div, ADD two overlay divs copying the settings-modal structure exactly (class='modal-overlay' hidden, inner div class='modal'):\n1) id='load-confirm-modal' data-testid='load-confirm-modal', modal-title 'Load model?', a p tag id='load-confirm-text' class='modal-hint', modal-actions with <button type='button' id='load-cancel' data-testid='load-cancel'>Cancel</button> and <button type='button' id='load-confirm' data-testid='load-confirm' class='primary'>Load model</button>.\n2) id='unload-confirm-modal' data-testid='unload-confirm-modal', modal-title 'Unload model?', a p tag id='unload-confirm-text' class='modal-hint', modal-actions with <button type='button' id='unload-cancel' data-testid='unload-cancel'>Cancel</button> and <button type='button' id='unload-confirm' data-testid='unload-confirm' class='primary'>Unload</button>.\nChange NOTHING else.\n\nAcceptance: grep -q 'data-testid=\"web-toggle\"' src/static/index.html && grep -q 'data-testid=\"eject-model-btn\"' src/static/index.html && grep -q 'data-testid=\"delete-confirm-modal\"' src/static/index.html",
+      "contracts": [],
+      "tests": [
+        "tests/test_page.py::test_root_serves_html_page",
+        "tests/test_page.py::test_page_wires_chat_endpoint"
+      ]
+    },
+    {
+      "id": "T6",
+      "file": "src/static/threads.js",
+      "depends_on": [],
+      "brief": "Implementation constraints: synchronous JS, no edits. File already carries ratified behavior. Carry forward as-is.\n\nBehavioral specification: No changes. The file src/static/threads.js is part of the M29 inventory but requires no modifications in this milestone.\n\nAcceptance: grep -q 'addSources' src/static/threads.js && grep -q 'msg-sources' src/static/threads.js",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T7",
+      "file": "src/static/app.js",
+      "depends_on": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+        "T6",
+        "T8",
+        "T9",
+        "T10",
+        "T11",
+        "T12"
+      ],
+      "brief": "Implementation constraints: ES5 JavaScript (var, function expressions), runs in browser. Modify src/static/app.js.\n\nBehavioral specification:\n1) DELETE vars loadNemotronBtn, unloadNemotronBtn, loadDeepseekBtn, unloadDeepseekBtn and their four addEventListener blocks.\n2) ADD vars: ejectModelBtn, loadConfirmModal, loadConfirmBtn, loadCancelBtn, loadConfirmText, unloadConfirmModal, unloadConfirmBtn, unloadCancelBtn, unloadConfirmText — all via getElementById.\n3) REWRITE fetchModels(): fetch BOTH /api/v1/models and /api/v1/models/catalog (Promise.all). Options = lmstudio entries from /api/v1/models plus ALL catalog entries. Label: (loaded ? '🟢 ' : '○ ') + id; prefix '✓ ' when id === modelSelect.value. Set data-loaded='true'/'false'. If catalog fetch fails, fall back to lmstudio only.\n4) modelSelect 'change' listener: if data-loaded='false', show load-confirm-modal with text. load-cancel restores selection. load-confirm POSTs /api/v1/script-models/{id}/load, polls status, refreshes models.\n5) ejectModelBtn: reveal on modelSelect focus, hide on blur (200ms timeout). Click: find loaded script model, show unload-confirm-modal. unload-confirm POSTs /api/v1/script-models/{id}/unload, refreshes.\n\nAcceptance: grep -q 'webToggle' src/static/app.js && grep -q 'pendingSources' src/static/app.js && grep -q '【' src/static/app.js && grep -q 'ejectModelBtn' src/static/app.js && grep -q 'models/catalog' src/static/app.js",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T8",
+      "file": "src/static/markdown.js",
+      "depends_on": [],
+      "brief": "Implementation constraints: no code changes. This is a no_edit_file — declared unchanged. Carry forward as-is.\n\nBehavioral specification: No edits.\n\nAcceptance: grep -q 'renderBlocks' src/static/markdown.js",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T9",
+      "file": "src/static/rain.js",
+      "depends_on": [],
+      "brief": "Implementation constraints: no code changes. This is a no_edit_file — declared unchanged. Carry forward as-is.\n\nBehavioral specification: No edits.\n\nAcceptance: grep -q 'prefers-reduced-motion' src/static/rain.js",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T10",
+      "file": "src/static/style.css",
+      "depends_on": [],
+      "brief": "Implementation constraints: no code changes. This is a no_edit_file — declared unchanged. Carry forward as-is.\n\nBehavioral specification: No edits.\n\nAcceptance: grep -q 'data-theme=' src/static/style.css",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T11",
+      "file": "src/services/models.py",
+      "depends_on": [],
+      "brief": "Implementation constraints: synchronous Python, stdlib + httpx. Modify src/services/models.py to implement AC-102..AC-106.\n\nBehavioral specification:\n1) In load_script_model: change the error message when the child process exits before readiness from a timeout message to a distinct message (e.g. 'child exited').\n2) In load_script_model: on deadline timeout, ensure the spawned server is terminated (unreachable), not just left running.\n3) In _unload_other_script_models (or equivalent): before spawning, ensure the other model is unreachable. If it cannot be evicted, abort the load with an error naming the model.\n4) In unload_script_model: implement AC-102 — discover the server by port or command basename if no handle is tracked, and terminate it. If termination fails (server stays reachable), return {'status': 'error', 'message': ...} per AC-103.\n5) Keep list_model_catalog function.\n\nAcceptance: grep -q 'def list_model_catalog' src/services/models.py && grep -q 'SCRIPT_MODELS' src/services/models.py",
+      "contracts": [
+        "schema:ScriptModelLoadResponse",
+        "schema:ScriptModelUnloadResponse"
+      ],
+      "tests": [
+        "tests/test_models_service.py::test_list_models_includes_lmstudio_loaded_instances",
+        "tests/test_models_service.py::test_list_models_returns_empty_on_exception",
+        "tests/test_models_service.py::test_list_models_returns_empty_on_non_2xx",
+        "tests/test_models_service.py::test_list_models_omits_nemotron_when_not_loaded",
+        "tests/test_models_service.py::test_list_models_includes_nemotron_when_loaded",
+        "tests/test_models_service.py::test_list_models_includes_deepseek_when_loaded",
+        "tests/test_models_service.py::test_registry_contains_expected_script_models",
+        "tests/test_models_service.py::test_load_nemotron_expands_script_path",
+        "tests/test_models_service.py::test_load_then_unload_leaves_the_server_unreachable",
+        "tests/test_models_service.py::test_unload_stops_a_running_server_with_no_tracked_handle",
+        "tests/test_models_service.py::test_unload_is_a_noop_when_the_model_is_not_running",
+        "tests/test_models_service.py::test_unload_reports_error_when_the_model_stays_reachable",
+        "tests/test_models_service.py::test_unload_nemotron_alias_leaves_it_unreachable",
+        "tests/test_models_service.py::test_load_evicts_a_running_untracked_other_model",
+        "tests/test_models_service.py::test_load_refuses_when_the_other_model_cannot_be_evicted",
+        "tests/test_models_service.py::test_load_is_idempotent_when_already_running",
+        "tests/test_models_service.py::test_load_reports_child_exit_distinctly_from_the_deadline",
+        "tests/test_models_service.py::test_load_deadline_leaves_the_spawned_server_unreachable"
+      ]
+    },
+    {
+      "id": "T12",
+      "file": "src/api/models.py",
+      "depends_on": [
+        "T11"
+      ],
+      "brief": "Implementation constraints: async Python, FastAPI, pydantic. Modify src/api/models.py.\n\nBehavioral specification:\n1) Import list_model_catalog from src.services.models.\n2) Define CatalogEntry (id, source, loaded) and ModelCatalogResponse (models: list[CatalogEntry]) pydantic models.\n3) Add route GET /models/catalog that returns the catalog.\n4) Ensure unload routes return the error response from the service when unload fails (AC-103).\n\nAcceptance: grep -q 'models/catalog' src/api/models.py && grep -q 'list_model_catalog' src/api/models.py",
+      "contracts": [
+        "route:GET /api/v1/models/catalog",
+        "schema:ScriptModelUnloadResponse",
+        "schema:NemotronUnloadResponse"
+      ],
+      "tests": [
+        "tests/test_models_api.py::test_list_models_includes_lmstudio_loaded_instances",
+        "tests/test_models_api.py::test_list_models_degrades_when_lmstudio_unreachable",
+        "tests/test_models_api.py::test_list_models_omits_nemotron_when_not_loaded",
+        "tests/test_models_api.py::test_load_nemotron_spawns_and_confirms_ready",
+        "tests/test_models_api.py::test_load_nemotron_idempotent_when_already_loaded",
+        "tests/test_models_api.py::test_load_deepseek_via_generic_endpoint",
+        "tests/test_models_api.py::test_nemotron_load_alias_matches_generic_endpoint",
+        "tests/test_models_api.py::test_load_unknown_script_model_is_404",
+        "tests/test_models_api.py::test_unload_unknown_script_model_is_404",
+        "tests/test_models_api.py::test_load_deadline_returns_503_and_leaves_nothing_running",
+        "tests/test_models_api.py::test_load_reports_child_exit_distinctly_from_deadline",
+        "tests/test_models_api.py::test_unload_route_leaves_the_server_unreachable",
+        "tests/test_models_api.py::test_unload_route_stops_a_server_with_no_tracked_handle",
+        "tests/test_models_api.py::test_unload_route_reports_error_when_the_model_stays_reachable",
+        "tests/test_models_api.py::test_unload_route_is_a_noop_when_not_loaded",
+        "tests/test_models_api.py::test_unload_nemotron_alias_leaves_it_unreachable",
+        "tests/test_models_api.py::test_unload_nemotron_idempotent_when_not_loaded",
+        "tests/test_models_api.py::test_load_route_evicts_a_running_untracked_other_model"
+      ]
+    }
+  ]
+}
