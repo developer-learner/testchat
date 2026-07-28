@@ -1,5 +1,5 @@
 {
-  "erd_version": 68,
+  "erd_version": 69,
   "files": [
     "src/services/websearch.py",
     "src/api/status.py",
@@ -549,7 +549,9 @@
     "src/static/sidebar-resize.js": "grep -q 'SidebarResize' src/static/sidebar-resize.js && grep -q 'tc-sidebar-width' src/static/sidebar-resize.js",
     "src/static/sidebar-resize.css": "grep -q 'sidebar-resizer' src/static/sidebar-resize.css && grep -q 'col-resize' src/static/sidebar-resize.css",
     "src/static/chrome.js": "grep -q 'window.Chrome' src/static/chrome.js && grep -q 'applyTheme' src/static/chrome.js && grep -q 'fullscreenEl' src/static/chrome.js && grep -q 'THEMES' src/static/chrome.js",
-    "src/static/catalog.js": "grep -q 'window.Catalog' src/static/catalog.js && grep -q 'fetchModels' src/static/catalog.js && grep -q 'refreshModels' src/static/catalog.js && grep -q 'previousModelValue' src/static/catalog.js"
+    "src/static/catalog.js": "grep -q 'window.Catalog' src/static/catalog.js && grep -q 'fetchModels' src/static/catalog.js && grep -q 'refreshModels' src/static/catalog.js && grep -q 'previousModelValue' src/static/catalog.js",
+    "src/api/settings.py": "grep -q 'def get_settings' src/api/settings.py && grep -q 'def put_settings' src/api/settings.py",
+    "src/services/settings.py": "grep -q 'def load_settings' src/services/settings.py && grep -q 'def get_system_prompt' src/services/settings.py"
   },
   "no_edit_files": [
     "src/static/markdown.js",
@@ -558,8 +560,6 @@
   ],
   "changed_files": [
     "src/static/catalog.js",
-    "src/static/chrome.js",
-    "src/static/app.js",
-    "src/static/index.html"
+    "src/static/threads.js"
   ]
 }
