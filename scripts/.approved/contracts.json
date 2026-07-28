@@ -1,5 +1,5 @@
 {
-  "erd_version": 70,
+  "erd_version": 71,
   "files": [
     "src/static/catalog.js",
     "src/static/threads.js"

@@ -1,4 +1,35 @@
-ERD — testchat M31 as built + hand-build coverage (erd_version 66)
+ERD — testchat M31 as built + hand-build coverage (erd_version 71)
+
+## What changes v70 → v71
+
+M32 removes AC-28 (mid-chat model lock). The `.locked` boolean stays in the
+persistence schema for backward compat, but the UI never disables
+`#model-select` in response to it. Two lines of code implement the removal:
+
+* `src/static/catalog.js` — the `.finally` handler in the model-load path
+  must set `modelSelect.disabled = false` unconditionally. The prior
+  `modelSelect.disabled = active ? !!active.locked : false` reads the
+  `.locked` field and disables the selector on locked threads, contradicting
+  AC-133.
+* `src/static/threads.js` — `restoreThreadModelState(thread)` (called on
+  thread switch and hydrate) must NOT execute `ms.disabled = !!thread.locked`;
+  drop that line. `lockThread(thread)` may still set `thread.locked = true`
+  for persistence-schema compatibility, but MUST NOT set
+  `el('model-select').disabled = true` as a DOM side-effect; drop that block.
+
+The invariant, restated so it holds under any future edit: **the
+`#model-select` element MUST NEVER be programmatically disabled by JavaScript
+based on a thread's `.locked` field or any per-thread state.** The only
+transient disable permitted is the existing `.finally` re-enable pattern
+around a model load in progress (`modelSelect.disabled = true` at load
+start, `modelSelect.disabled = false` at load completion) — a
+lifecycle-of-the-load state, not a lifecycle-of-the-thread state.
+
+Frozen tests already assert this: `test_selector_stays_enabled_across_all_ui_states[chromium]`
+scans across every UI state and requires the selector to be enabled;
+`test_mid_chat_switch_updates_thread_model_and_routes_next_send[chromium]`
+requires the user to be able to pick a different model mid-thread. Both
+fail today against the pre-removal code; both must pass after.
 
 ## What changes v65 → v66
 
