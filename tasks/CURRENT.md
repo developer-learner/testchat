@@ -424,3 +424,7 @@ chat with postmortem §6 as the delta request, land via `scripts/refreeze.sh`.
 **State hygiene:** no production state mutated — `data/threads.json` verified
 byte-identical (`bcab36da...`) before and after; all spawned test processes
 cleaned up; app left stopped, as found.
+
+## Results
+
+Full frozen TPM suite green against spec v71. Feature built and validated.
