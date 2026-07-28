@@ -136,3 +136,99 @@ listed as an intentional non-fix; AC-28 in any form.
 Hand-build + browser verify: 1–2 focused hours. Ratify freeze + run:
 ~10 min. Commits: extraction as one or two `ui:` live-fix commits (no
 Co-Authored-By trailer), then the `[refreeze vN]` from the TPM relay.
+
+---
+
+## Shipped 2026-07-27 — hand-build (ad hoc, NOT via the pipeline)
+
+Landed at `2579f07` on `main` as a single `ui:` commit. Explicitly
+**not** a milestone: this did not go through `orchestrate.sh`, no
+TPM spec, no EM plan, no coder invocation — a conductor-driven
+lift-and-shift, per the rationale in "Why hand-build + ratify" above
+(Rule 8 negative-constraint shape, D-60's 150-line cap on new-file
+coder writes, the frozen oracle's blind spot on JS wiring). The
+ratify freeze is the pipeline's touch on this work and is still
+pending — that is the TPM recut that adds the two new files to the
+ERD inventory + `contracts.files`.
+
+**Files after the cut** (was `app.js` 959):
+
+| File | Lines | Concern |
+|---|---|---|
+| `src/static/app.js` | 550 | chat surface: bubbles, SSE stream, stop, pollStatus, hover/copy/thinkToggle/newThreadBtn, Send-with-unloaded-model flow |
+| `src/static/chrome.js` | 171 | themes (10 + rain/phosphor side effects), focus mode, settings modal, generic overlay backdrop dismissal, Escape handler |
+| `src/static/catalog.js` | 304 | fetchModels + populateModelOptions + refreshModels, eject/unload confirm, select pre-change capture, change handler with AC-28 mid-chat lock coupling |
+| `src/static/index.html` | +2 | chrome + catalog script tags before app.js |
+
+Net +66 lines (three IIFE wrappers, one added comment about the
+shared load-confirm modal, and the `window.App` / `window.Catalog`
+publish blocks). No behavior changes intended.
+
+**Decision points during execution:**
+
+- `pollStatus` **stayed in app.js**, not moved to chrome. It reads
+  `modelSelect.value` + option `dataset.loaded`, controls
+  `sendBtn.disabled` and `ejectModelBtn.disabled`, and mutates
+  `webToggle.disabled` from `/api/v1/status.web_configured` — coupled
+  to both catalog and chat. Moving it would have created a three-way
+  namespace tangle for zero benefit. Handoff said "if coupled, leave
+  in app.js" — confirmed coupled.
+- **Shared load-confirm modal.** app.js keeps the load-confirm modal
+  element grabs because its own Send-with-unloaded-model flow drives
+  the same modal, reassigning `loadCancelBtn.onclick` /
+  `loadConfirmBtn.onclick`. Only one flow runs at a time; latest
+  write wins, which is fine. Called out in a comment at the app.js
+  element-grab block.
+- **Cross-module contract.** app.js publishes
+  `window.App = { appendBubble, pollStatus }`; catalog.js publishes
+  `window.Catalog = { fetchModels, refreshModels }`; chrome.js is
+  self-contained (returns `{}`). chrome.js and catalog.js reference
+  `window.App.*` lazily inside handlers, so the app.js publish at
+  the end of its IIFE lands before any handler fires.
+- **Script tag order** in index.html: rain → markdown → threads →
+  current-chat → sidebar-resize → **chrome → catalog** → app. chrome
+  and catalog can safely `getElementById` at IIFE-init because every
+  DOM element they reference is present in index.html at parse time.
+
+**Verification that ran on the host (not sandbox):**
+
+- `PYTHONPATH=. pytest`: 176/176 in 277.79s. Same count as before
+  the cut, unchanged.
+- Live app at `:8080` with real browser (in-app Browser pane):
+  - Globals: `App`, `Chrome`, `Catalog`, `TC`, `Threads`, `MD`,
+    `MatrixRain`, `CurrentChat` all present.
+  - Themes: cycled all 10, correct icons, matrix canvas mounts on
+    matrix, phosphor titlebar `display: flex` only on phosphor.
+  - Settings modal: opens on toggle click, closes on cancel button /
+    backdrop click / Escape.
+  - Escape correctly fires the cancel button of load / unload /
+    delete confirm modals (owned by app+catalog / catalog / threads
+    respectively, all dismissed by the shared chrome handler).
+  - Catalog change handler: picked an unloaded option, load-confirm
+    modal opened with model id + RAM text, cancel reverted the
+    selection to the pre-change value (AC-104 focus/mousedown
+    capture timing preserved).
+  - **AC-28 verified live**: set `TC.modelLoading = true`, picked a
+    second unloaded option — modal stayed hidden and selection
+    reverted immediately, matching the overlapping-load guard.
+  - No console errors at any point.
+- No live-fire load/unload/eject round-trip because no local LLM
+  server was running this session — the catalog rendered its two
+  script-model options (nemotron, deepseek-v4-flash, both unloaded)
+  from `/api/v1/models/catalog`, which is enough to exercise the
+  change handler and the AC-28 guard; the actual `/load` and
+  `/unload` HTTP paths are unchanged from pre-split app.js.
+
+**Follow-up for the ratify session (already in the commit message):**
+
+The existing `scripts/.approved/contracts.json` smoke_check for
+`src/static/app.js` greps for `ejectModelBtn` and `models/catalog`
+— both moved to catalog.js. Next `orchestrate.sh` will go red on
+that check until the TPM recut re-authors it and adds smoke_checks
+for `chrome.js` and `catalog.js` (D-88 quote-agnostic patterns).
+No frozen tests need to change — this is a spec-only refreeze
+adding two files to the inventory and updating one smoke_check.
+
+Sequencing note stands: the CEO's item #1 (one small feature through
+the pipeline as live proof of D-86..D-94) is still the next thing;
+the ratify freeze for this split rides afterward.
