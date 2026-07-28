@@ -5,6 +5,71 @@
 
 ---
 
+## State at 2026-07-27 session end (app.js split shipped + v66 ratify)
+
+**Frozen spec:** v66. Suite **176/176** on the macOS host — the
+2026-07-27 pytest run showed 173 pass + 3 Playwright thread tests flaky
+under full-suite memory pressure; the same 3 pass 3/3 in isolation in
+~19s. Same class as the AC-42 flake pattern in the correction log; not
+a regression from the ratify (which touched no `src/` or `tests/`).
+main pushed, nothing unpushed.
+
+**What shipped since M29 / v65.**
+
+- **`2579f07` — app.js split** (hand-build, not through the pipeline).
+  959-line `app.js` split three ways: chat surface stays in
+  `src/static/app.js` (550 lines: bubbles, SSE stream, stop, pollStatus,
+  Send-with-unloaded-model, hover/copy/thinkToggle/newThreadBtn), themes
+  and focus mode and settings and generic modal chrome move to a new
+  `src/static/chrome.js` (171 lines, `window.Chrome = {}`), model
+  dropdown lifecycle moves to a new `src/static/catalog.js` (304 lines,
+  `window.Catalog = { fetchModels, refreshModels }`). AC-28 mid-chat
+  lock moved verbatim; AC-104 cancel-reverts (focus/mousedown pre-change
+  capture) preserved; overlay dismissal helpers shared across all
+  modals; matrix-rain and phosphor titlebar side effects ride with
+  `applyTheme`. Cross-module contract: `window.App = { appendBubble,
+  pollStatus }` published from app.js for chrome and catalog to call
+  lazily. Full plan-and-outcome record in
+  `project-trail/2026-07-27-appjs-split-handoff.md`.
+- **`361fbe4` — [refreeze v66]** — ratify freeze recording the split
+  in the frozen spec: `chrome.js` + `catalog.js` added to
+  `contracts.files` (16 → 18) and to the ERD `As-built architecture`;
+  `app.js` smoke_check re-authored to post-split landmarks (`webToggle`
+  / `pendingSources` / `【` / `pollStatus` / `queueRender` — the prior
+  version's `ejectModelBtn` and `models/catalog` greps moved to
+  catalog); new smoke_checks for `chrome.js` and `catalog.js`
+  (quote-agnostic per D-88); `changed_files` set to the four files
+  this hand-build touched. Zero test changes, zero AC changes; D-75's
+  red-check correctly returned "no runnable test changes — nothing to
+  check." Backlog `M13 — app.js module split (spec backfill)` closed
+  in the following commit `7faec81`.
+
+**Sequencing note.** The trail (handoff §Sequencing and the shipped
+addendum) records the CEO decision that **item #1 — one small feature
+through the pipeline as the live proof of D-86..D-94** rides
+next, before any further ratify-shaped work. Candidates: draft
+persistence, or AC-101 (a pinned-but-unloaded model on a locked
+thread must be loadable in ≤2 interactions, blocking a real recovery
+path today).
+
+**Standing items carried forward (unchanged by this session):**
+
+- `tasks/plan.json` is still at `erd_version 58` while VERSION is
+  now 66 (the M29 warning below stands, updated). A next
+  `orchestrate.sh` run re-derives the plan for v66. Both mitigations
+  that make the re-derivation safe already landed at M29
+  (`6557283` fail-closed on empty state, `2144d12` inverted
+  `no_edit_files` derivation), so untouched files are protected and
+  a stale plan is untidy rather than dangerous.
+- `.pipeline-state/tasks/` still carries the 27 per-task `done`
+  markers from the M29 v58/59 era. A v66 re-plan changes every task
+  fingerprint and resets these to `pending`, then the derived
+  `no_edit_files` protects the files no delta touches.
+- The `.claude-md-pending.patch` "also open" note from the M29 block
+  below no longer applies — the file is not in the tree.
+
+---
+
 ## State at 2026-07-26 session end (M29 — "unloaded" means unloaded)
 
 **Frozen spec:** v59. Suite **153/153** on the macOS host, in the sandbox
