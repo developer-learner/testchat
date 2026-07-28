@@ -1,5 +1,5 @@
 {
-  "erd_version": 66,
+  "erd_version": 68,
   "files": [
     "src/services/websearch.py",
     "src/api/status.py",
@@ -18,7 +18,9 @@
     "src/static/sidebar-resize.js",
     "src/static/sidebar-resize.css",
     "src/static/chrome.js",
-    "src/static/catalog.js"
+    "src/static/catalog.js",
+    "src/api/settings.py",
+    "src/services/settings.py"
   ],
   "entry_points": [
     "src.main:app",
