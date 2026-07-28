@@ -50,7 +50,7 @@ HDR
   if [ -f "$APPROVED/VERSION" ]; then
     echo "--- CURRENTLY FROZEN SPEC (v$(cat "$APPROVED/VERSION")) — derive any delta from THIS, not from chat memory ---"
     echo
-    for f in PRD.md ERD.md contracts.json; do
+    for f in PRD.md ERD.md ERD-DELTA.md contracts.json; do
       [ -f "$APPROVED/$f" ] && emit "$APPROVED/$f"
     done
   else
@@ -65,7 +65,7 @@ Emit every artifact as a COMPLETE file between sentinels, exactly:
 <full file content>
 === END FILE ===
 
-Allowed paths ONLY: PRD.md, ERD.md, contracts.json, tests/<name>.py
+Allowed paths ONLY: PRD.md, ERD.md, ERD-DELTA.md, contracts.json, tests/<name>.py
 The operator installs your reply mechanically (tpm-unpack.sh -> refreeze.sh);
 anything outside the sentinels is treated as discussion, not artifact.
 FTR

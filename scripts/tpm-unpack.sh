@@ -68,10 +68,10 @@ text = Path(sys.argv[2]).read_text()
 
 # Same whitelist refreeze.sh enforces — validated here too so a bad reply
 # fails at unpack with a named culprit, not later with a vaguer error.
-# Kept in sync with refreeze.sh's BAD sweep: PRD.md, ERD.md, contracts.json,
-# REMOVED, tests/*.py, captures/* (any file under captures/, per D-56).
+# Kept in sync with refreeze.sh's BAD sweep: PRD.md, ERD.md, ERD-DELTA.md,
+# contracts.json, REMOVED, tests/*.py, captures/*.
 ALLOWED = re.compile(
-    r"^(PRD\.md|ERD\.md|contracts\.json|REMOVED"
+    r"^(PRD\.md|ERD\.md|ERD-DELTA\.md|contracts\.json|REMOVED"
     r"|tests/[A-Za-z0-9_\-]+\.py"
     r"|captures/[A-Za-z0-9_./\-]+)$"
 )
@@ -93,7 +93,7 @@ errs, files = [], {}
 for raw_path, content in blocks:
     path = raw_path.strip()
     if not ALLOWED.match(path) or ".." in path.split("/"):
-        errs.append(f"disallowed path: {path!r} (allowed: PRD.md, ERD.md, contracts.json, REMOVED, tests/<name>.py, captures/<...>; no traversal)")
+        errs.append(f"disallowed path: {path!r} (allowed: PRD.md, ERD.md, ERD-DELTA.md, contracts.json, REMOVED, tests/<name>.py, captures/<...>; no traversal)")
         continue
     if not content.strip():
         errs.append(f"empty content for {path}")
