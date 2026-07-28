@@ -106,7 +106,6 @@ tests/test_threads_api.py::test_optional_fields_default
 tests/test_threads_api.py::test_put_invalid_role_rejected
 tests/test_threads_api.py::test_get_reports_quarantine_after_corrupt_snapshot
 tests/test_ui.py::test_think_toggle_reveals_and_hides_thinking[chromium]
-tests/test_ui.py::test_model_lock_is_per_thread[chromium]
 tests/test_ui.py::test_thread_switch_restores_history[chromium]
 tests/test_ui.py::test_history_sent_to_backend_has_no_think_markup[chromium]
 tests/test_ui.py::test_model_selection_survives_models_refresh[chromium]
@@ -156,6 +155,9 @@ tests/test_ui.py::test_sidebar_divider_drags_and_clamps[chromium]
 tests/test_ui.py::test_sidebar_width_persists_across_reload[chromium]
 tests/test_ui.py::test_no_loaded_model_shows_placeholder_and_send_guides[chromium]
 tests/test_ui.py::test_unloaded_model_pick_asks_and_cancel_reverts[chromium]
+tests/test_ui.py::test_selector_stays_enabled_across_all_ui_states[chromium]
+tests/test_ui.py::test_thread_switch_restores_stored_model[chromium]
+tests/test_ui.py::test_mid_chat_switch_updates_thread_model_and_routes_next_send[chromium]
 tests/test_ui_websearch.py::test_web_toggle_present_default_off[chromium]
 tests/test_ui_websearch.py::test_web_reply_shows_source_links_and_toggle_resets[chromium]
 tests/test_ui_websearch.py::test_sources_persist_across_reload[chromium]

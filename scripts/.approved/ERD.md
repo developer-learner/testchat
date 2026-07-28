@@ -63,7 +63,7 @@ property of the file).
   installs a "Select model..." placeholder when nothing matches), the
   eject/unload confirm flow, and the `change` handler with pre-change
   value capture on `focus`/`mousedown` (AC-104 cancel-reverts) plus
-  the AC-28 overlapping-load guard (`TC.modelLoading` reverts a second
+  the overlapping-load guard (`TC.modelLoading` reverts a second
   pick without opening a modal). Exposes
   `window.Catalog = { fetchModels, refreshModels }`; references
   `window.App.pollStatus` and `window.App.appendBubble` lazily.

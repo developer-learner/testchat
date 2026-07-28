@@ -1,4 +1,4 @@
-PRD — testchat M31: current-chat awareness, as built (spec v65)
+PRD — testchat M31/M32: current-chat awareness + free model selection (spec v67)
 
 ## Provenance caveat — READ BEFORE APPROVING (INV-1)
 
@@ -26,6 +26,45 @@ What approving this version means:
 3. If independent verification of the hand-built areas is ever wanted, the
    path is a clean-context TPM re-authoring tests from this PRD's AC text
    alone (`scripts/tpm-agent.sh`, fresh session). Not required to proceed.
+
+---
+
+## What changes v66 → v67 (M32)
+
+M32 removes the per-thread model lock (AC-28) so the user can pick any
+model on any thread at any point in the conversation.
+
+**Why.** The AC-28 lock forbade changing the model after a thread's
+first send. That protection produced a stuck class of thread states
+whenever the pinned model became unloaded (app restart, manual eject,
+RAM mutual-exclusion eviction): the selector was disabled, the send
+button was disabled, and the thread had no in-app recovery path. On
+2026-07-25 the live app carried 26 of 47 threads in this state; the
+only user workaround was abandoning the thread. The AC-101 backlog
+entry proposed a targeted load affordance; CEO instead directed
+removing the lock entirely, letting the dropdown become universally
+reachable — the existing AC-132 load-then-auto-send flow then covers
+the "picked model is unloaded" case naturally.
+
+**What ships.**
+* Three new ACs (AC-133..AC-135) pin the free-selection behavior:
+  selector always enabled, per-thread sticky on switch, mid-chat pick
+  updates the thread's stored model and routes subsequent sends there.
+* AC-28 is retired. One frozen test (`test_model_lock_is_per_thread`)
+  is removed; three tests are re-staged with their AC-28-era
+  disable/enable assertions dropped (`test_new_chat_creates_unlocked_empty_thread`,
+  `test_threads_survive_reload`, `test_model_option_labels_never_carry_checkmark`).
+* The `locked` boolean stays in the persistence schema (round-tripped
+  in `data/threads.json` and in fixture-based tests) but is never read
+  by the UI. No data migration; legacy locked threads become usable
+  the moment the code ships.
+* No contracts.json change (the lock was not represented in any
+  `ui`/`routes`/`entry_points`/`schemas`/`errors`/`smoke_checks`
+  entry).
+* No new files. Coder edits limited to `catalog.js` (drop the
+  `modelSelect.disabled = active.locked` assignment) and `threads.js`
+  (drop the `lockThread` call and the `ms.disabled = thread.locked`
+  on switch).
 
 ---
 
@@ -87,10 +126,18 @@ the milestone is done; there should be no live-fix batch.
 
 ## Superseded criteria
 
-None. AC-15 was already superseded in v58 by M30's AC-107 (spec'd but not
-built). No live criterion is retired here.
+**v67 (M32):** AC-28 (model locked after first send) is formally
+retired. The canonical AC-28 test `test_model_lock_is_per_thread` is
+removed. Three tests are re-staged with their AC-28-era
+disable/enable assertions dropped; their primary purposes (empty new
+thread, reload persistence, no `✓` glyph) survive intact. The
+`thread.locked` field stays in the persistence schema for
+backward-compat but is never read by the UI.
 
-**Behavior that is not a frozen AC but changes silently:** whatever mechanism
+**v61 (M31):** None. AC-15 was already superseded in v58 by M30's
+AC-107 (spec'd but not built). No live criterion was retired.
+
+**Behavior that is not a frozen AC but changes silently (v61):** whatever mechanism
 currently causes page refresh to land on a specific stored chat (a stored id
 in localStorage, a URL fragment, a persisted "lastActive" field) must no
 longer choose the opened thread. AC-123 defines the new selection policy in
@@ -183,9 +230,9 @@ outcome terms; the coder retires the old mechanism as part of implementing it.
   choice.
 
 * **AC-124:** WHEN the page is loaded or reloaded AND zero threads exist,
-  THE SYSTEM SHALL create a new empty thread and open it. (Consistent with
-  existing `test_new_chat_creates_unlocked_empty_thread` semantics for the
-  same starting state.)
+  THE SYSTEM SHALL create a new empty thread and open it. (The new thread's
+  selector is enabled per AC-133; there are no messages, no title beyond
+  the default, and no persisted model.)
 
 **Content safety**
 
@@ -241,6 +288,37 @@ outcome terms; the coder retires the old mechanism as part of implementing it.
 
 ---
 
+## v67 (M32) criteria (AC-133..AC-135) — free model selection
+
+**Selector reachability**
+
+* **AC-133:** THE SYSTEM SHALL keep the model selector
+  (`data-testid="model-select"`) enabled at all times, on every thread,
+  regardless of that thread's message history or persisted `locked`
+  field, *such that* `page.get_by_test_id("model-select").is_enabled()`
+  returns true after every observable UI state (initial page load,
+  send, receive, thread switch, new-chat creation, page reload).
+
+**Per-thread sticky on switch**
+
+* **AC-134:** WHEN the user switches to a thread, THE SYSTEM SHALL
+  restore that thread's most-recently-stored model as the selector's
+  current value. IF the stored model is not present in the current
+  catalog, THE SYSTEM SHALL fall back to the empty placeholder
+  ("Select model...", per AC-130) and SHALL NOT auto-substitute a
+  different model.
+
+**Mid-chat switch**
+
+* **AC-135:** WHEN the user picks a different model from the selector
+  on a thread that already has messages, THE SYSTEM SHALL update the
+  thread's stored `model` field to the pick *such that*: (a) a
+  subsequent send on that thread carries the picked model in its chat
+  request payload, and (b) a subsequent page reload opens the thread
+  with the picked model shown in the selector.
+
+---
+
 ## Out of scope
 
 * **Sidebar row auto-scroll on switch.** AC-121 requires the mark to be
@@ -267,6 +345,26 @@ outcome terms; the coder retires the old mechanism as part of implementing it.
   The confirmation modal contract is pinned (AC-132); the auto-resubmit
   tail is shipped but unpinned, pending a mock-load harness that doesn't
   spawn a real model process inside the fixture.
+* **(v67) Overlapping-load guard as a formal AC.** The existing guard
+  in `catalog.js` (a second model pick made while `TC.modelLoading` is
+  true reverts to the prior value and opens no second modal) stays in
+  code and is described as prose in the ERD, but is not elevated to
+  an AC — a Playwright test for it would need to route the
+  script-model load endpoint to hang, and the guard has never
+  regressed. Regression protection stays; formal spec deferred.
+* **(v67) Load-failure visibility as a new AC.** The load path's
+  failure UX (`appendBubble(err.message ..., 'error')` in the
+  catalog's `.catch`) is shipped code, unchanged by M32, and now
+  exercisable from more thread states. Elevating it into a pinned AC
+  is a defensible separate milestone; this one does not open that
+  scope.
+* **(v67) Removal of the `locked` field from the persistence schema.**
+  Deliberately kept — backward-compat with existing `data/threads.json`
+  and with fixture-based tests seeding it. Cleaning the schema is a
+  defensible follow-up when the tolerated read-only tail is judged
+  closable.
+* **(v67) UI signalling that a thread's stored model has changed.** No
+  banner or breadcrumb. The dropdown IS the signal.
 
 ---
 
@@ -292,7 +390,10 @@ outcome terms; the coder retires the old mechanism as part of implementing it.
 
 ---
 
-## M32 and beyond
+## M33 and beyond
 
-Nothing spec'd here. The M30 defect (pinned unloaded model,
-AC-107..AC-110) remains reserved from v58 and awaits its own freeze.
+M30's reserved AC-107..AC-110 (targeted load affordance for pinned
+unloaded models) are formally superseded by M32's AC-133..AC-135 — the
+lock removal dissolves the defect class those ACs were reserved for.
+
+Nothing else spec'd here.

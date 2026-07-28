@@ -34,18 +34,10 @@ def test_think_toggle_reveals_and_hides_thinking(page: Page, app_url: str) -> No
     expect(think.first).to_be_hidden()
 
 
-# AC-28 [retrofits AC-23, broke in M6]
-def test_model_lock_is_per_thread(page: Page, app_url: str) -> None:
-    page.goto(app_url)
-    select = page.get_by_test_id("model-select")
-    expect(select).to_have_value("alpha-model")
-    _send(page, "lock me")
-    expect(select).to_be_disabled()
-    _await_reply(page)
-    page.get_by_test_id("new-thread-btn").click()
-    expect(select).to_be_enabled()
-    page.get_by_test_id("thread-item").nth(1).click()
-    expect(select).to_be_disabled()
+# AC-28 retired in v67 (M32) — the per-thread model lock is gone;
+# AC-133 replaces it with "selector enabled at all times." The former
+# canonical test `test_model_lock_is_per_thread` is removed from the
+# suite by absence; see M32 section at end of file for AC-133..AC-135.
 
 
 # AC-29 [retrofits AC-20/AC-22]
@@ -112,7 +104,8 @@ def test_model_selection_survives_models_refresh(page: Page, app_url: str) -> No
     expect(select).to_have_value("beta-model")
 
 
-# AC-32 [retrofits AC-19]
+# AC-32 [retrofits AC-19; v67 (M32) dropped the trailing selector-enabled
+# assertion — AC-133 covers "selector enabled" universally now]
 def test_new_chat_creates_unlocked_empty_thread(page: Page, app_url: str) -> None:
     page.goto(app_url)
     items = page.get_by_test_id("thread-item")
@@ -122,7 +115,6 @@ def test_new_chat_creates_unlocked_empty_thread(page: Page, app_url: str) -> Non
     page.get_by_test_id("new-thread-btn").click()
     expect(items).to_have_count(2)
     expect(page.get_by_test_id("msg-user")).to_have_count(0)
-    expect(page.get_by_test_id("model-select")).to_be_enabled()
 
 
 # AC-33 [retrofits AC-21]
@@ -133,7 +125,9 @@ def test_thread_title_set_from_first_message(page: Page, app_url: str) -> None:
     expect(page.get_by_test_id("thread-item").first).to_contain_text("The quick brown fox")
 
 
-# AC-34 [M8 — replaces AC-25: refresh now RESTORES]
+# AC-34 [M8 — replaces AC-25: refresh RESTORES; v67 (M32) dropped the
+# trailing disable-after-reload assertion — AC-28 retired, AC-133 keeps
+# the selector enabled]
 def test_threads_survive_reload(page: Page, app_url: str) -> None:
     page.goto(app_url)
     _send(page, "persist me please")
@@ -146,7 +140,6 @@ def test_threads_survive_reload(page: Page, app_url: str) -> None:
     expect(users).to_have_count(1)
     expect(users.first).to_contain_text("persist me please")
     expect(page.get_by_test_id("msg-assistant").first).to_contain_text("Hello there")
-    expect(page.get_by_test_id("model-select")).to_be_disabled()
 
 
 # AC-41 [M9 — failed reply retains the user's message]
@@ -452,8 +445,8 @@ def test_model_option_labels_never_carry_checkmark(page: Page, app_url: str) -> 
     expect(select).not_to_contain_text("✓")      # at rest
     _send(page, "bind this thread")
     _await_reply(page)
-    expect(select).to_be_disabled()              # thread bound to its model (AC-28)
-    expect(select).not_to_contain_text("✓")      # bound state: still no label glyph
+    expect(select).not_to_contain_text("✓")      # after send: still no label glyph
+    # (dropped in v67 (M32): expect(select).to_be_disabled() — AC-28 retired)
 
 
 # =============================================================================
@@ -992,3 +985,84 @@ def test_unloaded_model_pick_asks_and_cancel_reverts(
     # Reverted to the prior (placeholder) selection; nothing loaded or sent.
     expect(select).to_have_value("")
     expect(page.get_by_test_id("msg-user")).to_have_count(0)
+
+
+# =============================================================================
+# M32 (spec v67) — free model selection across threads
+#
+# AC-28 (per-thread model lock) is retired. The dropdown is enabled at all
+# times; picking a different model on any thread — including one with prior
+# messages — updates that thread's stored model and routes subsequent sends
+# to the pick. Per-thread stickiness on switch is preserved.
+# =============================================================================
+
+
+# AC-133 [M32 — the selector is enabled at all times, on every thread,
+# replacing the retired AC-28 mid-chat lock]
+def test_selector_stays_enabled_across_all_ui_states(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    select = page.get_by_test_id("model-select")
+    # initial page load
+    expect(select).to_be_enabled()
+    # after send + reply (previously locked under AC-28)
+    _send(page, "first turn")
+    _await_reply(page)
+    expect(select).to_be_enabled()
+    # after opening a new chat
+    page.get_by_test_id("new-thread-btn").click()
+    expect(select).to_be_enabled()
+    # after switching back to the sent thread
+    page.get_by_test_id("thread-item").nth(1).click()
+    expect(select).to_be_enabled()
+    # after reload (previously the persisted locked=true forced disabled)
+    page.reload()
+    expect(select).to_be_enabled()
+
+
+# AC-134 [M32 — thread switch restores that thread's stored model in the
+# selector; per-thread sticky behavior]
+def test_thread_switch_restores_stored_model(page: Page, app_url: str) -> None:
+    page.goto(app_url)
+    select = page.get_by_test_id("model-select")
+    expect(select).to_have_value("alpha-model")  # default
+    _send(page, "thread one uses alpha")
+    _await_reply(page)
+    # open a second thread and pick beta there
+    page.get_by_test_id("new-thread-btn").click()
+    select.select_option("beta-model")
+    _send(page, "thread two uses beta")
+    _await_reply(page)
+    # switch back to thread 1 — dropdown restores alpha
+    page.get_by_test_id("thread-item").nth(1).click()
+    expect(select).to_have_value("alpha-model")
+    # switch to thread 2 — dropdown restores beta
+    page.get_by_test_id("thread-item").first.click()
+    expect(select).to_have_value("beta-model")
+
+
+# AC-135 [M32 — picking a different model on a thread with prior messages
+# updates that thread's stored model; subsequent sends route to the pick;
+# reload shows the picked model in the selector]
+def test_mid_chat_switch_updates_thread_model_and_routes_next_send(
+    page: Page, app_url: str, last_chat_request
+) -> None:
+    page.goto(app_url)
+    select = page.get_by_test_id("model-select")
+    expect(select).to_have_value("alpha-model")
+    _send(page, "first turn on alpha")
+    _await_reply(page)
+    req = last_chat_request()
+    assert req["model"] == "alpha-model", (
+        f"first send should carry alpha, got {req.get('model')!r}"
+    )
+    # user switches to beta mid-chat (previously blocked by AC-28)
+    select.select_option("beta-model")
+    _send(page, "second turn on beta")
+    _await_reply(page, 2)
+    req = last_chat_request()
+    assert req["model"] == "beta-model", (
+        f"post-switch send should route to beta, got {req.get('model')!r}"
+    )
+    # reload — the switched model is persisted for this thread
+    page.reload()
+    expect(select).to_have_value("beta-model")
