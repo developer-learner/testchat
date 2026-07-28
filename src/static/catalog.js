@@ -266,8 +266,7 @@ window.Catalog = (function () {
           })
           .finally(function () {
             TC.modelLoading = false;
-            var active = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
-            modelSelect.disabled = active ? !!active.locked : false;
+            modelSelect.disabled = false;
             pollStatus();
           });
       };
