@@ -33,9 +33,21 @@ manifest integrity, plan validation, lint, and type checking also green.
   distinguishes that state from genuine mid-milestone loss, so no synthetic
   task markers or manual source rebuild are required before the next milestone.
 
-**Release checkpoint.** Publication/CI verification and local runtime
-restoration are the remaining operational steps for this session. Update this
-checkpoint only from observed GitHub and runtime results.
+**Release checkpoint (observed 2026-07-30).** `main` is published through
+`bf521fe`; both GitHub CI workflows are green. The app is running at
+`http://127.0.0.1:8080`, pointed at MTPLX on `127.0.0.1:8001`. MTPLX was
+restarted through its supported CLI with strict warm-up: a direct completion
+returned `MTPLX_OK`, and an end-to-end request through `/api/v1/chat` returned
+`APP_OK`. Lima/Podman cleanup reclaimed 7.25 GB of unused images (VM use fell
+from about 12 GB to 4.4 GB) without touching the 30 GB MTPLX model cache.
+
+**Deployment limitation found.** The browser model catalog probes LM Studio's
+non-standard `/api/v1/models` route, while MTPLX exposes the standard
+OpenAI-compatible `/v1/models` route. Therefore MTPLX works through the chat
+proxy but is not selectable in the UI; with both script-run models unloaded,
+the Send control remains disabled. This is a product-contract gap, not a
+runtime-health failure, and is queued in `tasks/BACKLOG.md` for a frozen-spec
+pipeline milestone rather than hand-patched outside INV-1.
 
 ---
 

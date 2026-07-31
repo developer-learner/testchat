@@ -7,6 +7,24 @@
 
 ## Up Next
 
+### Discover models from generic OpenAI-compatible endpoints
+**Priority:** P1
+**Why:** Live deployment against MTPLX on 2026-07-30 proved that chat
+completions work end to end (`APP_OK` through `/api/v1/chat`), but the browser
+cannot select the model. `list_models()` probes only LM Studio's non-standard
+`/api/v1/models` catalog; MTPLX correctly exposes the standard `/v1/models`
+shape. With both script-run models unloaded, the selector therefore shows no
+loaded model and Send remains disabled. This contradicts the product promise
+that testchat works with any OpenAI-compatible local endpoint.
+**What:** New frozen-spec milestone: when the configured completion endpoint
+does not yield an LM Studio catalog, discover served model IDs from the
+standard OpenAI `GET /v1/models` response, expose them as loaded remote models,
+and allow the UI to select and route to them. Preserve LM Studio behavior and
+script-model load/unload semantics. Tests must be TPM-authored and installed
+through `refreeze.sh`; EM/coder work must run through `orchestrate.sh`.
+**Rough size:** Spec + API/service tests + `services/models.py` + model source
+schema (and UI test only if existing generic-model behavior is insufficient)
+
 ### ~~AC-95′/AC-96′ recut — "unloaded" must mean the process is gone~~ — SHIPPED
 **Priority:** ~~P0~~ — **DONE 2026-07-26, M29 (spec v58 → v59).** Recut as
 AC-102..AC-106 in outcome form; `unload_script_model` now discovers the server
