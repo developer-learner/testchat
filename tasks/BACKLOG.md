@@ -149,8 +149,15 @@ and hash-pinned — regenerate `scripts/.control-plane-manifest` in the same
 isolated commit (Rule 2).
 **Rough size:** prompt line + manifest regen
 
-### AC-15 disposition + AC-101 — a pinned unloaded model must be loadable
-**Priority:** P1
+### ~~AC-15 disposition + AC-101 — a pinned unloaded model must be loadable~~ — SHIPPED
+**Priority:** ~~P1~~ — **DONE 2026-07-28, M32 (spec v71).** AC-28 was
+retired and AC-133..AC-135 replaced the dead-end lock with free model
+selection: the selector stays enabled across thread states, model choice is
+sticky per thread, and a mid-chat change updates the stored model and routes
+the next send accordingly. The legacy `locked` field remains persisted only
+for backward compatibility and is no longer read by the UI.
+
+**Original entry:**
 **Why:** Confirmed live 2026-07-25. Thread 1 (31 messages) pins
 `deepseek-v4-flash`; the model is unloaded; the selector shows it and is
 **disabled** because the thread is `locked`. The load-confirm modal opens from

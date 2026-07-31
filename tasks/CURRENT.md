@@ -5,6 +5,40 @@
 
 ---
 
+## State at 2026-07-30 — M32 shipped; control plane consolidated
+
+**Frozen spec:** v71. M32 completed at `[success]` commit `d80664a`.
+The current macOS-host verification is **178/178 passed**; control-plane
+verification after the canonical template sync is **193/193 passed**, with
+manifest integrity, plan validation, lint, and type checking also green.
+
+**M32 user-visible outcome.**
+
+- The model selector no longer becomes locked after a thread has messages.
+- A user can switch models in the middle of a conversation; the next send is
+  routed to the newly selected model.
+- Model choice remains sticky per thread and is restored on thread switch.
+- The persisted `thread.locked` field remains for backward compatibility but
+  no longer disables the selector.
+
+**Pipeline/template state.**
+
+- D-107 is canonical in `sw-dev-blueprint` at `704c129`: every behavioral
+  freeze must carry a traceable `ERD-DELTA.md`, and the EM receives the
+  validator rules it is judged against.
+- Testchat synced that canonical control plane in `7b92123`; project-owned
+  container, CI, and onboarding adaptations landed in `2df7abd`.
+- An empty `.pipeline-state/tasks/` is expected after this successful run:
+  the newest task commit is covered by the later `[success]` commit. D-99 now
+  distinguishes that state from genuine mid-milestone loss, so no synthetic
+  task markers or manual source rebuild are required before the next milestone.
+
+**Release checkpoint.** Publication/CI verification and local runtime
+restoration are the remaining operational steps for this session. Update this
+checkpoint only from observed GitHub and runtime results.
+
+---
+
 ## State at 2026-07-27 session end (app.js split shipped + v66 ratify)
 
 **Frozen spec:** v66. Suite **176/176** on the macOS host — the
