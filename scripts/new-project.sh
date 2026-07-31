@@ -73,10 +73,13 @@ Location: $TARGET_DIR
 Next steps (do these while awake):
 1. cd $TARGET_DIR
 2. source .venv/bin/activate  (if not already active)
-3. Adapt stack if needed (Rule 3): edit ci.yml / requirements if not FastAPI+Postgres
-4. Run: opencode
-   In OpenCode: /models → select "Qwen3 Coder Next (local)" under "lms"
-   Then just describe what you want to build in plain English
+3. Adapt stack if needed (Rule 3): edit ci.yml / requirements if not FastAPI+SQLite
+4. Load one or two non-thinking models in LM Studio (your choice — D-41: the
+   repo never names a model) and map roles in ~/.config/sw-dev-blueprint/models.env
+   (SWBP_EM_MODEL=<name>, SWBP_CODER_MODEL=<name>).
+5. Author the frozen spec (PRD/ERD/contracts/tests) with your TPM chat, stage
+   under scripts/.approved/incoming/, run scripts/refreeze.sh.
+6. scripts/orchestrate.sh — the shell drives EM and coder over HTTP
 
 Tests are ground truth (Rule 5).
 Two strikes on the same error then stop (Rule 2).
