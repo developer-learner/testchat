@@ -559,3 +559,16 @@ Open the same chat in two tabs. Save a rename in tab A, then rename from stale
 tab B. B shows `history changed elsewhere — reload required`; further edits
 from B do not overwrite A. Reload B: A's accepted state appears, the warning
 clears, and B can save a fresh edit normally.
+
+## What changes v73 → v74 (M33 T1-escalation correction)
+
+v74 adds no acceptance criterion and changes no contract surface. It answers
+the T1 caps-exhausted escalation from the v73 build: the storage module the
+coder produced violated three behaviors the v73 prose already required —
+the compatibility `save_snapshot` passed a constant generation instead of
+reading the current one (making every second save a false conflict), the
+legacy raw-list primary shape was unreadable (AC-137/AC-138 data loss), and
+M24 quarantine-on-load was dropped (AC-78 regression) while an out-of-scope
+`.bak` auto-restore was invented. The v74 ERD delta names each defect
+normatively so the next build repairs the module rather than redesigning it.
+The frozen oracles were correct throughout and are restaged byte-identical.
