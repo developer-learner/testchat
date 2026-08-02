@@ -236,16 +236,27 @@ def _fresh_snapshot(request):
         data_path = request.getfixturevalue("app_data_path")
         for q in data_path.parent.glob(data_path.name + ".corrupt-*"):
             q.unlink()
-        # A fire-and-forget persist from the PREVIOUS test's page can land
-        # AFTER our delete and resurrect its thread (caught in the sandbox:
-        # the stop-test's abort->persist PUT raced this fixture and handed
-        # the next test a ghost thread). Delete until the snapshot stays
-        # empty across a settle window.
+        # M33: every DELETE carries the current revision. Retry if a final
+        # request from the previous page wins between our GET and DELETE;
+        # stale requests can no longer resurrect history after the delete.
         empties = 0
         for _ in range(30):
-            req = urllib.request.Request(f"{base}/api/v1/threads", method="DELETE")
-            with urllib.request.urlopen(req, timeout=5):
-                pass
+            with urllib.request.urlopen(f"{base}/api/v1/threads", timeout=5) as r:
+                before = json.loads(r.read())
+            req = urllib.request.Request(
+                f"{base}/api/v1/threads",
+                method="DELETE",
+                data=json.dumps({"revision": before["revision"]}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=5):
+                    pass
+            except urllib.error.HTTPError as exc:
+                if exc.code == 409:
+                    empties = 0
+                    continue
+                raise
             time.sleep(0.15)
             with urllib.request.urlopen(f"{base}/api/v1/threads", timeout=5) as r:
                 if json.loads(r.read()).get("threads") == []:

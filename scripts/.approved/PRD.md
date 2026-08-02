@@ -1,4 +1,4 @@
-PRD — testchat M31/M32: current-chat awareness + free model selection (spec v67)
+PRD — testchat through M33: current chat, free model selection, conflict-safe persistence (spec v72)
 
 ## Provenance caveat — READ BEFORE APPROVING (INV-1)
 
@@ -396,4 +396,142 @@ M30's reserved AC-107..AC-110 (targeted load affordance for pinned
 unloaded models) are formally superseded by M32's AC-133..AC-135 — the
 lock removal dissolves the defect class those ACs were reserved for.
 
-Nothing else spec'd here.
+---
+
+## What changes v71 → v72 (M33)
+
+M33 makes the existing local JSON conversation history loss-resistant under
+rapid UI mutations and multiple browser tabs. Each accepted snapshot has a
+real monotonically increasing persisted revision. A browser may save only
+against the revision it hydrated or most recently received from an accepted
+save; stale pages are rejected instead of overwriting newer history.
+
+**Formal supersession:** M8 flagged assumption A15 (concurrent tabs are
+last-write-wins) is retired. Concurrent tabs remain independently rendered,
+but only a mutation based on the current persisted revision may be accepted.
+The v71 multi-tab assumption above remains true only for visibility: another
+tab's accepted state becomes visible after reload; it does not authorize a
+stale overwrite.
+
+All other v71 text above is carried forward verbatim and remains in force.
+No existing numbered acceptance criterion is retired or weakened by M33.
+
+**Why one milestone.** The persisted generation, API precondition, storage
+lock, ordered browser queue, conflict message, and reload recovery are one
+indivisible user promise: an older full snapshot cannot erase a newer
+accepted one. Shipping only a subset would either leave the race open or
+strand the user without a recovery path.
+
+### M33 acceptance criteria (EARS notation)
+
+* **AC-136:** WHEN GET `/api/v1/threads` reads no primary snapshot, THE SYSTEM
+  SHALL return HTTP 200 with an empty threads array, `revision: 0`, and the
+  existing quarantine status.
+
+* **AC-137:** WHEN GET `/api/v1/threads` reads a legacy raw-list primary,
+  including a raw-list `.bak` that a human restored to the primary path, THE
+  SYSTEM SHALL return every stored thread and message field unchanged with
+  `revision: 0`.
+
+* **AC-138:** WHEN a mutation with expected revision 0 is accepted after a
+  legacy raw-list primary was read, THE SYSTEM SHALL persist the requested
+  threads in the revisioned envelope at revision 1 while retaining the legacy
+  primary bytes as the one-generation backup.
+
+* **AC-139:** WHEN PUT `/api/v1/threads` omits its required non-negative
+  integer `revision`, THE SYSTEM SHALL return HTTP 422 and create or change no
+  persistence artifact.
+
+* **AC-140:** WHEN DELETE `/api/v1/threads` omits its required non-negative
+  integer `revision`, THE SYSTEM SHALL return HTTP 422 and create or change no
+  persistence artifact.
+
+* **AC-141:** WHEN PUT `/api/v1/threads` supplies the current revision, THE
+  SYSTEM SHALL replace the snapshot and return a revision exactly one greater
+  than the supplied revision, including when the submitted threads equal the
+  current threads.
+
+* **AC-142:** WHEN DELETE `/api/v1/threads` supplies the current revision, THE
+  SYSTEM SHALL persist an empty threads array and return a revision exactly one
+  greater than the supplied revision, including when the snapshot is already
+  empty.
+
+* **AC-143:** WHEN PUT `/api/v1/threads` supplies a stale revision, THE SYSTEM
+  SHALL return HTTP 409 with exactly `{"error":"revision_conflict",
+  "current_revision":<current>}` and leave the primary and one-generation
+  backup byte-for-byte unchanged.
+
+* **AC-144:** WHEN DELETE `/api/v1/threads` supplies a stale revision, THE
+  SYSTEM SHALL return HTTP 409 with exactly `{"error":"revision_conflict",
+  "current_revision":<current>}` and leave the primary and one-generation
+  backup byte-for-byte unchanged.
+
+* **AC-145:** WHEN two process-local mutation requests concurrently supply the
+  same current revision, THE SYSTEM SHALL accept exactly one and reject the
+  other with HTTP 409 such that the persisted revision and threads identify
+  the accepted winner.
+
+* **AC-146:** WHEN one browser page produces multiple persistence-worthy
+  mutations before an earlier save completes, THE SYSTEM SHALL issue their
+  PUTs serially in mutation order using each accepted response revision as the
+  next request precondition.
+
+* **AC-147:** WHEN a browser persist receives HTTP 409, THE SYSTEM SHALL show
+  exactly `history changed elsewhere — reload required` in `save-status` and
+  issue no further thread mutation request from that page.
+
+* **AC-148:** WHEN a conflict-latched page is reloaded, THE SYSTEM SHALL
+  hydrate the server's current threads and revision, clear `save-status`, and
+  allow the next user mutation to persist against that hydrated revision.
+
+### M33 contract changes
+
+GET `/api/v1/threads` adds `revision`. PUT's existing payload adds required
+`revision`. DELETE requires a body containing `revision`. Every accepted PUT
+or DELETE returns `{"status":"ok","revision":<new>}`. Stale mutations use
+the exact top-level 409 body in AC-143/AC-144; it must not be wrapped in a
+framework `detail` key.
+
+The current on-disk document becomes
+`{"revision": <integer>, "threads": [...]}`. Legacy raw-list primaries read
+as revision 0; the next accepted write migrates by ordinary atomic replacement
+and backup rotation. The generation is an integer, never a content hash (an
+equal snapshot can recur, so a hash permits ABA). Compare, backup rotation,
+temp write, atomic replace, and revision advance occur under one process-local
+lock. `load_snapshot()` remains a thread-list compatibility view for frozen
+imports. Existing quarantine, atomic replacement, and one-generation backup
+behavior remain in force.
+
+The browser owns one hydrated revision, snapshots each mutation when enqueued,
+and runs at most one persist request at a time. A 200 response advances the
+local revision before the next queued request. Ordinary network/non-409
+failures retain AC-75/AC-76 behavior. A 409 clears queued snapshots and latches
+all later writes until document reload.
+
+### M33 failure-visibility maintenance rider
+
+The storage file is touched under D-80. Its existing best-effort temporary-file
+cleanup handler must not silently swallow an unlink failure: log a warning
+that identifies the temp path and cleanup exception, then preserve the
+original save exception so AC-75 continues to surface `not saved`. This is
+diagnostic hardening, not a new product behavior.
+
+### M33 out of scope
+
+* Database storage, accounts, authentication, multi-user tenancy, cloud or
+  cross-machine sync.
+* Live cross-tab synchronization, automatic reload, automatic merge, conflict
+  resolution UI, or background retry after a 409.
+* Draft preservation or new partial in-flight reply persistence.
+* Automatic restore from `.bak` or quarantine; a human-restored raw-list
+  backup is readable under AC-137.
+* Cross-process locking; the deployed app remains one local server process.
+* MTPLX or any local coding model as a product chat backend. MTPLX is an
+  engineering-pipeline tool only.
+
+### M33 CEO demo
+
+Open the same chat in two tabs. Save a rename in tab A, then rename from stale
+tab B. B shows `history changed elsewhere — reload required`; further edits
+from B do not overwrite A. Reload B: A's accepted state appears, the warning
+clears, and B can save a fresh edit normally.

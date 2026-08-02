@@ -213,6 +213,7 @@ def test_put_threads_roundtrips_sources(monkeypatch, tmp_path):
             }
         ]
     }
+    payload["revision"] = client.get("/api/v1/threads").json()["revision"]
     assert client.put("/api/v1/threads", json=payload).status_code == 200
     messages = client.get("/api/v1/threads").json()["threads"][0]["messages"]
     assert messages[1]["sources"] == [

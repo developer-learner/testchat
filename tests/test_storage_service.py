@@ -1,4 +1,4 @@
-"""M8 storage service — snapshot persistence (AC-35/AC-37/AC-38 backend).
+"""Snapshot persistence: M8 compatibility plus M33 revision envelopes.
 
 M24 (AC-78/AC-82): corrupt snapshots are quarantined, never destroyed;
 every save keeps the previous snapshot as <file>.bak.
@@ -54,7 +54,7 @@ def test_save_overwrites_atomically(tmp_path, monkeypatch):
     # the stored artifact is plain JSON, one document, no temp residue.
     # M24 amendment: the deliberate .bak rotation artifact (AC-82) is the
     # ONLY residue allowed beside the data file.
-    assert json.loads(path.read_text()) == []
+    assert json.loads(path.read_text()) == {"revision": 2, "threads": []}
     residue = sorted(f for f in os.listdir(tmp_path) if f != "threads.json")
     assert residue == ["threads.json.bak"]
 
@@ -82,11 +82,11 @@ def test_save_rotates_previous_snapshot_to_bak(tmp_path, monkeypatch):
     bak = tmp_path / "threads.json.bak"
     save_snapshot(SAMPLE)
     save_snapshot([])
-    assert json.loads(path.read_text()) == []
-    assert json.loads(bak.read_text()) == SAMPLE
+    assert json.loads(path.read_text()) == {"revision": 2, "threads": []}
+    assert json.loads(bak.read_text()) == {"revision": 1, "threads": SAMPLE}
     save_snapshot(SAMPLE)
     # rotation overwrites: .bak always holds exactly the previous snapshot
-    assert json.loads(bak.read_text()) == []
+    assert json.loads(bak.read_text()) == {"revision": 2, "threads": []}
 
 
 # AC-82 boundary [M24 — nothing to rotate on the very first save]

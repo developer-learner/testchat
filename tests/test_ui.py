@@ -412,7 +412,8 @@ def test_bubble_meta_includes_date_for_past_messages(page: Page, app_url: str) -
 
     past = datetime.now() - timedelta(days=3)
     expected_time = past.strftime("%H:%M")
-    payload = {"threads": [{
+    revision = page.request.get(app_url + "/api/v1/threads").json()["revision"]
+    payload = {"revision": revision, "threads": [{
         "id": 1, "title": "Old chat", "model": "", "locked": False,
         "messages": [{"role": "user", "content": "from another day",
                       "ts": int(past.timestamp()), "model": ""}],

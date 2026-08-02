@@ -1,8 +1,10 @@
 {
-  "erd_version": 71,
+  "erd_version": 72,
   "files": [
-    "src/static/catalog.js",
-    "src/static/threads.js"
+    "src/services/storage.py",
+    "src/api/threads.py",
+    "src/static/threads.js",
+    "src/static/app.js"
   ],
   "entry_points": [
     "src.main:app",
@@ -17,6 +19,9 @@
     "src.services.storage",
     "src.services.storage:load_snapshot",
     "src.services.storage:save_snapshot",
+    "src.services.storage:load_versioned_snapshot",
+    "src.services.storage:save_versioned_snapshot",
+    "src.services.storage:SnapshotConflict",
     "src.api.threads",
     "src.api.settings",
     "src.api.status",
@@ -225,14 +230,36 @@
     {
       "id": "schema:ThreadsPayload",
       "fields": {
+        "revision": "integer >= 0, required expected current persisted generation",
         "threads": "array of ThreadSnapshot"
+      }
+    },
+    {
+      "id": "schema:ThreadsRevisionPrecondition",
+      "fields": {
+        "revision": "integer >= 0, required expected current persisted generation"
       }
     },
     {
       "id": "schema:ThreadsListResponse",
       "fields": {
         "threads": "array of ThreadSnapshot",
+        "revision": "integer >= 0, current persisted generation",
         "quarantined": "boolean — true while a quarantined (unreadable) snapshot file sits beside the data file"
+      }
+    },
+    {
+      "id": "schema:ThreadsMutationResponse",
+      "fields": {
+        "status": "string, literal 'ok'",
+        "revision": "integer >= 1, newly accepted persisted generation"
+      }
+    },
+    {
+      "id": "schema:RevisionConflictResponse",
+      "fields": {
+        "error": "string, literal 'revision_conflict'",
+        "current_revision": "integer >= 0, authoritative persisted generation"
       }
     },
     {
@@ -251,6 +278,10 @@
     {
       "id": "error:422-validation",
       "status": 422
+    },
+    {
+      "id": "error:409-revision-conflict",
+      "status": 409
     },
     {
       "id": "error:503-nemotron-unavailable",
@@ -460,7 +491,7 @@
     {
       "id": "ui:save-status",
       "testid": "save-status",
-      "description": "status-strip save indicator: empty while persists succeed, 'not saved' after a failed persist (AC-75/76)"
+      "description": "status-strip save indicator: empty while persists succeed; 'not saved' after ordinary failure (AC-75/76); exact 'history changed elsewhere — reload required' after a 409 until reload (AC-147/148)"
     },
     {
       "id": "ui:history-status",
@@ -514,12 +545,16 @@
     }
   ],
   "smoke_checks": {
-    "src/static/threads.js": "grep -q 'addSources' src/static/threads.js && grep -q 'msg-sources' src/static/threads.js",
-    "src/static/catalog.js": "grep -q 'window.Catalog' src/static/catalog.js && grep -q 'fetchModels' src/static/catalog.js && grep -q 'refreshModels' src/static/catalog.js && grep -q 'previousModelValue' src/static/catalog.js"
+    "src/services/storage.py": "grep -q 'load_versioned_snapshot' src/services/storage.py && grep -q 'save_versioned_snapshot' src/services/storage.py && grep -q 'SnapshotConflict' src/services/storage.py",
+    "src/api/threads.py": "grep -q 'current_revision' src/api/threads.py && grep -q 'revision_conflict' src/api/threads.py",
+    "src/static/threads.js": "grep -q 'history changed elsewhere — reload required' src/static/threads.js && grep -q 'revision' src/static/threads.js",
+    "src/static/app.js": "grep -q 'revision' src/static/app.js"
   },
   "no_edit_files": [],
   "changed_files": [
-    "src/static/catalog.js",
-    "src/static/threads.js"
+    "src/services/storage.py",
+    "src/api/threads.py",
+    "src/static/threads.js",
+    "src/static/app.js"
   ]
 }

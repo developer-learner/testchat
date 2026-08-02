@@ -93,6 +93,8 @@ def test_full_width_citation_markers_render_as_plain_brackets(
             }
         ]
     }
+    with urllib.request.urlopen(f"{app_url}/api/v1/threads", timeout=5) as response:
+        payload["revision"] = json.loads(response.read())["revision"]
     req = urllib.request.Request(
         f"{app_url}/api/v1/threads",
         data=json.dumps(payload).encode(),
