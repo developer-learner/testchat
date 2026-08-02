@@ -1,8 +1,9 @@
 {
-  "erd_version": 72,
+  "version": 22,
+  "erd_version": 73,
   "tasks": [
     {
-      "brief": "Implementation constraints: Edit `src/services/storage.py`. Add module-level `threading.Lock()` for atomic read-modify-write. Define `class SnapshotConflict(Exception):` with attribute `current_revision`. Implement `load_versioned_snapshot() -> tuple[list[dict], int]` and `save_versioned_snapshot(threads, expected_revision) -> int`. Keep existing `load_snapshot` and `save_snapshot` as compatibility wrappers (save_snapshot must acquire the same lock and advance generation). Replace the `except OSError: pass` at the temp-cleanup block (approx line 79) with `logging.warning(...)` including the temp path and exception, then re-raise the original save failure.\n\nBehavioral specification: `load_versioned_snapshot` reads the primary JSON file. If missing, returns `([], 0)`. If it is a raw list (legacy), returns `(list, 0)`. If it is an object with `revision` and `threads`, returns `(threads, revision)`. `save_versioned_snapshot` acquires the lock, loads the current state via the same logic, compares the loaded revision to `expected_revision`. On mismatch, raises `SnapshotConflict(current_revision=loaded_revision)` before writing anything. On match, writes a temp file with `{\"revision\": loaded_revision + 1, \"threads\": threads}`, atomically replaces the primary, rotates the old primary to `.bak` (only one `.bak` kept), and returns the new revision. If the current on-disk form was legacy (raw list), the write migrates it to the revision envelope (revision 1). `save_snapshot` acquires the lock, loads current revision, and calls `save_versioned_snapshot(threads, current_revision)`.\n\nAcceptance condition: `load_versioned_snapshot` and `save_versioned_snapshot` are defined. `SnapshotConflict` is defined with `current_revision`. The temp-cleanup block logs a warning instead of silently passing. Legacy raw-list files are read at revision 0 and migrated to revision 1 on next write.",
+      "brief": "Path: src/services/storage.py\nConstraints: Sync-only; use `threading.Lock`; no async; `shutil`, `json`, `os`, `pathlib` allowed. Do not modify `load_snapshot` or `save_snapshot` signatures.\nBehavior: Add `SnapshotConflict` exception class with `current_revision` attribute. Add `load_versioned_snapshot()` returning `(threads, revision)`. Handle legacy raw list (no revision key) as revision 0. Add `save_versioned_snapshot(threads, expected_revision)` returning new revision. Implement `_save_versioned_snapshot_locked` for atomic write: compare revision, raise `SnapshotConflict` on mismatch. On match, rotate primary to `.bak` (warn on failure but re-raise original), write temp, atomic replace. Handle cleanup failure by re-raising original error. Update `save_snapshot` to use versioned logic internally.\nAcceptance: `load_versioned_snapshot` returns correct tuple; `save_versioned_snapshot` advances revision and rotates backup; `SnapshotConflict` raised on mismatch; legacy files read as rev 0; error handling preserves original exceptions.",
       "contracts": [
         "src.services.storage:load_versioned_snapshot",
         "src.services.storage:save_versioned_snapshot",
@@ -12,22 +13,25 @@
       "file": "src/services/storage.py",
       "id": "T1",
       "tests": [
-        "tests/test_persistence_revisions.py::test_legacy_raw_primary_and_restored_backup_read_at_revision_zero",
-        "tests/test_persistence_revisions.py::test_accepted_write_migrates_legacy_primary_and_restored_backup",
-        "tests/test_storage_service.py::test_roundtrip_preserves_snapshot",
-        "tests/test_storage_service.py::test_missing_file_loads_empty",
+        "tests/test_storage_service.py::test_backup_rotation_failure_preserves_primary_and_is_logged",
+        "tests/test_storage_service.py::test_cleanup_failure_does_not_mask_original_save_error",
         "tests/test_storage_service.py::test_corrupt_file_loads_empty",
+        "tests/test_storage_service.py::test_corrupt_snapshot_is_quarantined",
+        "tests/test_storage_service.py::test_env_path_is_read_at_call_time",
+        "tests/test_storage_service.py::test_first_save_creates_no_bak",
+        "tests/test_storage_service.py::test_missing_file_loads_empty",
+        "tests/test_storage_service.py::test_roundtrip_preserves_snapshot",
         "tests/test_storage_service.py::test_save_creates_parent_directory",
         "tests/test_storage_service.py::test_save_overwrites_atomically",
-        "tests/test_storage_service.py::test_corrupt_snapshot_is_quarantined",
         "tests/test_storage_service.py::test_save_rotates_previous_snapshot_to_bak",
-        "tests/test_storage_service.py::test_first_save_creates_no_bak",
-        "tests/test_storage_service.py::test_env_path_is_read_at_call_time"
+        "tests/test_persistence_revisions.py::test_legacy_raw_primary_and_restored_backup_read_at_revision_zero",
+        "tests/test_persistence_revisions.py::test_accepted_write_migrates_legacy_primary_and_restored_backup"
       ]
     },
     {
-      "brief": "Implementation constraints: Edit `src/api/threads.py`. Import `SnapshotConflict` from `src.services.storage`. Extend `ThreadsPayload` with required `revision: int >= 0`. Add a DELETE body model (e.g. `ThreadsRevisionPrecondition`) with required `revision: int >= 0`. Use `route:GET /api/v1/threads`, `route:PUT /api/v1/threads`, `route:DELETE /api/v1/threads`. Map `SnapshotConflict` to HTTP 409 with body `{\"error\":\"revision_conflict\", \"current_revision\": n}` using `JSONResponse`, not FastAPI's default `detail` wrapper.\n\nBehavioral specification: GET `/api/v1/threads` calls `load_versioned_snapshot()`, returns `{\"threads\": [...], \"revision\": n, \"quarantined\": bool}` (quarantined logic from existing code). PUT `/api/v1/threads` validates `ThreadsPayload` (revision required), calls `save_versioned_snapshot(payload.threads, payload.revision)`, returns `{\"status\":\"ok\", \"revision\": new_revision}`. DELETE `/api/v1/threads` validates the revision body model, calls `save_versioned_snapshot([], body.revision)`, returns `{\"status\":\"ok\", \"revision\": new_revision}`. Validation failures (missing revision) return 422 and write nothing. `SnapshotConflict` raises 409 with the specified JSON body.\n\nAcceptance condition: GET returns threads, revision, and quarantined flag. PUT and DELETE require revision in body, return new revision. Missing revision returns 422. Stale revision returns 409 with `current_revision`. Validation errors do not modify the snapshot file.",
+      "brief": "Path: src/api/threads.py\nConstraints: FastAPI; use `Pydantic` models; no direct DB access; import `SnapshotConflict` from storage. Do not change other routes.\nBehavior: Extend `ThreadsPayload` with required `revision: int >= 0`. Add DELETE body model with `revision`. Update GET `/api/v1/threads` to call `load_versioned_snapshot` and return `{threads, revision, quarantined}`. Update PUT to call `save_versioned_snapshot` with payload threads/revision, return `{status: ok, revision: new_rev}`. Update DELETE to call `save_versioned_snapshot` with empty list/revision. Map `SnapshotConflict` to HTTP 409 with `{error: revision_conflict, current_revision: n}`. Validation errors remain 422.\nAcceptance: GET returns revision/quarantined; PUT/DELETE advance revision; 409 on conflict with correct body; 422 on missing/invalid revision; no writes on validation failure.",
       "contracts": [
+        "src.api.threads",
         "route:GET /api/v1/threads",
         "route:PUT /api/v1/threads",
         "route:DELETE /api/v1/threads",
@@ -36,8 +40,7 @@
         "schema:ThreadsListResponse",
         "schema:ThreadsMutationResponse",
         "schema:RevisionConflictResponse",
-        "error:409-revision-conflict",
-        "error:422-validation"
+        "error:409-revision-conflict"
       ],
       "depends_on": [
         "T1"
@@ -46,12 +49,6 @@
       "id": "T2",
       "tests": [
         "tests/test_threads_api.py::test_get_with_no_saved_data_returns_empty",
-        "tests/test_threads_api.py::test_put_then_get_roundtrips",
-        "tests/test_threads_api.py::test_put_malformed_payload_is_422_and_preserves_stored",
-        "tests/test_threads_api.py::test_delete_clears_snapshot",
-        "tests/test_threads_api.py::test_optional_fields_default",
-        "tests/test_threads_api.py::test_put_invalid_role_rejected",
-        "tests/test_threads_api.py::test_get_reports_quarantine_after_corrupt_snapshot",
         "tests/test_persistence_revisions.py::test_put_without_revision_is_422_and_writes_nothing",
         "tests/test_persistence_revisions.py::test_delete_without_revision_is_422_and_writes_nothing",
         "tests/test_persistence_revisions.py::test_each_accepted_put_advances_revision",
@@ -59,15 +56,22 @@
         "tests/test_persistence_revisions.py::test_stale_put_leaves_primary_and_backup_unchanged",
         "tests/test_persistence_revisions.py::test_stale_delete_leaves_primary_and_backup_unchanged",
         "tests/test_persistence_revisions.py::test_two_concurrent_same_revision_puts_have_one_winner",
-        "tests/test_websearch_api.py::test_put_threads_roundtrips_sources"
+        "tests/test_threads_api.py::test_delete_clears_snapshot",
+        "tests/test_threads_api.py::test_get_reports_quarantine_after_corrupt_snapshot",
+        "tests/test_threads_api.py::test_optional_fields_default",
+        "tests/test_threads_api.py::test_put_invalid_role_rejected",
+        "tests/test_threads_api.py::test_put_malformed_payload_is_422_and_preserves_stored",
+        "tests/test_threads_api.py::test_put_then_get_roundtrips"
       ]
     },
     {
-      "brief": "Implementation constraints: Edit `src/static/threads.js`. Add state variables: `_revision` (hydrated from GET), `_pendingSnapshots` (queue of thread arrays), `_isPersisting` (boolean), `_conflictLatched` (boolean). Add `setRevision(n)` method. Add `_enqueueSave(threads)` and `_flushQueue()` methods. Use `fetch` for PUT/DELETE. Do not coalesce snapshots; each mutation enqueues its own snapshot.\n\nBehavioral specification: `setRevision(n)` sets `_revision = n` and clears `_conflictLatched` and `save-status`. `_enqueueSave(threads)` pushes `threads` to `_pendingSnapshots`; if not `_isPersisting` and not `_conflictLatched`, calls `_flushQueue()`. `_flushQueue()` pops the first snapshot, sets `_isPersisting = true`, issues PUT `/api/v1/threads` with body `{threads: snapshot, revision: _revision}`. On 200, parses response `revision`, sets `_revision = response.revision`, clears `save-status`, and if queue is non-empty, recursively calls `_flushQueue()`; else sets `_isPersisting = false`. On 409, sets `_conflictLatched = true`, clears `_pendingSnapshots`, sets `_isPersisting = false`, writes `history changed elsewhere — reload required` to `el('save-status').textContent`. On other errors, writes `not saved` to `save-status`, sets `_isPersisting = false` (does not retry or clear queue on transient error per AC-75/76). Existing mutation functions (createThread, deleteThread, updateTitle, etc.) must be updated to call `_enqueueSave(ThreadSnapshotList)` instead of direct PUT. `restoreThreadModelState` and `lockThread` edits from prior delta remain (no model-select disable).\n\nAcceptance condition: `_enqueueSave` queues snapshots. `_flushQueue` serializes them with revision bumping. 409 latches the page and shows the conflict message. Non-409 errors show `not saved`. `setRevision` is exposed for app.js to call during hydration.",
+      "brief": "Path: src/static/threads.js\nConstraints: ES6 module pattern (IIFE or global scope); no external libs; sync DOM manipulation; async fetch for persistence. Do not touch unrelated sidebar logic.\nBehavior: Add `hydratedRevision` variable. Add `persistQueue` array and `isPersisting` flag. Add `conflictLatch` boolean. Implement `enqueueSnapshot(snapshot)` to push to queue and trigger `flushQueue()`. Implement `flushQueue()` to process one item at a time: fetch PUT `/api/v1/threads` with `{threads: snapshot, revision: hydratedRevision}`. On 200, update `hydratedRevision` from response, clear queue head. On 409, set `conflictLatch = true`, clear queue, set `save-status` text to 'history changed elsewhere \u2014 reload required'. On other error, set `save-status` to 'not saved'. Expose `setHydratedRevision(n)` for app.js.\nAcceptance: Queue serializes requests; revision updates on success; 409 latches UI and shows message; errors show 'not saved'; `setHydratedRevision` updates internal state.",
       "contracts": [
+        "route:PUT /api/v1/threads",
         "ui:save-status"
       ],
       "depends_on": [
+        "T1",
         "T2"
       ],
       "file": "src/static/threads.js",
@@ -75,8 +79,11 @@
       "tests": []
     },
     {
-      "brief": "Implementation constraints: Edit `src/static/app.js`. During startup hydration (the initial GET `/api/v1/threads`), extract `data.revision` and call `Threads.setRevision(data.revision)` before rendering or creating state. Ensure `save-status` is empty and the conflict latch is cleared on reload. If GET returns empty threads, the default-thread creation (existing behavior) will enqueue a save against the returned revision.\n\nBehavioral specification: In the startup sequence, after the GET `/api/v1/threads` response arrives, set `Threads` revision via the exposed hook. Do not infer revision from content. A healthy reload starts with empty `save-status` and an unlatched state. The existing default-thread creation flow (when no threads exist) must enqueue its save via `Threads._enqueueSave` so it uses the hydrated revision.\n\nAcceptance condition: On page load, the revision from the GET response is installed in the Threads persistence owner. The save-status element is empty. The conflict latch is cleared. Default thread creation enqueues a save with the correct initial revision.",
-      "contracts": [],
+      "brief": "Path: src/static/app.js\nConstraints: ES6; async/await for hydration; no external libs. Do not touch chat send/stream logic.\nBehavior: In startup hydration (GET `/api/v1/threads`), parse response `revision` and call `Threads.setHydratedRevision(data.revision)`. Store `data.threads` as before. On reload, reset `save-status` to empty and clear any conflict state if exposed. Ensure default thread creation enqueues a snapshot with the current hydrated revision. Never infer revision from content.\nAcceptance: Hydration sets revision in threads module; reload clears status; default thread save uses correct revision; no regression in existing chat functionality.",
+      "contracts": [
+        "route:GET /api/v1/threads",
+        "ui:save-status"
+      ],
       "depends_on": [
         "T1",
         "T2",
@@ -87,9 +94,9 @@
       "tests": [
         "tests/test_ui_persistence_conflicts.py::test_browser_serializes_rapid_mutations_in_revision_order",
         "tests/test_ui_persistence_conflicts.py::test_browser_conflict_warns_and_stops_further_writes",
-        "tests/test_ui_persistence_conflicts.py::test_reload_after_conflict_hydrates_and_allows_a_new_save"
+        "tests/test_ui_persistence_conflicts.py::test_reload_after_conflict_hydrates_and_allows_a_new_save",
+        "tests/test_websearch_api.py::test_put_threads_roundtrips_sources"
       ]
     }
-  ],
-  "version": 21
+  ]
 }
