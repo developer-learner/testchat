@@ -99,13 +99,19 @@ def _save_versioned_snapshot_locked(threads: list[dict], expected_revision: int)
             try:
                 shutil.copy2(path, bak_path)
             except OSError as exc:
-                logger.warning("Could not back up snapshot to %s: %s", bak_path, exc)
+                logger.warning(
+                    "Could not back up snapshot: primary=%s backup=%s error=%s",
+                    path, bak_path, exc,
+                )
+                raise
         os.replace(tmp_path, path)
     except BaseException:
         try:
             os.unlink(tmp_path)
-        except OSError:
-            pass  # tmp file already gone; nothing to clean
+        except OSError as cleanup_exc:
+            logger.warning(
+                "temp cleanup failed: temp=%s error=%s", tmp_path, cleanup_exc,
+            )
         raise
     return new_revision
 
