@@ -1,18 +1,22 @@
 {
-  "version": 22,
-  "erd_version": 73,
+  "version": 23,
+  "erd_version": 75,
   "tasks": [
     {
-      "brief": "Path: src/services/storage.py\nConstraints: Sync-only; use `threading.Lock`; no async; `shutil`, `json`, `os`, `pathlib` allowed. Do not modify `load_snapshot` or `save_snapshot` signatures.\nBehavior: Add `SnapshotConflict` exception class with `current_revision` attribute. Add `load_versioned_snapshot()` returning `(threads, revision)`. Handle legacy raw list (no revision key) as revision 0. Add `save_versioned_snapshot(threads, expected_revision)` returning new revision. Implement `_save_versioned_snapshot_locked` for atomic write: compare revision, raise `SnapshotConflict` on mismatch. On match, rotate primary to `.bak` (warn on failure but re-raise original), write temp, atomic replace. Handle cleanup failure by re-raising original error. Update `save_snapshot` to use versioned logic internally.\nAcceptance: `load_versioned_snapshot` returns correct tuple; `save_versioned_snapshot` advances revision and rotates backup; `SnapshotConflict` raised on mismatch; legacy files read as rev 0; error handling preserves original exceptions.",
+      "id": "T1",
+      "file": "src/services/storage.py",
+      "depends_on": [],
+      "brief": "CONSTRAINTS: sync module; keep the one module-level non-reentrant lock covering read-current/compare/backup/temp-write/atomic-replace/revision-advance; do NOT add any automatic .bak fallback on load; do NOT rewrite the module, edit only the named behaviors. Use json, os, shutil, time.\n\nBEHAVIOR:\n1. save_snapshot: acquire the module lock ONCE; read the current persisted generation (missing or unreadable primary reads as 0; a legacy top-level JSON list reads as 0); call _save_versioned_snapshot_locked(threads, current); discard its returned revision; return None. Do NOT pass a constant.\n2. load path: a top-level JSON list IS the legacy primary shape \u2014 that list is the threads at revision 0. A top-level dict with int revision>=0 and a threads list is the envelope. Anything else unreadable follows rule 3. In the save compare step a legacy-list primary compares as generation 0; the accepted successor write stores {\"revision\": expected+1, \"threads\":[...]}; backup rotation (shutil.copy2 of primary before replacement) preserves the raw legacy bytes in .bak unchanged.\n3. When the primary exists but does not parse as JSON: quarantine it \u2014 rename to <primary-name>.corrupt-<stamp> in the same directory, preserving its bytes exactly \u2014 then return ([], 0). After quarantine the primary no longer exists, so the next save writes revision 1 fresh. Quarantined files are never deleted, overwritten, or auto-restored.\n4. Load SHALL NOT fall back to reading .bak; remove any such path.\nFailure handlers unchanged: copy2 OSError \u2192 warn with primary/backup paths and exception text, re-raise the SAME exception (outer handling removes temp and propagates the original); temp unlink failure while handling a save error \u2192 warn with the exact temp path and cleanup exception, re-raise the ORIGINAL error.\n\nACCEPT: all storage oracles pass \u2014 legacy raw list and restored .bak read at revision 0; accepted write migrates legacy primary and restored backup; corrupt primary quarantined and loads empty; missing file loads empty; env path read at call time; save creates parent dir, overwrites atomically, rotates previous snapshot to .bak, first save creates no .bak; backup-rotation failure preserves primary and is logged; cleanup failure does not mask the original save error; roundtrip preserves snapshot.",
       "contracts": [
+        "src.services.storage:load_snapshot",
+        "src.services.storage:save_snapshot",
         "src.services.storage:load_versioned_snapshot",
         "src.services.storage:save_versioned_snapshot",
         "src.services.storage:SnapshotConflict"
       ],
-      "depends_on": [],
-      "file": "src/services/storage.py",
-      "id": "T1",
       "tests": [
+        "tests/test_persistence_revisions.py::test_legacy_raw_primary_and_restored_backup_read_at_revision_zero",
+        "tests/test_persistence_revisions.py::test_accepted_write_migrates_legacy_primary_and_restored_backup",
         "tests/test_storage_service.py::test_backup_rotation_failure_preserves_primary_and_is_logged",
         "tests/test_storage_service.py::test_cleanup_failure_does_not_mask_original_save_error",
         "tests/test_storage_service.py::test_corrupt_file_loads_empty",
@@ -23,15 +27,17 @@
         "tests/test_storage_service.py::test_roundtrip_preserves_snapshot",
         "tests/test_storage_service.py::test_save_creates_parent_directory",
         "tests/test_storage_service.py::test_save_overwrites_atomically",
-        "tests/test_storage_service.py::test_save_rotates_previous_snapshot_to_bak",
-        "tests/test_persistence_revisions.py::test_legacy_raw_primary_and_restored_backup_read_at_revision_zero",
-        "tests/test_persistence_revisions.py::test_accepted_write_migrates_legacy_primary_and_restored_backup"
+        "tests/test_storage_service.py::test_save_rotates_previous_snapshot_to_bak"
       ]
     },
     {
-      "brief": "Path: src/api/threads.py\nConstraints: FastAPI; use `Pydantic` models; no direct DB access; import `SnapshotConflict` from storage. Do not change other routes.\nBehavior: Extend `ThreadsPayload` with required `revision: int >= 0`. Add DELETE body model with `revision`. Update GET `/api/v1/threads` to call `load_versioned_snapshot` and return `{threads, revision, quarantined}`. Update PUT to call `save_versioned_snapshot` with payload threads/revision, return `{status: ok, revision: new_rev}`. Update DELETE to call `save_versioned_snapshot` with empty list/revision. Map `SnapshotConflict` to HTTP 409 with `{error: revision_conflict, current_revision: n}`. Validation errors remain 422.\nAcceptance: GET returns revision/quarantined; PUT/DELETE advance revision; 409 on conflict with correct body; 422 on missing/invalid revision; no writes on validation failure.",
+      "id": "T2",
+      "file": "src/api/threads.py",
+      "depends_on": [
+        "T1"
+      ],
+      "brief": "CONSTRAINTS: sync FastAPI handlers; do NOT wrap the 409 body in FastAPI's detail \u2014 return the exact top-level JSON; pydantic models for bodies; validation failures stay 422 and write nothing.\n\nBEHAVIOR:\n1. Extend ThreadsPayload: add required revision: int >= 0.\n2. Add a DELETE request body model with required revision: int >= 0.\n3. GET /api/v1/threads: perform ONE revisioned load (load_versioned_snapshot) and return {\"threads\": [...], \"revision\": n, \"quarantined\": bool}.\n4. PUT /api/v1/threads: call save_versioned_snapshot(payload.threads, payload.revision). DELETE /api/v1/threads: call save_versioned_snapshot([], body.revision). Both return {\"status\":\"ok\", \"revision\": n+1}.\n5. Catch SnapshotConflict \u2192 HTTP 409 with exact top-level body {\"error\":\"revision_conflict\", \"current_revision\": conflict.current_revision}.\n\nACCEPT: test_put_without_revision_is_422_and_writes_nothing, test_delete_without_revision_is_422_and_writes_nothing, test_each_accepted_put_advances_revision, test_each_accepted_delete_advances_revision, test_stale_put_leaves_primary_and_backup_unchanged, test_stale_delete_leaves_primary_and_backup_unchanged, test_two_concurrent_same_revision_puts_have_one_winner, and all test_threads_api.py roundtrip/validation/quarantine nodes pass.",
       "contracts": [
-        "src.api.threads",
         "route:GET /api/v1/threads",
         "route:PUT /api/v1/threads",
         "route:DELETE /api/v1/threads",
@@ -40,62 +46,113 @@
         "schema:ThreadsListResponse",
         "schema:ThreadsMutationResponse",
         "schema:RevisionConflictResponse",
+        "error:422-validation",
         "error:409-revision-conflict"
       ],
-      "depends_on": [
-        "T1"
-      ],
-      "file": "src/api/threads.py",
-      "id": "T2",
       "tests": [
-        "tests/test_threads_api.py::test_get_with_no_saved_data_returns_empty",
-        "tests/test_persistence_revisions.py::test_put_without_revision_is_422_and_writes_nothing",
         "tests/test_persistence_revisions.py::test_delete_without_revision_is_422_and_writes_nothing",
-        "tests/test_persistence_revisions.py::test_each_accepted_put_advances_revision",
         "tests/test_persistence_revisions.py::test_each_accepted_delete_advances_revision",
-        "tests/test_persistence_revisions.py::test_stale_put_leaves_primary_and_backup_unchanged",
+        "tests/test_persistence_revisions.py::test_each_accepted_put_advances_revision",
+        "tests/test_persistence_revisions.py::test_put_without_revision_is_422_and_writes_nothing",
         "tests/test_persistence_revisions.py::test_stale_delete_leaves_primary_and_backup_unchanged",
+        "tests/test_persistence_revisions.py::test_stale_put_leaves_primary_and_backup_unchanged",
         "tests/test_persistence_revisions.py::test_two_concurrent_same_revision_puts_have_one_winner",
         "tests/test_threads_api.py::test_delete_clears_snapshot",
         "tests/test_threads_api.py::test_get_reports_quarantine_after_corrupt_snapshot",
+        "tests/test_threads_api.py::test_get_with_no_saved_data_returns_empty",
         "tests/test_threads_api.py::test_optional_fields_default",
         "tests/test_threads_api.py::test_put_invalid_role_rejected",
         "tests/test_threads_api.py::test_put_malformed_payload_is_422_and_preserves_stored",
-        "tests/test_threads_api.py::test_put_then_get_roundtrips"
+        "tests/test_threads_api.py::test_put_then_get_roundtrips",
+        "tests/test_websearch_api.py::test_put_threads_roundtrips_sources"
       ]
     },
     {
-      "brief": "Path: src/static/threads.js\nConstraints: ES6 module pattern (IIFE or global scope); no external libs; sync DOM manipulation; async fetch for persistence. Do not touch unrelated sidebar logic.\nBehavior: Add `hydratedRevision` variable. Add `persistQueue` array and `isPersisting` flag. Add `conflictLatch` boolean. Implement `enqueueSnapshot(snapshot)` to push to queue and trigger `flushQueue()`. Implement `flushQueue()` to process one item at a time: fetch PUT `/api/v1/threads` with `{threads: snapshot, revision: hydratedRevision}`. On 200, update `hydratedRevision` from response, clear queue head. On 409, set `conflictLatch = true`, clear queue, set `save-status` text to 'history changed elsewhere \u2014 reload required'. On other error, set `save-status` to 'not saved'. Expose `setHydratedRevision(n)` for app.js.\nAcceptance: Queue serializes requests; revision updates on success; 409 latches UI and shows message; errors show 'not saved'; `setHydratedRevision` updates internal state.",
-      "contracts": [
-        "route:PUT /api/v1/threads",
-        "ui:save-status"
-      ],
+      "id": "T3",
+      "file": "src/static/threads.js",
       "depends_on": [
         "T1",
         "T2"
       ],
-      "file": "src/static/threads.js",
-      "id": "T3",
+      "brief": "CONSTRAINTS: browser-side JS, sync DOM logic; no new libraries; edit src/static/threads.js only; do not restate carried behavior.\n\nBEHAVIOR:\n1. Own the authoritative hydrated revision, an ordered persist queue, and a conflict latch.\n2. Every persistence-worthy mutation captures its own complete snapshot at enqueue time. Run at most one PUT at a time. The first request uses the hydrated revision; after a 200, adopt the response revision before issuing the next queued snapshot. Do not coalesce or reorder mutations.\n3. Ordinary network/non-409 failures preserve AC-75/76 ('not saved') and do not advance revision.\n4. A 409: clear pending snapshots, latch the page against every later PUT/DELETE, and write exactly 'history changed elsewhere \u2014 reload required' to save-status. Only document reload clears the latch.\n5. Expose the minimum hook app.js needs to install the GET revision before a mutation can enqueue.\n\nACCEPT: the persistence-conflict browser oracles pass \u2014 rapid mutations serialize in revision order; conflict warns and stops further writes; reload after conflict hydrates and allows a new save.",
+      "contracts": [
+        "ui:save-status"
+      ],
       "tests": []
     },
     {
-      "brief": "Path: src/static/app.js\nConstraints: ES6; async/await for hydration; no external libs. Do not touch chat send/stream logic.\nBehavior: In startup hydration (GET `/api/v1/threads`), parse response `revision` and call `Threads.setHydratedRevision(data.revision)`. Store `data.threads` as before. On reload, reset `save-status` to empty and clear any conflict state if exposed. Ensure default thread creation enqueues a snapshot with the current hydrated revision. Never infer revision from content.\nAcceptance: Hydration sets revision in threads module; reload clears status; default thread save uses correct revision; no regression in existing chat functionality.",
-      "contracts": [
-        "route:GET /api/v1/threads",
-        "ui:save-status"
-      ],
+      "id": "T4",
+      "file": "src/static/app.js",
       "depends_on": [
         "T1",
         "T2",
         "T3"
       ],
-      "file": "src/static/app.js",
-      "id": "T4",
+      "brief": "CONSTRAINTS: browser-side JS, sync DOM logic; edit src/static/app.js only; no new libraries.\n\nBEHAVIOR:\n1. During startup GET hydration, install BOTH data.threads and data.revision into the threads persistence owner before rendering or creating state.\n2. A healthy reload starts with empty save-status and an unlatch.\n3. If GET is empty, default-thread creation is the first queued save against the returned revision.\n4. Never infer a revision from content.\n\nACCEPT: all browser UI oracles pass \u2014 threads survive reload, reload opens newest thread, header/sidebar title rename flows, selector stays enabled across all UI states, persistence-conflict flows, and websearch source flows.",
+      "contracts": [
+        "ui:save-status"
+      ],
       "tests": [
-        "tests/test_ui_persistence_conflicts.py::test_browser_serializes_rapid_mutations_in_revision_order",
-        "tests/test_ui_persistence_conflicts.py::test_browser_conflict_warns_and_stops_further_writes",
-        "tests/test_ui_persistence_conflicts.py::test_reload_after_conflict_hydrates_and_allows_a_new_save",
-        "tests/test_websearch_api.py::test_put_threads_roundtrips_sources"
+        "tests/test_ui.py::test_bubble_meta_includes_date_for_past_messages[chromium]",
+        "tests/test_ui.py::test_click_header_title_enters_edit_mode[chromium]",
+        "tests/test_ui.py::test_current_thread_is_highlighted_in_sidebar[chromium]",
+        "tests/test_ui.py::test_current_thread_title_shows_in_header[chromium]",
+        "tests/test_ui.py::test_empty_header_title_commit_reverts_to_prior[chromium]",
+        "tests/test_ui.py::test_enter_commits_header_title_edit[chromium]",
+        "tests/test_ui.py::test_escape_reverts_header_title_edit[chromium]",
+        "tests/test_ui.py::test_failed_reply_keeps_user_message[chromium]",
+        "tests/test_ui.py::test_header_rename_updates_sidebar_row_immediately[chromium]",
+        "tests/test_ui.py::test_header_title_updates_when_switching_threads[chromium]",
+        "tests/test_ui.py::test_highlight_moves_when_current_thread_deleted[chromium]",
+        "tests/test_ui.py::test_highlight_moves_when_switching_threads[chromium]",
+        "tests/test_ui.py::test_history_quarantine_indicator_shows[chromium]",
+        "tests/test_ui.py::test_history_sent_to_backend_has_no_think_markup[chromium]",
+        "tests/test_ui.py::test_history_status_empty_when_healthy[chromium]",
+        "tests/test_ui.py::test_long_header_title_truncates_with_full_text_in_tooltip[chromium]",
+        "tests/test_ui.py::test_markdown_renders_readably[chromium]",
+        "tests/test_ui.py::test_mid_chat_switch_updates_thread_model_and_routes_next_send[chromium]",
+        "tests/test_ui.py::test_model_option_labels_never_carry_checkmark[chromium]",
+        "tests/test_ui.py::test_model_selection_survives_models_refresh[chromium]",
+        "tests/test_ui.py::test_new_chat_creates_unlocked_empty_thread[chromium]",
+        "tests/test_ui.py::test_newlines_in_header_title_are_stripped_on_commit[chromium]",
+        "tests/test_ui.py::test_no_loaded_model_shows_placeholder_and_send_guides[chromium]",
+        "tests/test_ui.py::test_rain_backdrop_only_in_matrix[chromium]",
+        "tests/test_ui.py::test_reload_after_current_deleted_opens_newest_remaining[chromium]",
+        "tests/test_ui.py::test_reload_opens_newest_thread[chromium]",
+        "tests/test_ui.py::test_reply_copy_source_strips_think_after_reload[chromium]",
+        "tests/test_ui.py::test_save_failure_indicator_shows_then_clears[chromium]",
+        "tests/test_ui.py::test_saved_system_prompt_reaches_requests[chromium]",
+        "tests/test_ui.py::test_search_hit_count_and_navigation[chromium]",
+        "tests/test_ui.py::test_search_hits_highlighted_in_open_thread[chromium]",
+        "tests/test_ui.py::test_selector_stays_enabled_across_all_ui_states[chromium]",
+        "tests/test_ui.py::test_sidebar_divider_drags_and_clamps[chromium]",
+        "tests/test_ui.py::test_sidebar_lists_newest_thread_first[chromium]",
+        "tests/test_ui.py::test_sidebar_rename_updates_header_immediately[chromium]",
+        "tests/test_ui.py::test_sidebar_search_filters_threads[chromium]",
+        "tests/test_ui.py::test_sidebar_width_persists_across_reload[chromium]",
+        "tests/test_ui.py::test_stop_button_keeps_partial_reply[chromium]",
+        "tests/test_ui.py::test_switching_threads_mid_edit_commits_pending_rename[chromium]",
+        "tests/test_ui.py::test_terminal_titlebar_only_in_phosphor[chromium]",
+        "tests/test_ui.py::test_theme_cycle_reaches_phosphor_and_wraps[chromium]",
+        "tests/test_ui.py::test_theme_switch_persists_across_reload[chromium]",
+        "tests/test_ui.py::test_think_toggle_reveals_and_hides_thinking[chromium]",
+        "tests/test_ui.py::test_thinking_placeholder_shows_then_clears[chromium]",
+        "tests/test_ui.py::test_thread_delete_removes_thread[chromium]",
+        "tests/test_ui.py::test_thread_rename_via_sidebar_control[chromium]",
+        "tests/test_ui.py::test_thread_switch_restores_history[chromium]",
+        "tests/test_ui.py::test_thread_switch_restores_stored_model[chromium]",
+        "tests/test_ui.py::test_thread_title_set_from_first_message[chromium]",
+        "tests/test_ui.py::test_thread_title_stores_full_text_beyond_thirty_chars[chromium]",
+        "tests/test_ui.py::test_threads_survive_reload[chromium]",
+        "tests/test_ui.py::test_title_renders_as_text_not_html[chromium]",
+        "tests/test_ui.py::test_unloaded_model_pick_asks_and_cancel_reverts[chromium]",
+        "tests/test_ui_persistence_conflicts.py::test_browser_conflict_warns_and_stops_further_writes[chromium]",
+        "tests/test_ui_persistence_conflicts.py::test_browser_serializes_rapid_mutations_in_revision_order[chromium]",
+        "tests/test_ui_persistence_conflicts.py::test_reload_after_conflict_hydrates_and_allows_a_new_save[chromium]",
+        "tests/test_ui_websearch.py::test_full_width_citation_markers_render_as_plain_brackets[chromium]",
+        "tests/test_ui_websearch.py::test_sources_persist_across_reload[chromium]",
+        "tests/test_ui_websearch.py::test_web_reply_shows_source_links_and_toggle_resets[chromium]",
+        "tests/test_ui_websearch.py::test_web_toggle_present_default_off[chromium]"
       ]
     }
   ]
