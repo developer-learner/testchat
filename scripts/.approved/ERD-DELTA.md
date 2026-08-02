@@ -1,13 +1,19 @@
-ERD Delta — testchat M33 conflict-safe history persistence (erd_version 72)
+ERD Delta — testchat M33 conflict-safe history persistence, v73 correction (erd_version 73)
 
 ## Changed acceptance criteria
 
-AC-136 through AC-148 are added exactly as written in the complete replacement
-`PRD.md`. AC-35 and AC-37 are constrained by mandatory revision preconditions.
+v73 adds no numbered acceptance criterion: AC-136 through AC-148 remain
+exactly as frozen in v72. This correction adds deterministic failure oracles
+for existing AC-75 and AC-82 and removes implementation-location and locking
+ambiguities. AC-35 and AC-37 remain constrained by mandatory revision preconditions.
 AC-75 and AC-76 continue to govern ordinary save failures. AC-78, AC-79,
 AC-80, AC-81, and AC-82 remain unchanged while their storage/API artifacts
 adopt the revision envelope. Every other live v71 criterion remains in force,
 including AC-111..AC-135.
+
+No new numbered criterion is introduced. Backup-rotation failure is a failed
+save under AC-75 and cannot satisfy AC-82; cleanup-error precedence preserves
+that same failure's visibility rather than adding a new user capability.
 
 ## Superseded acceptance criteria
 
@@ -20,40 +26,37 @@ extent AC-136..AC-148 require revisioned, ordered persistence.
 
 ### `src/services/storage.py`
 
-Keep `load_snapshot()` as the compatibility view returning only the thread
-list and keep `save_snapshot()` usable by frozen callers. Add locked entry
-points `load_versioned_snapshot() -> tuple[list[dict], int]` and
-`save_versioned_snapshot(threads, expected_revision) -> int`, plus
+Public surface: keep `load_snapshot()` (list-only compatibility) and
+`save_snapshot()`. Add `load_versioned_snapshot() -> tuple[list[dict], int]`,
+`save_versioned_snapshot(threads, expected_revision) -> int`, and
 `SnapshotConflict.current_revision`.
 
-The current on-disk form is one JSON object:
+Read `{"revision": int, "threads": [...]}`. Missing primary is `([], 0)`.
+A legacy raw list—including a `.bak` restored as primary—reads losslessly at
+revision 0; its next accepted write stores envelope revision 1 and rotates the
+raw primary to `.bak`. `load_snapshot()` returns only threads. Revisions are
+monotonic integers, never content hashes.
 
-```
-{"revision": <non-negative integer>, "threads": [<ThreadSnapshot>...]}
-```
+One module-level non-reentrant lock covers read-current, compare, backup,
+temp-write, atomic replace, and revision advance. Mismatch raises
+`SnapshotConflict` before any directory/temp/backup/primary write. Match
+always writes `expected + 1`, including equal PUT or empty DELETE, by
+same-directory temp replacement; preserve quarantine and exactly one `.bak`.
 
-A missing primary reads as empty at revision 0. A legacy raw-list primary
-reads losslessly at revision 0, including when a human restored a raw-list
-`.bak` to the configured primary path. The next accepted write stores the
-revision-1 envelope and rotates the legacy primary bytes to `.bak`.
-`load_snapshot()` returns only the list from either form. Do not use a content
-hash as a generation because equal content may recur (ABA).
+Private `_save_versioned_snapshot_locked(threads, expected_revision)` assumes
+the lock is held and performs compare/save. Public `save_versioned_snapshot`
+acquires once, then calls it. Compatibility `save_snapshot` acquires once,
+reads the generation under that lock, calls the private helper directly,
+discards its revision, and returns compatibly. Never call the lock-acquiring
+public save while holding the lock; never unlock between read and helper call.
 
-Use one module-level process-local lock for the entire read-current / compare /
-backup-rotate / temp-write / atomic-replace operation. On mismatch, raise
-`SnapshotConflict` before any directory, temp, backup, or primary write. On a
-match, always write generation `expected + 1`, including equal PUT and
-empty-to-empty DELETE. Preserve same-directory temp replacement, quarantine,
-cleanup, and exactly one `.bak` generation. The compatibility `save_snapshot`
-must acquire the same lock and advance from the current generation; API code
-must not use it.
+Failure handlers are distinct:
 
-**D-80 remediation is part of this storage task.** Replace the reported
-temp-cleanup `except OSError: pass` at `src/services/storage.py:79` with an
-observable warning that includes the temp path and cleanup exception, then
-continue to the existing re-raise of the original save failure. The warning
-must not mask the original exception; propagation preserves AC-75's user-
-visible `not saved` behavior.
+1. If `shutil.copy2(primary, bak)` raises `OSError`, warn with primary path,
+   backup path, and exception, then re-raise it. Outer failure handling removes
+   temp and propagates that original error; primary bytes/revision stay fixed.
+2. If temp unlink then fails, warn with the exact temp path and cleanup
+   exception, but re-raise the ORIGINAL primary/backup error, never cleanup's.
 
 ### `src/api/threads.py`
 
@@ -105,9 +108,18 @@ sleeps, guessed microtask turns, or immediate asynchronous request counts.
 Required DAG: storage.py first; threads.py depends on storage; threads.js
 depends on both backend tasks; app.js depends on all three and is final.
 
+v73 restages complete `tests/test_storage_service.py` with two deterministic
+failure oracles. Both use monkeypatch/caplog against the locked storage module
+surface; neither relies on source line numbers.
+
 ## Test-to-file mapping
 
 Backend nodes:
+
+* `tests/test_storage_service.py::test_backup_rotation_failure_preserves_primary_and_is_logged`
+  → `src/services/storage.py` (AC-75 + AC-82 correction).
+* `tests/test_storage_service.py::test_cleanup_failure_does_not_mask_original_save_error`
+  → `src/services/storage.py` (AC-75 correction).
 
 * `tests/test_threads_api.py::test_get_with_no_saved_data_returns_empty`
   → `src/api/threads.py` (AC-136; adapted carried test).

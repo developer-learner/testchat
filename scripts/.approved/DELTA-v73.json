@@ -1,0 +1,22 @@
+{
+  "changed_contract_ids": [],
+  "changed_tests": [
+    "tests/test_storage_service.py::test_backup_rotation_failure_preserves_primary_and_is_logged",
+    "tests/test_storage_service.py::test_cleanup_failure_does_not_mask_original_save_error",
+    "tests/test_storage_service.py::test_corrupt_file_loads_empty",
+    "tests/test_storage_service.py::test_corrupt_snapshot_is_quarantined",
+    "tests/test_storage_service.py::test_env_path_is_read_at_call_time",
+    "tests/test_storage_service.py::test_first_save_creates_no_bak",
+    "tests/test_storage_service.py::test_missing_file_loads_empty",
+    "tests/test_storage_service.py::test_roundtrip_preserves_snapshot",
+    "tests/test_storage_service.py::test_save_creates_parent_directory",
+    "tests/test_storage_service.py::test_save_overwrites_atomically",
+    "tests/test_storage_service.py::test_save_rotates_previous_snapshot_to_bak"
+  ],
+  "changed_files": [
+    "src/services/storage.py",
+    "src/api/threads.py",
+    "src/static/threads.js",
+    "src/static/app.js"
+  ]
+}

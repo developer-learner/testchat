@@ -1,4 +1,4 @@
-PRD — testchat through M33: current chat, free model selection, conflict-safe persistence (spec v72)
+PRD — testchat through M33: current chat, free model selection, conflict-safe persistence (spec v73)
 
 ## Provenance caveat — READ BEFORE APPROVING (INV-1)
 
@@ -502,6 +502,15 @@ lock. `load_snapshot()` remains a thread-list compatibility view for frozen
 imports. Existing quarantine, atomic replacement, and one-generation backup
 behavior remain in force.
 
+**v73 lock correction.** The one lock is non-reentrant. A private lock-held
+save helper performs compare / backup / replace / revision advance without
+acquiring the lock itself. Public `save_versioned_snapshot` acquires the lock
+and calls that helper. Compatibility `save_snapshot` separately acquires the
+same lock, reads the current generation under that lock, calls the private
+helper directly, and discards its returned revision. It SHALL NOT call the
+lock-acquiring public `save_versioned_snapshot` while holding the lock, and it
+SHALL NOT release the lock between reading and saving.
+
 The browser owns one hydrated revision, snapshots each mutation when enqueued,
 and runs at most one persist request at a time. A 200 response advances the
 local revision before the next queued request. Ordinary network/non-409
@@ -510,11 +519,26 @@ all later writes until document reload.
 
 ### M33 failure-visibility maintenance rider
 
-The storage file is touched under D-80. Its existing best-effort temporary-file
-cleanup handler must not silently swallow an unlink failure: log a warning
-that identifies the temp path and cleanup exception, then preserve the
-original save exception so AC-75 continues to surface `not saved`. This is
-diagnostic hardening, not a new product behavior.
+**v73 corrects the v72 handler location.** The reported unhandled
+`except OSError: pass` surrounds backup rotation, specifically
+`shutil.copy2(primary, backup)`; it is not the later temp-unlink handler.
+WHEN that backup copy raises `OSError`, the storage service SHALL log a warning
+that includes the primary path, backup path, and exception, then re-raise that
+same backup error. The outer save-failure path removes the prepared temp file
+and propagates the original backup error, so the primary bytes/revision are
+not replaced or advanced and AC-75 exposes the failure instead of reporting a
+save.
+
+The later temp-unlink failure path is also explicit: IF removing the temp file
+while handling any primary save error raises `OSError`, the service SHALL log
+the temp path and cleanup exception but preserve and re-raise the ORIGINAL
+primary save error after the cleanup attempt. Cleanup failure must never mask
+the error that caused save handling to begin.
+
+No new numbered criterion is added. These are missing failure-path oracles for
+existing AC-82 (backup rotation is part of a successful save) and AC-75 (a
+failed save propagates to the already-specified visible `not saved` state),
+not a new user capability.
 
 ### M33 out of scope
 

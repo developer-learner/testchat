@@ -1,5 +1,5 @@
 {
-  "erd_version": 72,
+  "erd_version": 73,
   "files": [
     "src/services/storage.py",
     "src/api/threads.py",
@@ -545,7 +545,7 @@
     }
   ],
   "smoke_checks": {
-    "src/services/storage.py": "grep -q 'load_versioned_snapshot' src/services/storage.py && grep -q 'save_versioned_snapshot' src/services/storage.py && grep -q 'SnapshotConflict' src/services/storage.py",
+    "src/services/storage.py": "grep -q 'load_versioned_snapshot' src/services/storage.py && grep -q 'save_versioned_snapshot' src/services/storage.py && grep -q '_save_versioned_snapshot_locked' src/services/storage.py && grep -q 'SnapshotConflict' src/services/storage.py && grep -q 'shutil.copy2' src/services/storage.py",
     "src/api/threads.py": "grep -q 'current_revision' src/api/threads.py && grep -q 'revision_conflict' src/api/threads.py",
     "src/static/threads.js": "grep -q 'history changed elsewhere — reload required' src/static/threads.js && grep -q 'revision' src/static/threads.js",
     "src/static/app.js": "grep -q 'revision' src/static/app.js"
