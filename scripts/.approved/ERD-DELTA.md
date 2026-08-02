@@ -148,6 +148,49 @@ v74 restages `tests/test_storage_service.py` and
 `tests/test_persistence_revisions.py` byte-identical: the oracles were
 correct; the correction is entirely on the implementation-guidance side.
 
+## Plan authoring — task object shape
+
+The plan validator (`scripts/validate-plan.py`) rejects any task whose keys
+are not EXACTLY the six required: `id`, `file`, `depends_on`, `brief`,
+`contracts`, `tests`. No other keys are permitted at the task level, and no
+required key may be omitted or renamed. In particular the field naming the
+frozen pytest node-ids the task must pass is `tests` — NOT `test_nodes`,
+`test_ids`, `nodeids`, `acceptance`, `regression`, or any synonym. The task
+object shape is exactly:
+
+    {
+      "id": "T1",
+      "file": "src/services/storage.py",
+      "depends_on": [],
+      "brief": "one concern, ≤2500 chars, describes the change to `file`",
+      "contracts": ["route:threads_get", "schema:threads_payload"],
+      "tests": ["tests/test_storage_service.py::test_backup_rotation_failure_preserves_primary_and_is_logged",
+                "tests/test_persistence_revisions.py::test_each_accepted_put_advances_revision"]
+    }
+
+Field rules:
+
+* `id` — task identifier, string, unique within the plan (e.g. `T1`, `T2`).
+* `file` — the one repo-relative path this task edits. Every task edits
+  exactly one file; multi-file work is decomposed into multiple tasks.
+* `depends_on` — list of task ids from THIS subtree that must complete
+  before this task runs. Use `[]` for the root; do not reference tasks in
+  other plans.
+* `brief` — implementation guidance, one concern per task, ≤2500 characters.
+  Empty briefs and negative-only wording are rejected.
+* `contracts` — list of contract ids from `scripts/.approved/contracts.json`
+  (`entry_points` / `routes` / `schemas` / `errors`) this task must honor.
+  Use `[]` when the file has no directly-associated contract entry.
+* `tests` — list of frozen pytest node-ids drawn from
+  `scripts/.approved/test-nodeids`, each of the form
+  `tests/<file>.py::test_name` (parametrized ids include their `[…]`
+  suffix). This is the acceptance oracle for the task; every node-id
+  named in the outer envelope's `map_nodeids` for the subtree must be
+  assigned to exactly one task.
+
+The outer plan envelope carries `erd_version` and `version`; individual
+tasks must not carry `erd_version`, `status`, or any additional key.
+
 ## Test-to-file mapping
 
 Backend nodes:
