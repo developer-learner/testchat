@@ -22,19 +22,6 @@ def _data_path() -> str:
     return os.environ.get("TESTCHAT_DATA", DEFAULT_PATH)
 
 
-def _try_load_bak(path: str) -> list[dict] | None:
-    bak = f"{path}.bak"
-    try:
-        with open(bak, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError, ValueError, OSError):
-        return None
-    if isinstance(data, list):
-        logger.warning("Recovered snapshot from %s", bak)
-        return data
-    return None
-
-
 def _read_raw(path: str) -> dict | None:
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -42,6 +29,14 @@ def _read_raw(path: str) -> dict | None:
     except (FileNotFoundError, json.JSONDecodeError, ValueError, OSError):
         return None
     return data if isinstance(data, dict) else None
+
+
+def _read_any(path: str) -> object | None:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, ValueError, OSError):
+        return None
 
 
 def _extract_threads(data: dict) -> list[dict]:
@@ -54,20 +49,33 @@ def _extract_threads(data: dict) -> list[dict]:
 
 def load_versioned_snapshot() -> tuple[list[dict], int]:
     path = _data_path()
-    data = _read_raw(path)
+    data = _read_any(path)
     if data is None:
-        recovered = _try_load_bak(path)
-        if recovered is not None:
-            return recovered, 0
         return [], 0
-    if "revision" in data:
-        revision = data["revision"]
-        if not isinstance(revision, int) or revision < 0:
-            logger.warning("Snapshot at %s has invalid revision", path)
-            revision = 0
-        return _extract_threads(data), revision
-    # Legacy raw list (no revision key) — treat as revision 0.
-    return _extract_threads(data), 0
+    if isinstance(data, list):
+        # Legacy raw list — treat as revision 0.
+        return data, 0
+    if isinstance(data, dict):
+        if "revision" in data:
+            revision = data["revision"]
+            if not isinstance(revision, int) or revision < 0:
+                logger.warning("Snapshot at %s has invalid revision", path)
+                revision = 0
+            return _extract_threads(data), revision
+        # Legacy raw list (no revision key) — treat as revision 0.
+        return _extract_threads(data), 0
+    # Unreadable shape — quarantine and load empty.
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    corrupt_path = f"{path}.corrupt-{stamp}"
+    try:
+        shutil.copy2(path, corrupt_path)
+        os.unlink(path)
+    except OSError as exc:
+        logger.warning(
+            "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
+            path, corrupt_path, exc,
+        )
+    return [], 0
 
 
 def load_snapshot() -> list[dict]:
