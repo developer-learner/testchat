@@ -4,7 +4,6 @@ import os
 import shutil
 import tempfile
 import threading
-import time
 
 logger = logging.getLogger(__name__)
 
