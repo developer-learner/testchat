@@ -1,5 +1,5 @@
 {
-  "erd_version": 76,
+  "erd_version": 77,
   "files": [
     "src/services/storage.py",
     "src/api/threads.py",

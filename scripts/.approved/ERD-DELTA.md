@@ -1,19 +1,23 @@
-ERD Delta — testchat M33 conflict-safe history persistence, v76 oracle correction (erd_version 76)
+ERD Delta — testchat M33 conflict-safe history persistence, v77 scope narrowing (erd_version 77)
 
-Version 76 changes no product requirement or task guidance. It regenerates
-the frozen node-id inventory after v75 accidentally collected archived
-staging tests and treated byte-identical returned tests as changed. All v74
-implementation corrections below remain normative for the pending feature.
+Version 77 changes no product requirement. It narrows the outstanding
+correction slice for M33's `src/services/storage.py` task to the ONE
+oracle that still fails against the current implementation. Three of the
+four v74 corrections have already landed and their oracles pass; keeping
+them in the delta was steering the coder onto already-working branches
+(observed: multiple T1 attempts wasted the output budget re-touching
+save_snapshot, the legacy-list load branch, and the .bak-on-load
+non-behavior, while the sole failing oracle — corrupt-file quarantine —
+kept regressing across retries). The narrowed delta obeys BLUEPRINT
+Rule 8 (atomic single-file brief, one concern).
 
 ## Changed acceptance criteria
 
-v74 adds no numbered acceptance criterion: AC-136 through AC-148 remain
-exactly as frozen in v72/v73. This correction answers the T1 caps-exhausted
-escalation (spec v73) by making three storage-module behaviors normative
-that the v73 prose stated but the built module violated. AC-35 and AC-37
-remain constrained by mandatory revision preconditions. AC-75, AC-76,
-AC-78, AC-79, AC-80, AC-81, and AC-82 remain unchanged. Every other live
-v71 criterion remains in force, including AC-111..AC-135.
+v77 adds no numbered acceptance criterion: AC-136 through AC-148 remain
+exactly as frozen in v72/v73. AC-35 and AC-37 remain constrained by
+mandatory revision preconditions. AC-75, AC-76, AC-78, AC-79, AC-80,
+AC-81, and AC-82 remain unchanged. Every other live v71 criterion
+remains in force, including AC-111..AC-135.
 
 ## Superseded acceptance criteria
 
@@ -29,50 +33,49 @@ Public surface: keep `load_snapshot()` (list-only compatibility),
 `save_versioned_snapshot(threads, expected_revision) -> int`, and
 `SnapshotConflict.current_revision`.
 
-**v74 corrections — each one names a defect the v73 T1 build shipped and the
-frozen oracle rejected. These are normative; the current file on disk is
-close and needs exactly these repairs, not a rewrite:**
+**Outstanding correction (one — the only oracle that still fails against
+the implementation reached by M33's T1 attempts):**
 
-1. **`save_snapshot` SHALL read the current persisted generation under the
-   lock and pass THAT as `expected_revision` to the private helper. It SHALL
-   NOT pass a constant.** The v73 build passed `0` unconditionally, so every
-   second compatibility save raised `SnapshotConflict` — observed as
-   `src.services.storage.SnapshotConflict: revision conflict` across the
-   backup-rotation, atomic-overwrite, and bak-rotation oracles. Sequence:
-   acquire the module lock once; read the current generation (missing or
-   unreadable primary reads as generation 0, a legacy raw list reads as
-   generation 0); call `_save_versioned_snapshot_locked(threads, current)`;
-   discard the returned revision; return `None` compatibly.
+1. **WHEN the primary exists but does not parse as JSON, the load path
+   SHALL quarantine it — move the file aside by rename to
+   `<primary-name>.corrupt-<stamp>` in the same directory, preserving
+   its bytes exactly — then return `([], 0)`.** The M33 T1 build's
+   `load_versioned_snapshot` path returns `([], 0)` when
+   `json.load` raises `JSONDecodeError`, but does NOT rename the
+   unreadable primary aside — so `quarantine_files()` finds no
+   `.corrupt-*` entry and the primary lingers, which
+   `test_corrupt_snapshot_is_quarantined` (AC-78) rejects with
+   `AssertionError: assert not path.exists()` at
+   `tests/test_storage_service.py:74`. The fix belongs on the
+   JSON-parse-failure branch specifically (not the invalid-envelope
+   branch, and not the missing-file branch). Quarantined files are
+   never deleted, never overwritten by later saves, and never
+   auto-restored.
 
-2. **The load path SHALL accept a top-level JSON *list* as the legacy
-   primary shape: that list IS the threads, at revision 0.** The v73 build's
-   raw reader returned `None` for any non-dict JSON document, so legacy
-   primaries (and a `.bak` a human restored as primary) read as `([], 0)` —
-   silent total data loss, rejected by AC-137/AC-138 oracles. A top-level
-   dict carrying an integer `revision >= 0` and a `threads` list is the
-   envelope shape; a top-level list is the legacy shape; anything else
-   unreadable follows correction 3. The same generation-reading rule applies
-   inside the save path's compare step: a legacy-list primary compares as
-   generation 0, and its accepted successor write stores
-   `{"revision": expected + 1, "threads": [...]}` while backup rotation
-   (`shutil.copy2` of the primary before replacement) preserves the raw
-   legacy bytes in `.bak` unchanged.
+**Landed since v74 (informational — no further work; the coder MUST NOT
+retouch these branches):**
 
-3. **WHEN the primary exists but does not parse as JSON, the load path SHALL
-   quarantine it — move the file aside by rename to
-   `<primary-name>.corrupt-<stamp>` in the same directory, preserving its
-   bytes exactly — then return `([], 0)`.** The v73 build dropped M24
-   quarantine entirely (nothing ever created `.corrupt-*` files), regressing
-   AC-78/AC-80: `quarantine_files()` scans for that prefix and the threads
-   GET's `quarantined` flag reads it. After quarantine the primary no longer
-   exists, so the next save writes revision 1 fresh. Quarantined files are
-   never deleted, never overwritten by later saves, and never auto-restored.
-
-4. **Load SHALL NOT automatically fall back to reading `.bak`.** Automatic
-   restore from `.bak` is explicitly out of scope (M33 out-of-scope list);
-   the v73 build invented a `.bak` recovery path on load. The only supported
-   restore is a human moving the backup over the primary, which then reads
-   under rule 2. Remove the fallback.
+- v74 correction 1 (`save_snapshot` reads the persisted generation
+  under the lock and passes it as `expected_revision`, discarding
+  the returned revision, returning `None`) is satisfied by the
+  current build. Passing oracles:
+  `test_backup_rotation_failure_preserves_primary_and_is_logged`
+  (AC-75+AC-82), `test_cleanup_failure_does_not_mask_original_save_error`
+  (AC-75), `test_save_overwrites_atomically`, and
+  `test_save_rotates_previous_snapshot_to_bak` (AC-82).
+- v74 correction 2 (load path accepts a top-level JSON list as the
+  legacy primary shape at revision 0; the same generation-reading rule
+  applies inside the save path's compare step; backup rotation
+  preserves the raw legacy bytes in `.bak` unchanged) is satisfied.
+  Passing oracles:
+  `test_legacy_raw_primary_and_restored_backup_read_at_revision_zero`
+  (AC-137) and
+  `test_accepted_write_migrates_legacy_primary_and_restored_backup`
+  (AC-138).
+- v74 correction 4 (load SHALL NOT automatically fall back to reading
+  `.bak`) is satisfied — the current build has no `.bak`-on-load path.
+  Passing oracles: `test_first_save_creates_no_bak`,
+  `test_missing_file_loads_empty`, `test_roundtrip_preserves_snapshot`.
 
 Everything else stands as frozen in v73: one module-level non-reentrant
 lock covering read-current / compare / backup / temp-write / atomic-replace /
@@ -149,9 +152,9 @@ sleeps, guessed microtask turns, or immediate asynchronous request counts.
 Required DAG: storage.py first; threads.py depends on storage; threads.js
 depends on both backend tasks; app.js depends on all three and is final.
 
-v74 restages `tests/test_storage_service.py` and
-`tests/test_persistence_revisions.py` byte-identical: the oracles were
-correct; the correction is entirely on the implementation-guidance side.
+v77 restages no test files (byte-identical suite from v76): the oracles were
+and remain correct; the narrowing is entirely on the implementation-guidance
+side.
 
 ## Plan authoring — task object shape
 
