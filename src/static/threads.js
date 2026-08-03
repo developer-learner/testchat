@@ -15,21 +15,131 @@ let threadSearchQuery = '';
 let hitElements = [];
 let hitIndex = 0;
 
+// ERD-DELTA v73: authoritative hydrated revision, ordered persist queue, conflict latch
+var _hydratedRevision = null;       // set by app.js during startup hydration via window.Threads.setHydratedRevision()
+var _persistQueue = [];             // ordered queue of { type: 'PUT'|'DELETE', snapshot: ... }
+var _persistRunning = false;        // true while a fetch is in-flight (serializes the queue)
+var _conflictLatched = false;       // true after a 409 — blocks every later PUT/DELETE until reload
+
 window.Threads = (function () {
   var TC = window.TC;
 
   function el(id) { return document.getElementById(id); }
 
-  function persistThreads() {
+  // --- ERD-DELTA v73: revision hook (called by app.js during startup hydration) ---
+  function setHydratedRevision(rev) {
+    _hydratedRevision = rev;
+  }
+
+  // --- ERD-DELTA v73: snapshot capture helpers (called at enqueue time) ---
+  function _captureSnapshot() {
+    return TC.threads.map(function (t) {
+      return { id: t.id, title: t.title, messages: t.messages, model: t.model || '', locked: !!t.locked };
+    });
+  }
+
+  // --- ERD-DELTA v73: enqueue a mutation (PUT or DELETE) with its own snapshot ---
+  function _enqueueMutation(type, payload) {
+    if (_conflictLatched) return;          // latch blocks every later mutation until reload
+    _persistQueue.push({ type: type, payload: JSON.parse(JSON.stringify(payload)) }); // deep-copy snapshot at enqueue time
+    _drainPersistQueue();
+  }
+
+  // --- ERD-DELTA v73: drain the serialized queue, one at a time ---
+  function _drainPersistQueue() {
+    if (_persistRunning || _conflictLatched || _persistQueue.length === 0) return;
+    if (_hydratedRevision == null && _persistQueue[0].type === 'PUT') return; // cannot PUT without a hydrated revision
+    _persistRunning = true;
+    var entry = _persistQueue[0];          // do NOT shift yet — only on 200 or after clearing on 409
+    if (entry.type === 'PUT') {
+      _doPersistPut(entry);
+    } else if (entry.type === 'DELETE') {
+      _doPersistDelete(entry);
+    } else {
+      // safety: skip unknown entries and continue draining
+      _persistQueue.shift();
+      _persistRunning = false;
+      _drainPersistQueue();
+    }
+  }
+
+  function _doPersistPut(entry) {
+    var body = JSON.stringify({ revision: _hydratedRevision, threads: entry.payload });
     fetch('/api/v1/threads', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ threads: TC.threads.map(function (t) { return { id: t.id, title: t.title, messages: t.messages, model: t.model || '', locked: !!t.locked }; }) })
+      body: body
     }).then(function (res) {
-      el('status-save').textContent = res.ok ? '' : 'not saved';
+      if (res.status === 409) {
+        return res.json().then(function () { _handleConflict(); });
+      }
+      if (!res.ok) {
+        el('status-save').textContent = 'not saved'; // AC-75/AC-76
+        _persistQueue.shift();
+        _persistRunning = false;
+        _drainPersistQueue();
+        return;
+      }
+      // 200 OK — adopt the response revision before issuing next queued snapshot
+      return res.json().then(function (data) {
+        _hydratedRevision = data.revision;
+        el('status-save').textContent = '';
+        _persistQueue.shift();
+        _persistRunning = false;
+        _drainPersistQueue();
+      });
     }).catch(function () {
-      el('status-save').textContent = 'not saved';
+      el('status-save').textContent = 'not saved'; // AC-75/AC-76
+      _persistQueue.shift();
+      _persistRunning = false;
+      _drainPersistQueue();
     });
+  }
+
+  function _doPersistDelete(entry) {
+    var body = JSON.stringify({ revision: _hydratedRevision });
+    fetch('/api/v1/threads', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: body
+    }).then(function (res) {
+      if (res.status === 409) {
+        return res.json().then(function () { _handleConflict(); });
+      }
+      if (!res.ok) {
+        el('status-save').textContent = 'not saved'; // AC-75/AC-76
+        _persistQueue.shift();
+        _persistRunning = false;
+        _drainPersistQueue();
+        return;
+      }
+      // 200 OK — adopt the response revision before issuing next queued snapshot
+      return res.json().then(function (data) {
+        _hydratedRevision = data.revision;
+        el('status-save').textContent = '';
+        _persistQueue.shift();
+        _persistRunning = false;
+        _drainPersistQueue();
+      });
+    }).catch(function () {
+      el('status-save').textContent = 'not saved'; // AC-75/AC-76
+      _persistQueue.shift();
+      _persistRunning = false;
+      _drainPersistQueue();
+    });
+  }
+
+  // --- ERD-DELTA v73: conflict handler — clear pending, latch page, write exact string ---
+  function _handleConflict() {
+    _conflictLatched = true;
+    _persistQueue.length = 0;             // clear pending snapshots
+    el('status-save').textContent = 'history changed elsewhere — reload required'; // AC-147/AC-148
+    _persistRunning = false;              // allow drain to exit (queue is empty, latch blocks)
+  }
+
+  function persistThreads() {
+    // ERD-DELTA v73: enqueue a PUT with its own snapshot captured at call time
+    _enqueueMutation('PUT', { threads: _captureSnapshot() });
   }
 
   function saveThreadModelState() {
@@ -350,7 +460,8 @@ function addSources(bubble, sources, notice) {
         TC.currentController.abort();
       }
       TC.threads = TC.threads.filter(function (t) { return t.id !== id; });
-      persistThreads();
+      // ERD-DELTA v73: enqueue a DELETE with its own snapshot captured at call time
+      _enqueueMutation('DELETE', { threads: _captureSnapshot() });
       if (TC.activeThreadId === id) {
         if (TC.threads.length) {
           // AC-122/123: fall back to the NEWEST remaining thread — the row the
@@ -488,7 +599,9 @@ function addSources(bubble, sources, notice) {
     lockThread: function (thread) {
       if (!thread || thread.locked) return;
       thread.locked = true;
-    }
+    },
+    // ERD-DELTA v73: hook for app.js to install the GET revision before any mutation can enqueue
+    setHydratedRevision: setHydratedRevision
   };
 })();
 
