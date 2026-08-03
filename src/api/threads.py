@@ -65,7 +65,12 @@ def put_threads(payload: ThreadsPayload):
 
 
 @router.delete("/api/v1/threads")
-def delete_threads(body: ThreadsRevisionPrecondition):
+def delete_threads(body: ThreadsRevisionPrecondition | None = None):
+    if body is None or not isinstance(body, ThreadsRevisionPrecondition):
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "Missing required field: revision"},
+        )
     try:
         new_revision = save_versioned_snapshot([], body.revision)
     except SnapshotConflict as exc:
