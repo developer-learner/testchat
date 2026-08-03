@@ -488,3 +488,13 @@ cleaned up; app left stopped, as found.
 ## Results
 
 Full frozen TPM suite green against spec v71. Feature built and validated.
+
+## Results (M33 spec v77 — manual close-out 2026-08-03)
+
+  Full frozen TPM suite green against spec v77: 192/192 host AND 192/192
+  sandbox at HEAD. Feature built and validated. Close-out performed manually
+  after an orchestrate re-execution incident (over-wide DELTA-v77 + stale
+  v74-era T4 brief re-ran completed tasks); app.js reverted to the
+  proven-green implementation, T4 escalation resolved as spec-defect with no
+  code owed. Completion ledger recorded via completion-ledger.py (4 tasks,
+  app.js sha 20b75f27). Full incident record: project-trail/2026-08-03-m33-closeout.md.
