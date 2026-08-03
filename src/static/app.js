@@ -544,7 +544,6 @@
             Threads.renderThreadMessages(newest);
             Threads.restoreThreadModelState(newest);
             Threads.renderSidebar();
-            Threads.refreshCurrentChatTitle();
           } else {
             Threads.createThread();
           }
