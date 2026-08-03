@@ -992,6 +992,192 @@ def test_exhausted_brief_allowance_escalates_before_consult():
     assert "without another EM consult" in before_consult
 
 
+def test_caps_exhausted_branch_survives_strict_mode(tmp_path):
+    """Regression: M33 v76 (2026-08-02) died silently mid-T1 because D-114's
+    exhausted-allowance branch called package_escalation with 3 args; the
+    function's `local diag="$4"` under `set -euo pipefail` aborted the whole
+    script with no HALT, no escalation, no final timing mark. The source-
+    order test above did not catch it — every predecessor observed the
+    write, not the write. This test extracts the REAL function and the REAL
+    call site, wires the minimum fixtures they read, and runs the branch
+    under strict mode. Any future regression to a 3-arg shape (or any
+    other mandatory-positional omission) crashes here loudly instead of
+    silently on the next milestone run."""
+    source = (SCRIPTS / "orchestrate.sh").read_text()
+    # Real function.
+    fn = re.search(r"^package_escalation\(\) \{.*?^\}$", source, re.M | re.S)
+    assert fn, "package_escalation not found — extractor drift"
+    fn_body = fn.group(0)
+    # Real call site, as it appears in the source. We match the block that
+    # wraps it so a future rewrite of variable names is still detected.
+    branch = re.search(
+        r'if \[ "\$revs" -ge "\$MAX_BRIEF_REVISIONS" \]; then'
+        r".*?"
+        r'package_escalation "caps-exhausted"[^\n]*',
+        source, re.S,
+    )
+    assert branch, "exhausted-allowance branch not found — extractor drift"
+    # Isolate just the package_escalation invocation line, verbatim.
+    call_line = re.search(
+        r'package_escalation "caps-exhausted"[^\n]*', branch.group(0)
+    ).group(0)
+
+    # Minimum fixtures the function reads.
+    (tmp_path / "tasks").mkdir()
+    (tmp_path / "tasks" / "plan.json").write_text(json.dumps({
+        "tasks": [{"id": "T1", "file": "src/x.py", "contracts": [], "tests": []}]
+    }))
+    (tmp_path / "scripts" / ".approved").mkdir(parents=True)
+    (tmp_path / "scripts" / ".approved" / "contracts.json").write_text(
+        json.dumps({"entry_points": [], "routes": [], "schemas": [], "errors": []})
+    )
+
+    runner = f"""#!/usr/bin/env bash
+set -euo pipefail
+cd {tmp_path}
+STATE_DIR=.pipeline-state
+ESC_DIR=$STATE_DIR/escalations
+FROZEN_V=76
+mkdir -p "$ESC_DIR"
+
+{fn_body}
+
+# Reproduce the exact caller shape.
+id=T1
+evidence="two failed coder attempts on src/x.py; token cap + mixed-mode reply"
+{call_line}
+"""
+    r = subprocess.run(["bash", "-c", runner], capture_output=True, text=True)
+    assert r.returncode == 0, (
+        "exhausted-allowance branch aborted under strict mode — "
+        f"stderr:\n{r.stderr}\nstdout:\n{r.stdout}"
+    )
+    bundle = tmp_path / ".pipeline-state" / "escalations" / "T1" / "bundle.md"
+    assert bundle.is_file(), (
+        "no escalation bundle produced — the branch ran but wrote nothing"
+    )
+    text = bundle.read_text()
+    assert "caps-exhausted" in text
+    assert "T1" in text
+
+
+def test_feature_summary_names_unaccounted_time_on_silent_crash(tmp_path):
+    """Regression: the first feature-summary reported "wall clock: 409s"
+    for the M33 crash while the real run lasted 869s. Reporting through-
+    last-event as wall clock hides silent halts — the exact defect
+    measurement is supposed to surface. When the exit trap did not run
+    and no run-exit.log exists, the tool must still detect the gap using
+    filesystem mtimes, and label the delta unaccounted rather than
+    swallowing it into "overhead"."""
+    import time
+    (tmp_path / "scripts" / ".approved").mkdir(parents=True)
+    (tmp_path / "scripts" / ".approved" / "VERSION").write_text("76\n")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "-c", "user.email=t@t", "-c", "user.name=t",
+         "add", "-A"], check=True)
+    refreeze_ts = int(time.time()) - 900   # refreeze 15 minutes ago
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "-c", "user.email=t@t", "-c", "user.name=t",
+         "commit", "-q", "-m", "[refreeze v76]",
+         "--date", f"@{refreeze_ts} +0000"],
+        env={**os.environ,
+             "GIT_COMMITTER_DATE": f"@{refreeze_ts} +0000",
+             "GIT_AUTHOR_DATE": f"@{refreeze_ts} +0000"},
+        check=True,
+    )
+    state = tmp_path / ".pipeline-state"
+    (state / "logs").mkdir(parents=True)
+    timings = state / "logs" / "timings.tsv"
+    timings.write_text(
+        "19:00:00\t0s\trun start (budget 1200s)\n"
+        "19:00:01\t1s\tpre-flight done (spec v76)\n"
+        "19:00:01\t1s\tem-call start -> tasks/plan.json\n"
+        "19:06:49\t409s\tcoder T1 attempt 1 start (src/services/storage.py)\n"
+    )
+    # Simulate the actual M33 silent-halt: pipeline started ~600s ago,
+    # last logged event 409s into the run, real activity ended 100s ago
+    # (the trap did not run, so real end must be inferred from mtimes).
+    now = time.time()
+    run_start = now - 600
+    real_end = now - 100
+    os.utime(timings, (run_start, run_start))
+    fresh = state / "phase"
+    fresh.write_text("")
+    os.utime(fresh, (real_end, real_end))
+
+    r = subprocess.run(
+        ["python3", str(SCRIPTS / "feature-summary.py")],
+        cwd=tmp_path, capture_output=True, text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    assert "UNACCOUNTED:" in r.stdout, r.stdout
+    # The tool must not report "409s" as wall clock when the run kept running.
+    assert re.search(r"wall clock: (?!409s)\d+s", r.stdout), (
+        f"tool reported the through-last-event count as wall clock:\n{r.stdout}"
+    )
+
+
+def test_run_exit_trap_records_every_termination_path(tmp_path):
+    """Regression: M33 v76 crashed with no HALT and no evidence — nothing
+    downstream could tell "died mid-task" from "halted for the operator".
+    The EXIT trap must record rc, phase, task target, and last timings row
+    on every path (success, die, uncaught error), so run-exit.log is a
+    reliable ground truth for the next feature-summary. Not an escalation
+    substitute: unexpected rc must not fabricate a bundle."""
+    source = (SCRIPTS / "orchestrate.sh").read_text()
+    fn = re.search(r"^record_exit\(\) \{.*?^\}$", source, re.M | re.S)
+    assert fn, "record_exit not found — extractor drift"
+    fn_body = fn.group(0)
+    trap_line = re.search(r"^trap 'record_exit' EXIT$", source, re.M)
+    assert trap_line, "EXIT trap not installed"
+
+    state = tmp_path / ".pipeline-state"
+    (state / "logs").mkdir(parents=True)
+    (state / "phase").write_text("task-T2\n")
+    (state / "task_target").write_text("src/api/threads.py\n")
+    (state / "logs" / "timings.tsv").write_text(
+        "19:25:25\t409s\tcoder T1 attempt 1 start (src/services/storage.py)\n"
+    )
+
+    def run(scenario: str) -> tuple[int, str]:
+        script = f"""#!/usr/bin/env bash
+set -euo pipefail
+STATE_DIR={state}
+LOG_DIR=$STATE_DIR/logs
+RUN_T0=$(date +%s)
+run_elapsed() {{ echo $(( $(date +%s) - RUN_T0 )); }}
+
+{fn_body}
+
+trap 'record_exit' EXIT
+{scenario}
+"""
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+        exit_log = (state / "logs" / "run-exit.log")
+        return r.returncode, (exit_log.read_text() if exit_log.is_file() else "")
+
+    # 1) clean exit: rc=0 recorded
+    (state / "logs" / "run-exit.log").unlink(missing_ok=True)
+    rc, log = run("exit 0")
+    assert rc == 0 and "rc=0" in log and "phase=task-T2" in log
+    assert "task=src/api/threads.py" in log
+    assert "coder T1 attempt 1 start" in log
+
+    # 2) uncaught error (simulates the M33 crash): rc!=0 recorded, no bundle
+    (state / "logs" / "run-exit.log").unlink(missing_ok=True)
+    rc, log = run("false  # simulate unbounded-variable-style abort")
+    assert rc == 1 and "rc=1" in log and "phase=task-T2" in log
+    assert not (state / "escalations").exists(), \
+        "trap must not fabricate an escalation on unexpected exit"
+
+    # 3) explicit die-style: rc=1 recorded even with a wildly divergent phase
+    (state / "phase").write_text("plan\n")
+    (state / "logs" / "run-exit.log").unlink(missing_ok=True)
+    rc, log = run("echo halted >&2; exit 3")
+    assert rc == 3 and "rc=3" in log and "phase=plan" in log
+
+
 def test_full_suite_execution_is_confined_to_tests_directory():
     """No-argument run_tests cannot discover archives or selftests."""
     source = (SCRIPTS / "orchestrate.sh").read_text()
