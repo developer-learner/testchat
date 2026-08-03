@@ -64,7 +64,7 @@ window.Threads = (function () {
   }
 
   function _doPersistPut(entry) {
-    var body = JSON.stringify({ revision: _hydratedRevision, threads: entry.payload });
+    var body = JSON.stringify({ revision: _hydratedRevision, threads: entry.payload.threads });
     fetch('/api/v1/threads', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
