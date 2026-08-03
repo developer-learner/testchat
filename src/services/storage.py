@@ -132,7 +132,14 @@ def save_versioned_snapshot(threads: list[dict], expected_revision: int) -> int:
 
 def save_snapshot(threads: list[dict]) -> None:
     with _lock:
-        _save_versioned_snapshot_locked(threads, 0)
+        path = _data_path()
+        data = _read_any(path)
+        current = 0
+        if isinstance(data, dict):
+            rev = data.get("revision")
+            if isinstance(rev, int) and rev >= 0:
+                current = rev
+        _save_versioned_snapshot_locked(threads, current)
 
 
 def quarantine_files() -> list[str]:
