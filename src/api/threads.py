@@ -1,5 +1,6 @@
 from typing import Literal
-from fastapi import APIRouter, JSONResponse
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from src.services.storage import (
@@ -51,7 +52,10 @@ def get_threads():
 @router.put("/api/v1/threads")
 def put_threads(payload: ThreadsPayload):
     try:
-        new_revision = save_versioned_snapshot(payload.threads, payload.revision)
+        new_revision = save_versioned_snapshot(
+            [t.model_dump(exclude_none=True) for t in payload.threads],
+            payload.revision,
+        )
     except SnapshotConflict as exc:
         return JSONResponse(
             status_code=409,
