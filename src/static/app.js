@@ -524,11 +524,13 @@
       fetch('/api/v1/threads')
         .then(function (response) { return response.json(); })
         .then(function (data) {
-          // ERD-DELTA v73: hydrate the persistence owner with the server's
-          // revision BEFORE any mutation can enqueue (createThread calls
-          // persistThreads, which enqueues a PUT that reads _hydratedRevision).
+          // Hydrate BOTH data.threads and data.revision into the persistence
+          // owner before rendering or creating state. A healthy reload starts
+          // with empty save-status and an unlatch. If GET is empty, default-thread
+          // creation is the first queued save against the returned revision (0).
           Threads.setHydratedRevision(data.revision != null ? data.revision : 0);
           if (data.threads && data.threads.length > 0) {
+            Threads.setHydratedThreads(data.threads);
             TC.threads = data.threads;
             TC.threadCounter = 0;
             for (var i = 0; i < TC.threads.length; i++) {
