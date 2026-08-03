@@ -5,6 +5,20 @@
 
 ---
 
+## Finding at 2026-08-02 — M33 T1 brief is bloated (3 of 4 defects stale)
+
+Non-mutating diagnostic run outside testchat's tracked lanes:
+
+- Frozen test-report from M33 attempt 1 (`.pipeline-state/escalations/T1/test-report.json`) shows **12 of 13 tests pass** against `src/services/storage.py` at HEAD (`42d54be [task T1] attempt 1` — the state the coder reached before retries exhausted). The only failure is `tests/test_storage_service.py::test_corrupt_snapshot_is_quarantined` — exactly defect (3) in the brief.
+- Defects (1), (2), and (4) are satisfied by the current source (save_snapshot reads current revision under the lock; legacy list load returns `data, 0`; there is no `.bak` fallback on load — only on save).
+- Additional evidence: coder seat swapped to `deepseek-v4-flash-0731-antirez` via ds4-server on :8005, output budget raised from 4K → 24K. Model produced a complete, well-anchored SEARCH/REPLACE block that the applier accepted (file compiles + lints). But the block fixes the wrong branch — it added quarantine on invalid-envelope, not on JSON-parse-fail. Even with the working seat, the misspecified brief steers the coder off target.
+
+**Implication:** T1 needs re-scope, not more coder attempts. Split into single-defect brief for defect 3 only.
+
+**Untouched:** T1 status still `escalated`, `bundle.md`/`test-report.json`/`BATCH.md` intact, real `storage.py` unchanged, testchat unpushed.
+
+---
+
 ## State at 2026-07-30 — M32 shipped; control plane consolidated
 
 **Frozen spec:** v71. M32 completed at `[success]` commit `d80664a`.
