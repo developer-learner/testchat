@@ -6,6 +6,12 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from src.api.chat import router as chat_router
+from src.api.models import router as models_router
+from src.api.settings import router as settings_router
+from src.api.status import router as status_router
+from src.api.threads import router as threads_router
+
 load_dotenv()  # repo convention: runtime config via .env (TAVILY_API_KEY etc.)
 
 app = FastAPI()
@@ -18,40 +24,13 @@ async def no_stale_static(request: Request, call_next) -> Response:
         response.headers["Cache-Control"] = "no-cache"
     return response
 
-try:
-    from src.api.chat import router as chat_router
 
-    app.include_router(chat_router)
-except ImportError:
-    pass
+app.include_router(chat_router)
+app.include_router(models_router)
+app.include_router(threads_router)
+app.include_router(status_router)
+app.include_router(settings_router)
 
-try:
-    from src.api.models import router as models_router
-
-    app.include_router(models_router)
-except ImportError:
-    pass
-
-try:
-    from src.api.threads import router as threads_router
-
-    app.include_router(threads_router)
-except ImportError:
-    pass
-
-try:
-    from src.api.status import router as status_router
-
-    app.include_router(status_router)
-except ImportError:
-    pass
-
-try:
-    from src.api.settings import router as settings_router
-
-    app.include_router(settings_router)
-except ImportError:
-    pass
 
 _INDEX = Path(__file__).parent / "static" / "index.html"
 

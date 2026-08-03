@@ -68,9 +68,10 @@ Studio), `LLM_MODEL`, `LLM_SYSTEM_PROMPT`, `LLM_TIMEOUT_SECONDS`.
 The app is a thin FastAPI proxy in front of an OpenAI-compatible local LLM,
 with a single-page browser UI. Request flow:
 
-- **`src/main.py`** — the FastAPI app. Mounts the chat and models routers
-  *defensively* (`try/except ImportError`) so a partial build still boots, and
-  serves `src/static/index.html` at `/`.
+- **`src/main.py`** — the FastAPI app. Imports and mounts every router
+  directly (no `try/except ImportError` around imports — bad imports must
+  fail loudly so coder mistakes surface before tests, not as mysterious
+  404s), and serves `src/static/index.html` at `/`.
 - **`src/api/chat.py`** — `POST /api/v1/chat`. Validates `ChatRequest`
   (`message`, optional `model`, `history`) and returns an SSE
   `StreamingResponse` with four event types: `token`, `think` (model
@@ -277,6 +278,7 @@ Seven rules for agents working in this repo, derived from failures in prior sess
 | Date | Mistake | Guard Added |
 |------|---------|-------------|
 | <!-- add rows below --> | | |
+| 2026-08-02 | M33 T2 v77: coder wrote \`from fastapi import JSONResponse\` (JSONResponse lives in \`fastapi.responses\`), and passed raw Pydantic \`payload.threads\` to \`save_versioned_snapshot\` where the pre-coder call site had done \`[t.model_dump(exclude_none=True) for t in payload.threads]\`. First bug: import raised ImportError, \`src/main.py\`'s defensive \`try/except ImportError\` router-mount swallowed it, every \`/api/v1/threads\` request returned 404. Second bug: json.dump could not serialize Pydantic objects. Four coders (deepseek-0731 thinking, MTPLX qwen, LM Studio qwen, frontier) all replied NO CHANGES on the second miss — the file structurally satisfies the brief and coders do not run code. Landed as \`[live-fix, CEO session]\`. | Two changes: (1) removed the \`try/except ImportError\` wrappers from \`src/main.py\` — bad imports must fail loudly so coder mistakes surface before tests, not as mysterious 404s. (2) ERD/brief improvement rule (TPM-side): whenever an ERD or brief names a Python type by identifier, also name its import path; whenever a function-call boundary crosses between typed models and dicts, spell out the conversion at the call site. Both are cheap, both would have caught this class of failure in-brief without adding to coder ceremony. |
 | 2026-07-28 | M32 had correct PRD/tests from v67 but stale ERD implementation guidance through v70, so repeated EM attempts planned the wrong behavior. At v71 the validator enforced D-64 without the EM prompt stating it. Six removed UI lines and one replacement took five spec versions to reach a coder that passed both tasks first try. | D-107 makes `ERD-DELTA.md` mandatory for behavioral freezes, validates its sections plus new AC/file coverage, makes it authoritative to the EM, and retires it when a later standing-ERD refresh consolidates the completed milestone. Validator-only D-64 and empty-contract-list rules now appear verbatim in both EM prompt surfaces. |
 | 2026-06-04 | Table-driven "fill in the blanks" missed files not in the table; `[NAME]` survived. | Use a placeholder-shaped grep as the verification gate — never rely on a maintained list for completeness. |
 | 2026-06-04 | Feature-complete had no defined end state (stale CURRENT.md, open backlog, "active development" voice). | Add a Project Completion / Maintenance Transition section with a checklist and curated cleanup step. |
