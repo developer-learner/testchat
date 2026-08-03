@@ -1,4 +1,9 @@
-ERD Delta — testchat M33 conflict-safe history persistence, v74 T1-escalation correction (erd_version 74)
+ERD Delta — testchat M33 conflict-safe history persistence, v76 oracle correction (erd_version 76)
+
+Version 76 changes no product requirement or task guidance. It regenerates
+the frozen node-id inventory after v75 accidentally collected archived
+staging tests and treated byte-identical returned tests as changed. All v74
+implementation corrections below remain normative for the pending feature.
 
 ## Changed acceptance criteria
 
