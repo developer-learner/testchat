@@ -56,7 +56,7 @@ def load_versioned_snapshot() -> tuple[list[dict], int]:
                 data = json.load(f)
         except FileNotFoundError:
             return [], 0
-        except (json.JSONDecodeError, ValueError, OSError) as exc:
+        except (json.JSONDecodeError, ValueError, OSError):
             # Corrupt primary — quarantine and load empty.
             stamp = time.strftime("%Y%m%d-%H%M%S")
             corrupt_path = f"{path}.corrupt-{stamp}"
