@@ -225,10 +225,18 @@ record_exit() {
   phase=$( [ -f "$STATE_DIR/phase" ] && cat "$STATE_DIR/phase" 2>/dev/null || echo "" )
   task=$( [ -f "$STATE_DIR/task_target" ] && cat "$STATE_DIR/task_target" 2>/dev/null || echo "" )
   last_ts=$( [ -f "$LOG_DIR/timings.tsv" ] && tail -1 "$LOG_DIR/timings.tsv" 2>/dev/null | tr '\t' ' ' || echo "" )
-  printf '%s\trc=%s\tphase=%s\ttask=%s\telapsed=%ss\tlast_mark=%s\n' \
-    "$(date -u +%FT%TZ)" "$rc" "${phase:-<none>}" "${task:-<none>}" \
-    "$(run_elapsed)" "${last_ts:-<none>}" \
-    >> "$LOG_DIR/run-exit.log"
+  # The success teardown removes .pipeline-state/ (LOG_DIR included) BEFORE this
+  # EXIT trap fires, so an unguarded append failed and — under set -e — flipped
+  # a green run's exit code to 1 (misleading any exit-code-keyed automation).
+  # Recreate the dir so every exit (success included) is still recorded, and
+  # guard the write so it can never itself fail the run.
+  mkdir -p "$LOG_DIR" 2>/dev/null || true
+  if [ -d "$LOG_DIR" ]; then
+    printf '%s\trc=%s\tphase=%s\ttask=%s\telapsed=%ss\tlast_mark=%s\n' \
+      "$(date -u +%FT%TZ)" "$rc" "${phase:-<none>}" "${task:-<none>}" \
+      "$(run_elapsed)" "${last_ts:-<none>}" \
+      >> "$LOG_DIR/run-exit.log"
+  fi
   return $rc
 }
 trap 'record_exit' EXIT
