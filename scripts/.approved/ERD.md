@@ -1,264 +1,217 @@
-ERD — testchat M31 as built + hand-build coverage (erd_version 71)
+ERD — testchat (standing architecture)
 
-## What changes v70 → v71
+## Model-selector invariant
 
-M32 removes AC-28 (mid-chat model lock). The `.locked` boolean stays in the
-persistence schema for backward compat, but the UI never disables
-`#model-select` in response to it. Two lines of code implement the removal:
+**The `#model-select` element MUST NEVER be programmatically disabled by
+JavaScript based on a thread's `.locked` field or any per-thread state.** The
+only transient disable permitted is the load-in-progress pattern
+(`modelSelect.disabled = true` at load start, `modelSelect.disabled = false` at
+load completion, unconditionally re-enabled in the `.finally` handler) — a
+lifecycle-of-the-load state, not a lifecycle-of-the-thread state. The `.locked`
+boolean remains in the persistence schema for backward compatibility but is
+never read to disable the selector. Frozen tests assert this
+(`test_selector_stays_enabled_across_all_ui_states`,
+`test_mid_chat_switch_updates_thread_model_and_routes_next_send`).
 
-* `src/static/catalog.js` — the `.finally` handler in the model-load path
-  must set `modelSelect.disabled = false` unconditionally. The prior
-  `modelSelect.disabled = active ? !!active.locked : false` reads the
-  `.locked` field and disables the selector on locked threads, contradicting
-  AC-133.
-* `src/static/threads.js` — `restoreThreadModelState(thread)` (called on
-  thread switch and hydrate) must NOT execute `ms.disabled = !!thread.locked`;
-  drop that line. `lockThread(thread)` may still set `thread.locked = true`
-  for persistence-schema compatibility, but MUST NOT set
-  `el('model-select').disabled = true` as a DOM side-effect; drop that block.
+## As-built architecture — front end
 
-The invariant, restated so it holds under any future edit: **the
-`#model-select` element MUST NEVER be programmatically disabled by JavaScript
-based on a thread's `.locked` field or any per-thread state.** The only
-transient disable permitted is the existing `.finally` re-enable pattern
-around a model load in progress (`modelSelect.disabled = true` at load
-start, `modelSelect.disabled = false` at load completion) — a
-lifecycle-of-the-load state, not a lifecycle-of-the-thread state.
-
-Frozen tests already assert this: `test_selector_stays_enabled_across_all_ui_states[chromium]`
-scans across every UI state and requires the selector to be enabled;
-`test_mid_chat_switch_updates_thread_model_and_routes_next_send[chromium]`
-requires the user to be able to pick a different model mid-thread. Both
-fail today against the pre-removal code; both must pass after.
-
-## What changes v65 → v66
-
-A ratify freeze, not a build delta. The 2026-07-27 hand-build split
-`src/static/app.js` (959 lines) into three files at commit `2579f07`:
-the chat surface stays in `app.js` (550 lines), themes / focus mode /
-settings / generic modal chrome move to a new `src/static/chrome.js`
-(171 lines), and model dropdown lifecycle moves to a new
-`src/static/catalog.js` (304 lines). Behavior is unchanged — no new or
-retired ACs, no test changes. This version records the tree as it now
-is: two new files in the inventory, an `app.js` smoke_check re-authored
-to landmarks that stayed (the prior version grepped `ejectModelBtn` and
-`models/catalog`, both of which moved to `catalog.js`), and two new
-smoke_checks for the added files. `no_edit_files` still resolves via
-`--affected` and is unaffected.
-
-**Why hand-build then ratify, not a coder milestone.** A
-behavior-preserving refactor produces zero new red tests; INV-1 / D-75
-have nothing to grip, and the brief degenerates to "move code, change
-nothing" — the Rule 8 negative-constraint shape that damaged
-`index.html` in M16. The frozen oracle observes DOM testids, not JS
-wiring: a lift-and-shift wiring break is the least detectable failure
-class this suite has. Precedent: the first split (markdown.js /
-threads.js) and the M31 files (current-chat.js / sidebar-resize.js)
-all landed as hand-builds then were ratified. See
-`project-trail/2026-07-27-appjs-split-handoff.md` for the full
-rationale and the shipped-record addendum.
-
-## What changes v64 → v65
-
-A catch-up re-true, not a build delta. M31 was hand-built outside the
-pipeline (commit `2ac5827` + `57b40b8`) after the v60–v64 arc; this version
-makes the frozen spec describe the tree as it actually is, adds the four
-new files to the inventory, and pins six hand-built behaviors
-(AC-127..AC-132) with regression tests. See the PRD provenance caveat —
-the new tests postdate the implementation and share its author.
-
-**The v64 design this supersedes was never built:** v64 specified that
-`src/static/app.js` would inject a `<style>` element at startup because a
-separate stylesheet "could not be loaded". The hand-build did the simpler
-correct thing v64 talked itself out of: it edited `index.html`, which was
-always editable (only `markdown.js`, `rain.js`, `style.css` are
-`no_edit_files` — "outside the delta" was a scoping artifact, not a
-property of the file).
-
-## As-built architecture
-
-* **`src/static/chrome.js`** (new v66) — themes (10 including matrix and
-  phosphor with their side effects: matrix-rain canvas start/stop,
-  phosphor titlebar `display: flex`), focus mode (fullscreen enter /
-  exit / zen class), settings modal (open/save/close, backdrop click),
-  and the generic modal chrome shared with the confirm modals owned by
-  other files: backdrop-click dismissal for `load-confirm-modal`,
-  `unload-confirm-modal`, `delete-confirm-modal`, and the Escape
-  keydown handler that fires each modal's cancel button (or exits zen
-  if no modal is open). Exposes `window.Chrome = {}` (self-contained;
-  references `window.App.appendBubble` lazily inside `fsDiag`).
-* **`src/static/catalog.js`** (new v66) — model dropdown lifecycle:
-  `fetchModels` (parallel `/api/v1/models` + `/api/v1/models/catalog`
-  with LM-Studio-first merging), `populateModelOptions` (preserves
-  previous selection, prefers a loaded model over the native default,
-  installs a "Select model..." placeholder when nothing matches), the
-  eject/unload confirm flow, and the `change` handler with pre-change
-  value capture on `focus`/`mousedown` (AC-104 cancel-reverts) plus
-  the overlapping-load guard (`TC.modelLoading` reverts a second
-  pick without opening a modal). Exposes
+* **`src/static/chrome.js`** — themes (10 including matrix and phosphor with
+  their side effects: matrix-rain canvas start/stop, phosphor titlebar
+  `display: flex`), focus mode (fullscreen enter / exit / zen class), settings
+  modal (open/save/close, backdrop click), and the generic modal chrome shared
+  with the confirm modals owned by other files: backdrop-click dismissal for
+  `load-confirm-modal`, `unload-confirm-modal`, `delete-confirm-modal`, and the
+  Escape keydown handler that fires each modal's cancel button (or exits zen if
+  no modal is open). Exposes `window.Chrome = {}` (self-contained; references
+  `window.App.appendBubble` lazily inside `fsDiag`).
+* **`src/static/catalog.js`** — model dropdown lifecycle: `fetchModels`
+  (parallel `/api/v1/models` + `/api/v1/models/catalog` with LM-Studio-first
+  merging), `populateModelOptions` (preserves previous selection, prefers a
+  loaded model over the native default, installs a "Select model..."
+  placeholder when nothing matches), the eject/unload confirm flow, and the
+  `change` handler with pre-change value capture on `focus`/`mousedown` (AC-104
+  cancel-reverts) plus the overlapping-load guard (`TC.modelLoading` reverts a
+  second pick without opening a modal). Exposes
   `window.Catalog = { fetchModels, refreshModels }`; references
   `window.App.pollStatus` and `window.App.appendBubble` lazily.
-* **`src/static/current-chat.js`** (new) — owns the header title for the
-  active thread: display + tooltip refresh, inline rename (click → input
-  focused and pre-selected; Enter/blur commit; Escape reverts; empty or
-  whitespace-only commits revert; newlines collapse to spaces), in-place
-  sidebar-row patching on commit, and `commitPending()` which
-  `Threads.switchThread` calls so a mid-edit thread switch commits first
-  (AC-118). Exposes `window.CurrentChat = { refresh, commitPending }`.
-* **`src/static/current-chat.css`** (new) — header-title truncation
+* **`src/static/current-chat.js`** — owns the header title for the active
+  thread: display + tooltip refresh, inline rename (click → input focused and
+  pre-selected; Enter/blur commit; Escape reverts; empty or whitespace-only
+  commits revert; newlines collapse to spaces), in-place sidebar-row patching
+  on commit, and `commitPending()` which `Threads.switchThread` calls so a
+  mid-edit thread switch commits first (AC-118). Exposes
+  `window.CurrentChat = { refresh, commitPending }`.
+* **`src/static/current-chat.css`** — header-title truncation
   (`max-width: 38%`, ellipsis, native tooltip carries the full string),
-  edit-input styling, the `data-active` sidebar highlight (background tint
-  + 3px left bar — the non-color signal), and the `select-empty`
-  placeholder voice for the model field (muted + italic, matching the
-  message-input placeholder).
-* **`src/static/sidebar-resize.js`** (new) — drag handle logic on
-  `#sidebar-resizer`: drives a `--sidebar-w` CSS custom property, clamps to
-  [250px, 50vw], persists the width to `localStorage`
-  (`tc-sidebar-width`), restores it on load, re-clamps on window resize,
-  and resets to the 250px default on double-click.
-* **`src/static/sidebar-resize.css`** (new) — re-points `.sidebar`'s fixed
-  width at `var(--sidebar-w, 250px)` with `max-width: 50vw`, and styles the
-  5px grab strip (hover/active affordance, drag-time cursor and
-  user-select suppression).
-* **`src/static/index.html`** — links both new stylesheets after
-  `style.css`, hosts the header title span + rename input (between the
-  model field and the settings control), the `sidebar-resizer` divider
-  element, and loads `current-chat.js` and `sidebar-resize.js` between
-  `threads.js` and `app.js` (load order matters: `app.js` init calls
-  `Threads.renderSidebar()`, which calls `CurrentChat.refresh()`).
-* **`src/static/threads.js`** — sidebar rows carry
-  `data-active="true|false"` and `data-thread-id`; `renderSidebar()`
-  re-syncs the header via `CurrentChat.refresh()`; `switchThread()` first
-  calls `CurrentChat.commitPending()`; deleting the current thread falls
-  back to the **newest** remaining thread; `updateTitle`/`maybeRetitle`
-  store full-length titles (cap 120, no baked "..." — AC-127);
-  `renderThreadMessages` builds each restored assistant bubble's copy
-  source (`dataset.raw`) with citations normalized and `<think>` stripped,
-  matching the live-stream path (AC-128); `createThread` prefers a
-  *loaded* model over the dropdown's sticky value and leaves the model
-  empty (placeholder) when nothing is loaded.
-* **`src/static/app.js`** — post-split (v66) scope is the chat surface:
-  initial-load hydration opens the **newest** thread (`threads[]` is
-  oldest-first, so the last element — AC-123); the submit path guards
-  empty-model (guidance bubble `msg-error`, AC-131) and unloaded-model
-  (opens the shared load-confirm modal, then auto-resubmits on load
-  success) before any request; SSE stream (`token` / `think` / `done`
-  / `error` / `sources` frames), Stop button (`AbortController`),
-  bubble helpers, per-message hover actions (copy, delete pair),
-  code-block copy, thinking toggle, new-thread button; `pollStatus`
+  edit-input styling, the `data-active` sidebar highlight (background tint + 3px
+  left bar — the non-color signal), and the `select-empty` placeholder voice
+  for the model field (muted + italic, matching the message-input placeholder).
+* **`src/static/sidebar-resize.js`** — drag handle logic on `#sidebar-resizer`:
+  drives a `--sidebar-w` CSS custom property, clamps to [250px, 50vw], persists
+  the width to `localStorage` (`tc-sidebar-width`), restores it on load,
+  re-clamps on window resize, and resets to the 250px default on double-click.
+* **`src/static/sidebar-resize.css`** — re-points `.sidebar`'s fixed width at
+  `var(--sidebar-w, 250px)` with `max-width: 50vw`, and styles the 5px grab
+  strip (hover/active affordance, drag-time cursor and user-select suppression).
+* **`src/static/index.html`** — links both new stylesheets after `style.css`,
+  hosts the header title span + rename input (between the model field and the
+  settings control), the `sidebar-resizer` divider element, and loads
+  `current-chat.js` and `sidebar-resize.js` between `threads.js` and `app.js`
+  (load order matters: `app.js` init calls `Threads.renderSidebar()`, which
+  calls `CurrentChat.refresh()`).
+* **`src/static/threads.js`** — sidebar rows carry `data-active="true|false"`
+  and `data-thread-id`; `renderSidebar()` re-syncs the header via
+  `CurrentChat.refresh()`; `switchThread()` first calls
+  `CurrentChat.commitPending()`; deleting the current thread falls back to the
+  **newest** remaining thread; `updateTitle`/`maybeRetitle` store full-length
+  titles (cap 120, no baked "..." — AC-127); `renderThreadMessages` builds each
+  restored assistant bubble's copy source (`dataset.raw`) with citations
+  normalized and `<think>` stripped, matching the live-stream path (AC-128);
+  `createThread` prefers a *loaded* model over the dropdown's sticky value and
+  leaves the model empty (placeholder) when nothing is loaded. Owns the
+  authoritative hydrated revision, the ordered persist queue, and the conflict
+  latch (see persistence model below).
+* **`src/static/app.js`** — the chat surface: initial-load hydration opens the
+  **newest** thread (`threads[]` is oldest-first, so the last element — AC-123)
+  and installs both `data.threads` and `data.revision` into the persistence
+  owner before rendering or creating state; the submit path guards empty-model
+  (guidance bubble `msg-error`, AC-131) and unloaded-model (opens the shared
+  load-confirm modal, then auto-resubmits on load success) before any request;
+  SSE stream (`token` / `think` / `done` / `error` / `sources` frames), Stop
+  button (`AbortController`), bubble helpers, per-message hover actions (copy,
+  delete pair), code-block copy, thinking toggle, new-thread button; `pollStatus`
   (5s interval — coupled to `modelSelect` / `sendBtn.disabled` /
-  `webToggle.disabled` from `/api/v1/status`, so it stays here rather
-  than in chrome or catalog); publishes
-  `window.App = { appendBubble, pollStatus }` for chrome and catalog
-  to call lazily. Load-confirm modal element handles are grabbed here
-  because the Send-with-unloaded-model flow reassigns
-  `loadCancel.onclick` / `loadConfirm.onclick`; catalog's `change`
-  handler reassigns the same properties for its own flow — only one
-  flow runs at a time, latest write wins. `populateModelOptions` and
-  the eject/unload/load flow moved to `catalog.js`; themes / focus /
-  settings / modal chrome moved to `chrome.js`.
+  `webToggle.disabled` from `/api/v1/status`); publishes
+  `window.App = { appendBubble, pollStatus }` for chrome and catalog to call
+  lazily. Load-confirm modal element handles are grabbed here because the
+  Send-with-unloaded-model flow and catalog's `change` handler each reassign
+  `loadCancel.onclick` / `loadConfirm.onclick` — only one flow runs at a time,
+  latest write wins.
 
-## Behavior locked by this version (beyond the v64 set)
+## As-built architecture — persistence & revision model
 
-* **AC-127 — full-length title storage.** Pinned by
-  `test_thread_title_stores_full_text_beyond_thirty_chars`.
-* **AC-128 — history-copy hygiene.** Pinned by
-  `test_reply_copy_source_strips_think_after_reload` (the fixture stream
-  deliberately carries inline `<think>…</think>`, so the stored message
-  contains markup the copy source must not).
-* **AC-129 — sidebar resize: drag, clamp, persist.** Pinned by
-  `test_sidebar_divider_drags_and_clamps` and
-  `test_sidebar_width_persists_across_reload`.
-* **AC-130 / AC-131 — placeholder + send guidance.** Pinned by
-  `test_no_loaded_model_shows_placeholder_and_send_guides` (routes both
-  model endpoints to a nothing-loaded state).
-* **AC-132 — unloaded-pick confirmation contract.** Pinned by
-  `test_unloaded_model_pick_asks_and_cancel_reverts`.
+Conflict-safe history persistence keeps the local JSON conversation store
+loss-resistant under rapid UI mutations and multiple browser tabs. Each
+accepted snapshot carries a real, monotonically increasing persisted revision;
+a browser may save only against the revision it hydrated or last received from
+an accepted save, and a stale page is rejected rather than overwriting newer
+history.
 
-The 15 M31 tests (AC-111..AC-126) carry forward untouched and now pass
-against the as-built code.
+* **`src/services/storage.py`** — public surface: `load_snapshot()` (list-only
+  compatibility view for frozen imports), `save_snapshot()`,
+  `quarantine_files()`, `load_versioned_snapshot() -> tuple[list[dict], int]`,
+  `save_versioned_snapshot(threads, expected_revision) -> int`, and
+  `SnapshotConflict.current_revision`. One module-level, non-reentrant lock
+  covers read-current / compare / backup / temp-write / atomic-replace /
+  revision-advance. A private lock-held helper performs compare / backup /
+  replace / revision-advance without acquiring the lock; public
+  `save_versioned_snapshot` acquires the lock and calls it; compatibility
+  `save_snapshot` acquires the same lock, reads the current generation under it,
+  calls the private helper directly, and discards the returned revision (it must
+  not call the lock-acquiring public method while holding the lock, and must not
+  release the lock between reading and saving). A revision mismatch raises
+  `SnapshotConflict` before any directory, temp, backup, or primary write; a
+  match always writes `expected + 1` (including an equal PUT and an empty
+  DELETE) by same-directory temp replacement. Exactly one `.bak`, rotated by
+  `shutil.copy2(primary, bak)` before `os.replace(temp, primary)`; the parent
+  directory is created when missing. The generation is an integer, never a
+  content hash (an equal snapshot can recur, so a hash would permit ABA). A
+  legacy raw-list primary (including a human-restored raw-list `.bak`) reads at
+  revision 0; the next accepted write migrates it by ordinary atomic
+  replacement and backup rotation. On a JSON-parse failure of the primary, the
+  load path quarantines it (rename to `<primary-name>.corrupt-<stamp>` in the
+  same directory, bytes preserved exactly) and returns `([], 0)`. Quarantined
+  files are never deleted, overwritten, or auto-restored.
+
+  Failure handlers: if `shutil.copy2(primary, bak)` raises `OSError`, warn with
+  the primary path, backup path, and exception text, then re-raise that same
+  exception; the outer handler removes the prepared temp file and propagates the
+  original error, so primary bytes and revision stay fixed and no `.bak`
+  appears. If the temp unlink then fails while handling any save error, warn
+  with the temp path and cleanup exception but re-raise the ORIGINAL save error —
+  cleanup failure never masks the error that began save handling.
+
+* **`src/api/threads.py`** — `ThreadsPayload` carries required `revision: int
+  >= 0`; DELETE carries a body model with required `revision: int >= 0`. GET
+  performs one revisioned load and returns
+  `{"threads": [...], "revision": n, "quarantined": bool}`. PUT calls
+  `save_versioned_snapshot(payload.threads, payload.revision)`; DELETE calls it
+  with `[]`; both return `{"status":"ok", "revision": n+1}`. `SnapshotConflict`
+  maps to HTTP 409 with the exact top-level JSON body
+  `{"error":"revision_conflict", "current_revision": n}` (never wrapped in
+  FastAPI's `detail`). Validation failures remain 422 and write nothing.
+
+* **`src/static/threads.js` (persistence role)** — owns the authoritative
+  hydrated revision, an ordered persist queue, and the conflict latch. Every
+  persistence-worthy mutation captures its own complete snapshot at enqueue
+  time; at most one PUT runs at a time; the first request uses the hydrated
+  revision, and after a 200 the response revision is adopted before the next
+  queued snapshot. Mutations are never coalesced or reordered. Ordinary
+  network/non-409 failures preserve AC-75/AC-76 (`not saved`) and do not advance
+  the revision. A 409 clears pending snapshots, latches the page against every
+  later PUT/DELETE, and writes exactly `history changed elsewhere — reload
+  required` to `save-status`; only a document reload clears the latch.
+
+Existing quarantine, atomic-replacement, and one-generation-backup behavior
+remain in force.
 
 ## File inventory
 
-18 files. Added this version (both new, both shipped at `2579f07`):
+Front-end static: `index.html`, `app.js`, `threads.js`, `current-chat.js`,
+`current-chat.css`, `sidebar-resize.js`, `sidebar-resize.css`, `chrome.js`,
+`catalog.js`, `markdown.js`, `rain.js`, `style.css`. Back end: `src/api/`
+(including `threads.py`) and `src/services/` (including `storage.py`).
 
-* `src/static/chrome.js`
-* `src/static/catalog.js`
-
-`no_edit_files` unchanged as a set: `markdown.js`, `rain.js`,
-`style.css` (also resolved via `--affected` per the M29 fix).
-
-`contracts.changed_files` (D-86) declares the four files the hand-build
-touched relative to v65: the two new files plus `app.js` and
-`index.html`. This documents provenance; no coder run is pending against
-this version.
+`no_edit_files` (also resolved via `--affected`): `markdown.js`, `rain.js`,
+`style.css`.
 
 ## Oracle mapping
 
-* `tests/test_ui.py` — full replacement: all previous tests byte-identical,
-  six appended (mapping above). Element location via `contracts.ui` testids
-  only; two additions to the locked surface: `sidebar-resizer` (the
-  divider) and `msg-error` (guidance/error bubbles). Synchronization via
-  Playwright `expect()` auto-waiting; the resize tests use `page.mouse`
-  with position math from the handle's own bounding box, no fixed sleeps.
+* `tests/test_ui.py` — UI acceptance; element location via `contracts.ui`
+  testids only (locked surface includes `sidebar-resizer` and `msg-error`).
+  Synchronization via Playwright `expect()` auto-waiting; resize tests use
+  `page.mouse` with position math from the handle's own bounding box, no fixed
+  sleeps.
+* `tests/test_ui_persistence_conflicts.py` — browser-only conflict/latch/reload
+  oracles (AC-146..AC-148), synchronizing through explicit Promise barriers
+  fired when expected PUTs / title commits are captured — no sleeps, guessed
+  microtask turns, or immediate asynchronous request counts.
+* `tests/test_persistence_revisions.py` — backend-only revision oracles
+  (AC-136..AC-145); imports no Playwright.
+* `tests/test_storage_service.py` — storage-service oracles (backup rotation,
+  cleanup-failure, quarantine, atomic overwrite).
+* `tests/test_threads_api.py`, `tests/test_ui_websearch.py`,
+  `tests/test_websearch_api.py` — carried API/feature coverage; direct writers
+  obtain and pass the revision.
 
 ## Smoke checks
 
-New in v66:
-
-* `chrome.js` — `window.Chrome`, `applyTheme`, `fullscreenEl`, and
-  `THEMES` present.
-* `catalog.js` — `window.Catalog`, `fetchModels`, `refreshModels`, and
+* `chrome.js` — `window.Chrome`, `applyTheme`, `fullscreenEl`, `THEMES` present.
+* `catalog.js` — `window.Catalog`, `fetchModels`, `refreshModels`,
   `previousModelValue` present.
-
-Re-authored in v66:
-
-* `app.js` — landmarks that stayed post-split: `webToggle`,
-  `pendingSources`, the citation glyph `【`, `pollStatus`, `queueRender`.
-  The prior version's `ejectModelBtn` and `models/catalog` greps were
-  removed because both moved to `catalog.js`.
-
-Carried forward from v65 unchanged:
-
+* `app.js` — post-split landmarks: `webToggle`, `pendingSources`, the citation
+  glyph `【`, `pollStatus`, `queueRender`.
 * `current-chat.js` — `CurrentChat` and `commitPending` present.
 * `current-chat.css` — `grep -qE "data-active=['\"]true['\"]"` and
   `current-chat-title` present.
 * `sidebar-resize.js` — `SidebarResize` and `tc-sidebar-width` present.
 * `sidebar-resize.css` — `sidebar-resizer` and `col-resize` present.
 
-All other entries unchanged.
+## Risk notes
 
-## Rollback / risk
-
-* Rollback is `git revert` of `2ac5827` + `57b40b8` and a re-freeze to the
-  v64 spec — no schema, route, or persistence changes anywhere in the arc.
-* **Risk — regression pins, not an oracle.** The six new tests verify the
-  implementation against itself at freeze time. They will catch future
-  regressions; they cannot catch present defects. Named in the PRD
-  provenance caveat; accepted by approving this freeze.
-* **Risk — resize geometry.** The drag tests assert against
-  `getBoundingClientRect` with a ±6px tolerance; a themed border change
-  that alters layout by more than that will surface as a test failure
-  rather than silently passing (preferred failure direction).
-* **Risk — model-endpoint mocks.** AC-130/131/132 tests route both
-  `/api/v1/models` and `/api/v1/models/catalog`; if a future milestone
-  renames either route, these tests fail loudly at the route mock, which
-  is the correct signal to re-true the contracts.
+* **Resize geometry.** The drag tests assert against `getBoundingClientRect`
+  with a small tolerance; a themed border change that alters layout beyond it
+  surfaces as a test failure rather than passing silently — the preferred
+  failure direction.
+* **Model-endpoint mocks.** AC-130/131/132 tests route both `/api/v1/models`
+  and `/api/v1/models/catalog`; if a future milestone renames either route,
+  these tests fail loudly at the route mock, which is the correct signal to
+  re-true the contracts.
 
 ## CEO acceptance (D-44)
 
-Observable without reading code, on any browser:
-
-1. Open the app: header shows the current thread's title; the same thread
-   is highlighted in the sidebar; refresh always lands on the newest chat.
-2. Drag the divider between sidebar and chat: it follows the pointer,
-   refuses to pass the middle of the window, and is still where you left
-   it after a refresh. Double-click snaps it back.
-3. With no model loaded, open a new chat: the model field reads
-   "Select model..." in the same quiet voice as the message box's hint —
-   it does not claim a model is active. Hit Send anyway: the app tells you
-   to pick a model; nothing is sent.
-4. Pick a model that isn't loaded: the app asks before loading. Cancel:
-   your selection reverts and nothing loads.
-5. Copy an assistant reply after refreshing the page: the clipboard text
-   is clean prose — no `<think>` markup.
+Observable without reading code, on any browser — see the PRD "CEO acceptance"
+section (current-chat title + highlight + newest-on-refresh; sidebar resize
+drag/clamp/persist/reset; no-model placeholder and send guidance; unloaded-pick
+confirm-and-revert; clean copy after reload; two-tab conflict latch and reload
+recovery).
