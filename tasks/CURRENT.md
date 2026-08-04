@@ -498,3 +498,7 @@ Full frozen TPM suite green against spec v71. Feature built and validated.
   proven-green implementation, T4 escalation resolved as spec-defect with no
   code owed. Completion ledger recorded via completion-ledger.py (4 tasks,
   app.js sha 20b75f27). Full incident record: project-trail/2026-08-03-m33-closeout.md.
+
+## Results
+
+  Full frozen TPM suite green against spec v78. Feature built and validated.
