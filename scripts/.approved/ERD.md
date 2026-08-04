@@ -155,6 +155,41 @@ history.
 Existing quarantine, atomic-replacement, and one-generation-backup behavior
 remain in force.
 
+## As-built architecture — model catalog & script-model registry
+
+* **`src/services/models.py`** — LM Studio discovery plus the script-model
+  registry. `SCRIPT_MODELS` maps a model id to a launch/probe descriptor
+  (`id`, `base_url`, `chat_endpoint`, `ready_url`, `command`,
+  `ready_timeout_attr`); a script model is a local OpenAI-compatible server the
+  app spawns on demand. Each entry is fed by a per-model constant block read at
+  import (`NEMOTRON_*`, `DEEPSEEK_*`), whose `base_url` takes an environment
+  override (`NEMOTRON_URL`, `DS4_URL`). `load_script_model` first evicts any
+  other resident script model (`_unload_other_script_models`, which iterates
+  `SCRIPT_MODELS` to enforce one-resident-at-a-time RAM mutual exclusion), then
+  spawns the entry's `command` and waits for its `ready_url` within the entry's
+  timeout constant; `unload_script_model` finds the server by the port parsed
+  from its `ready_url` (per-process, never by name), SIGINTs then SIGKILLs it,
+  and re-probes reachability. `list_models` (LM Studio) and `list_model_catalog`
+  (every `SCRIPT_MODELS` entry with its live `loaded` state) feed the two model
+  routes.
+
+* **`src/api/models.py`** — projects the registry to the UI. `ModelInfo`
+  (`GET /api/v1/models`) and `CatalogEntry` (`GET /api/v1/models/catalog`) each
+  pin a closed `Literal` set of `source` strings; `POST
+  /api/v1/script-models/{model_id}/load` and `.../unload` route generically by
+  id, rejecting an id absent from `SCRIPT_MODELS` with 404. A new registry
+  entry therefore surfaces in the catalog and gains load/unload for free — the
+  response schema's `source` Literal is the single place that must also learn
+  the new id, or the response row fails pydantic validation.
+
+* **Additional model (M34).** `deepseek-v4-flash-0731` joins the registry as a
+  third script model: a `DEEPSEEK_0731_*` constant block (base_url default
+  `http://127.0.0.1:8005`, env override `DS4_0731_URL`, script path
+  `run-server-0731.sh`, readiness-timeout constant) and one `SCRIPT_MODELS`
+  entry shaped exactly like `deepseek-v4-flash`, plus the new id appended to
+  both `source` Literals in `src/api/models.py`. Normative per-file detail is
+  in `ERD-DELTA.md`.
+
 ## File inventory
 
 Front-end static: `index.html`, `app.js`, `threads.js`, `current-chat.js`,

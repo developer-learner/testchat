@@ -14,7 +14,7 @@ required if and only if a frozen test pins it. This document narrates the
 product and states the acceptance criteria currently in force. Criteria from
 earlier milestones that remain live are pinned by their own frozen tests; the
 criteria written out below govern the current feature set — current-chat
-awareness, free model selection, and conflict-safe history persistence.
+awareness, free model selection, conflict-safe history persistence, and the local model catalog.
 
 ## Acceptance criteria
 
@@ -238,6 +238,33 @@ awareness, free model selection, and conflict-safe history persistence.
   hydrate the server's current threads and revision, clear `save-status`, and
   allow the next user mutation to persist against that hydrated revision.
 
+**Additional local model — deepseek-v4-flash-0731**
+
+* **AC-149:** THE SYSTEM SHALL register a third script model keyed
+  `deepseek-v4-flash-0731` in the `SCRIPT_MODELS` registry
+  (`src/services/models.py`), alongside the existing `nemotron` and
+  `deepseek-v4-flash` entries and in the same entry shape. Its `command` SHALL
+  be the single-element list naming the out-of-tree launcher
+  `/Users/arc.elixir/dev/ds4/run-server-0731.sh`, and its readiness timeout
+  SHALL be a module-level constant named by the entry's `ready_timeout_attr`
+  (so a test may monkeypatch it).
+
+* **AC-150:** THE `deepseek-v4-flash-0731` entry's `base_url` SHALL default to
+  `http://127.0.0.1:8005` and SHALL be overridable at import time via the
+  `DS4_0731_URL` environment variable, matching the `DS4_URL` precedent for
+  `deepseek-v4-flash`. Its `chat_endpoint` SHALL end `/v1/chat/completions` and
+  its `ready_url` SHALL end `/v1/models`. Registering the entry SHALL leave the
+  `nemotron` and `deepseek-v4-flash` entries and all existing model-service
+  behavior unchanged.
+
+* **AC-151:** THE model-list response schemas SHALL accept
+  `deepseek-v4-flash-0731` as a valid `source` value: constructing
+  `ModelInfo(source="deepseek-v4-flash-0731")` and
+  `CatalogEntry(source="deepseek-v4-flash-0731", loaded=False)`
+  (`src/api/models.py`) SHALL NOT raise a validation error, so that
+  `GET /api/v1/models` and `GET /api/v1/models/catalog` can surface the new
+  model once its server is discoverable.
+
 ## Out of scope
 
 * **Sidebar row auto-scroll on switch.** AC-121 requires the mark to be
@@ -318,3 +345,7 @@ awareness, free model selection, and conflict-safe history persistence.
    stale tab B. B shows `history changed elsewhere — reload required`; further
    edits from B do not overwrite A. Reload B: A's accepted state appears, the
    warning clears, and B can save a fresh edit normally.
+7. Open the model dropdown: DeepSeek-V4-Flash-0731 appears as a third local
+   model beside the others. With its local server running, selecting it loads
+   it the same way — and loading it releases whichever other local model was
+   resident, since the local models do not run at the same time.

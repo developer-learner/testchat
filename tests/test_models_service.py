@@ -3,7 +3,8 @@ Unit-level oracle for src/services/models.py in isolation, independent of
 the HTTP route layer. Observes ONLY contracts.entry_points: src.services.models
 (bare) and the colon-qualified list_models / load_nemotron / unload_nemotron /
 is_nemotron_loaded / load_script_model / unload_script_model /
-is_script_model_loaded symbols.
+is_script_model_loaded symbols, plus src.api.models:ModelInfo and
+src.api.models:CatalogEntry for the response-schema acceptance check (AC-151).
 
 M29 (v58) re-cut. The process-lifecycle criteria are now stated as outcomes
 (AC-102..AC-106), so their tests assert reachability transitions against REAL
@@ -24,6 +25,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import src.services.models as models_mod
+from src.api.models import CatalogEntry, ModelInfo
 
 # A minimal OpenAI-compatible readiness server: 200 on any GET.
 _SERVER_SRC = (
@@ -228,11 +230,33 @@ def test_list_models_includes_deepseek_when_loaded(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_registry_contains_expected_script_models():
-    assert set(models_mod.SCRIPT_MODELS) == {"nemotron", "deepseek-v4-flash"}
+    assert set(models_mod.SCRIPT_MODELS) == {
+        "nemotron",
+        "deepseek-v4-flash",
+        "deepseek-v4-flash-0731",
+    }
     entry = models_mod.SCRIPT_MODELS["deepseek-v4-flash"]
     assert entry["chat_endpoint"].endswith("/v1/chat/completions")
     assert entry["ready_url"].endswith("/v1/models")
     assert entry["command"] == ["/Users/arc.elixir/dev/ds4/run-server.sh"]
+
+    entry_0731 = models_mod.SCRIPT_MODELS["deepseek-v4-flash-0731"]
+    assert entry_0731["id"] == "deepseek-v4-flash-0731"
+    assert entry_0731["chat_endpoint"].endswith("/v1/chat/completions")
+    assert entry_0731["ready_url"].endswith("/v1/models")
+    assert entry_0731["command"] == ["/Users/arc.elixir/dev/ds4/run-server-0731.sh"]
+    assert entry_0731["base_url"] == "http://127.0.0.1:8005"
+
+
+def test_registry_0731_source_string_is_accepted_by_response_schema():
+    # AC-151: the model-list response schemas accept the new source string, so
+    # GET /api/v1/models and /api/v1/models/catalog can surface the 0731 model.
+    info = ModelInfo(id="deepseek-v4-flash-0731", source="deepseek-v4-flash-0731")
+    catalog = CatalogEntry(
+        id="deepseek-v4-flash-0731", source="deepseek-v4-flash-0731", loaded=False
+    )
+    assert info.source == "deepseek-v4-flash-0731"
+    assert catalog.source == "deepseek-v4-flash-0731"
 
 
 def test_load_nemotron_expands_script_path(monkeypatch):
