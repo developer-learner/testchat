@@ -25,6 +25,29 @@ through `refreeze.sh`; EM/coder work must run through `orchestrate.sh`.
 **Rough size:** Spec + API/service tests + `services/models.py` + model source
 schema (and UI test only if existing generic-model behavior is insufficient)
 
+### Guard against control-plane manifest drift on doc edits
+**Priority:** P2 (process hygiene)
+**Why:** Recurred twice now — a legitimate `CLAUDE.md` correction-log edit
+(2026-06-30 Rule-8/build-prompt row; again 2026-08-03 commit `7537d83`) lands
+without regenerating `scripts/.manifest-project`, so the pre-commit /
+`phase-gate.sh manifest` control-plane check goes red and blocks *every*
+subsequent commit (`AGENTS.md` is a symlink to `CLAUDE.md`). Each time it is
+caught only when the next commit fails, then fixed by hand via
+`scripts/regen-manifest.sh`. The gate *detects* the drift; nothing prevents
+introducing it.
+**What:** A mechanical guard that catches the drift at edit/commit time — **not**
+a silent auto-regenerate. Auto-regen in the commit path would defeat the
+tamper-detection the gate exists for (it would bless any `CLAUDE.md` change,
+not just an intended one). Options to weigh: (a) an advisory `pre-commit`
+warning that a staged control-plane file's hash differs from the manifest,
+printing the exact `regen-manifest.sh` command (does not auto-write); (b) a
+CI/Make check that fails when any control-plane file is staged without a
+matching manifest update in the same commit. Semantics are a Rule-3
+stop-and-ask (this changes what a gate does), so decide deliberately.
+**Rough size:** Tooling only (hook or CI); no `src/`, no spec/tests.
+**Source:** 2026-08-03 pre-milestone readiness session — recurrence `7537d83`
+(gate red) → `68b2b2a` (hand re-pin).
+
 ### ~~AC-95′/AC-96′ recut — "unloaded" must mean the process is gone~~ — SHIPPED
 **Priority:** ~~P0~~ — **DONE 2026-07-26, M29 (spec v58 → v59).** Recut as
 AC-102..AC-106 in outcome form; `unload_script_model` now discovers the server
