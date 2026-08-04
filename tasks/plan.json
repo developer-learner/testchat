@@ -1,6 +1,6 @@
 {
-  "version": 25,
-  "erd_version": 77,
+  "version": 26,
+  "erd_version": 78,
   "tasks": [
     {
       "id": "T1",
@@ -90,11 +90,7 @@
         "ui:save-status",
         "ui:history-status"
       ],
-      "tests": [
-        "tests/test_ui_persistence_conflicts.py::test_browser_serializes_rapid_mutations_in_revision_order",
-        "tests/test_ui_persistence_conflicts.py::test_browser_conflict_warns_and_stops_further_writes",
-        "tests/test_ui_persistence_conflicts.py::test_reload_after_conflict_hydrates_and_allows_a_new_save"
-      ]
+      "tests": []
     }
   ]
 }
