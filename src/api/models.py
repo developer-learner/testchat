@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/v1")
 
 class ModelInfo(BaseModel):
     id: str
-    source: Literal["lmstudio", "nemotron", "deepseek-v4-flash"]
+    source: Literal["lmstudio", "nemotron", "deepseek-v4-flash", "deepseek-v4-flash-0731"]
 
 
 class ModelsListResponse(BaseModel):
@@ -39,7 +39,7 @@ class ScriptModelUnloadResponse(BaseModel):
 
 class CatalogEntry(BaseModel):
     id: str
-    source: Literal['nemotron', 'deepseek-v4-flash']
+    source: Literal['nemotron', 'deepseek-v4-flash', 'deepseek-v4-flash-0731']
     loaded: bool
 
 
