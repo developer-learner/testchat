@@ -25,6 +25,12 @@ DEEPSEEK_READY_URL = DEEPSEEK_BASE_URL + '/v1/models'
 DEEPSEEK_SCRIPT_PATH = '/Users/arc.elixir/dev/ds4/run-server.sh'
 DEEPSEEK_READY_TIMEOUT_SECONDS = 180
 
+DEEPSEEK_0731_BASE_URL = os.environ.get('DS4_0731_URL', 'http://127.0.0.1:8005')
+DEEPSEEK_0731_CHAT_ENDPOINT = DEEPSEEK_0731_BASE_URL + '/v1/chat/completions'
+DEEPSEEK_0731_READY_URL = DEEPSEEK_0731_BASE_URL + '/v1/models'
+DEEPSEEK_0731_SCRIPT_PATH = '/Users/arc.elixir/dev/ds4/run-server-0731.sh'
+DEEPSEEK_0731_READY_TIMEOUT_SECONDS = 300
+
 SCRIPT_MODEL_TERMINATE_GRACE_SECONDS = NEMOTRON_TERMINATE_GRACE_SECONDS
 
 
@@ -80,6 +86,14 @@ SCRIPT_MODELS: dict[str, dict] = {
         'ready_url': DEEPSEEK_READY_URL,
         'command': [DEEPSEEK_SCRIPT_PATH],
         'ready_timeout_attr': 'DEEPSEEK_READY_TIMEOUT_SECONDS',
+    },
+    'deepseek-v4-flash-0731': {
+        'id': 'deepseek-v4-flash-0731',
+        'base_url': DEEPSEEK_0731_BASE_URL,
+        'chat_endpoint': DEEPSEEK_0731_CHAT_ENDPOINT,
+        'ready_url': DEEPSEEK_0731_READY_URL,
+        'command': [DEEPSEEK_0731_SCRIPT_PATH],
+        'ready_timeout_attr': 'DEEPSEEK_0731_READY_TIMEOUT_SECONDS',
     },
 }
 
