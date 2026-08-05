@@ -160,11 +160,25 @@ tests at v65) and grows with every milestone. Post-D-86/D-87, freeze
 discipline runs the staged suite before every refreeze, so suite runtime is
 now the floor on every spec change — v65's staging spent ~9 of its ~30
 minutes inside two full runs.
-**What:** (a) `pytest-xdist` sharding for the browser tests (each test is
-already isolated per-context), and/or (b) a changed-tests-first ordering so
-a red staged suite fails in seconds. Tests-lane infra: `conftest.py` +
-possibly CI config, so it lands via a refreeze.
-**Rough size:** conftest fixture scoping audit + one dependency addition
+**What:** (a) `pytest-xdist` sharding — **BLOCKED as a cheap win (corrected
+2026-08-04).** The browser tests share a `scope="session"` app server on fixed
+ports (`STUB_PORT=8971`/`APP_PORT=8972`) + a single `TESTCHAT_DATA` file, and
+the autouse `_fresh_snapshot` fixture DELETEs all threads before each test — so
+naive `-n N` collides on ports and corrupts shared storage. "Isolated
+per-context" is browser-context only, NOT server/port/storage. Real sharding
+needs per-worker ports + server instances + data files (keyed off
+`PYTEST_XDIST_WORKER`), a conftest rework — not a dependency add. And/or (b) a
+changed-tests-first ordering so a red staged suite fails in seconds — this one
+IS cheap and unblocked. And/or (c) a **concurrent backend lane** (verified
+2026-08-04): only 3 files use the shared UI server (`test_ui*.py`); the other 14
+use no `app_url`/stub/`TESTCHAT_DATA`, so they can run as a second `pytest`
+process alongside the UI files, folding the ~40s backend suite into the ~4min UI
+window. Caveat: only ~40s of ceiling, and it needs ≥2 CPUs in the sandbox (raise
+`--cpus`) to actually overlap — otherwise a time-shared no-op. Lands via the
+orchestrate/sandbox acceptance invocation, not conftest. Tests-lane infra:
+`conftest.py` + possibly CI config, so it lands via a refreeze.
+**Rough size:** (a) per-worker isolation rework of the session fixtures — NOT
+trivial; (b) small — a pytest ordering hook.
 
 ### Fold `mypy` into the sandbox run
 **Priority:** P2

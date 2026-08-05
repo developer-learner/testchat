@@ -61,6 +61,59 @@ them.
 
 ---
 
+## Status — measured 2026-08-04
+
+**Wave 1: APPLIED (testchat prototype) + MEASURED + validator message fixed.**
+Both edits uncommitted, control-plane, `testchat first`:
+- `EM_TASK_KEYS` injected at all 4 plan-emission sites (`orchestrate.sh`).
+- `validate-plan.py` subtree messages now name expected/missing/unexpected keys
+  — the fix that makes this failure class visible (the opaque "not a complete
+  task object" nearly caused a misreported conclusion this session).
+
+**Measurement** (5 key-shape entries, live qwen seat, baseline vs +skeleton,
+`scratchpad/wave1_replay.py`):
+
+| | shape-valid | length-halt |
+|---|---|---|
+| baseline | **1/5** | 0/5 |
+| +skeleton | **4/5** | 0/5 |
+
+Meets the pre-registered bar (shape UP **and** length FLAT). Fixed 111814 /
+111932 / 113649; **113252 stayed broken**; 025709 clean both ways.
+
+**Two evidenced findings:**
+1. The **production qwen seat reproduced the guess at baseline on 4/5** — so
+   Wave 1 is a **proven production-seat fix, not weak-seat insurance** (this
+   corrects the earlier "insurance" framing).
+2. Every baseline reply had the correct top-level `tasks` (`top_tasks=1`) — the
+   `plan`↔`tasks` guess did NOT reproduce on qwen; **all failures were per-task
+   key level**. Wave 1's measured effect is on per-task keys specifically.
+
+**Resample (3× per entry, 15 samples/variant, replies saved) — CONFIRMED
+2026-08-04:** baseline **2/15** shape-valid → skeleton **14/15**, length-halts
+flat 0/15 both. The single-pass 1/5→4/5 understated it. **113252 resolved:** all
+3 of its +skeleton replies produced the correct 6-key shape — its single-pass
+miss was **stochastic noise, not a prompt-extension gap** (reviewer hypothesis
+refuted). The one remaining skeleton miss (111814, 1/3) is variance → ~93%
+effective, not 100%. Even the known-clean control (025709) guessed once at
+baseline (2/3). Net: strong, consistent Wave-1 effect; the pre-registered bar
+(shape UP, length FLAT) is met decisively.
+
+**Strategic read:** flat length-halts + the schema fix helping strengthens **H2
+(schema gap) over H1 (context bloat)** — which argues AGAINST spending on the
+Wave 3 ERD trim before Wave 2 and the mapping/coverage rules.
+
+**Failure mass — full `*_plan*` corpus (48 entries):** mapping/coverage **27**,
+valid 12, key-shape **5**, truncation **4**. Wave 1 addresses the key-shape 5;
+the dominant 27 need the mapping/coverage prompt-rule fix (item 2 below). **None
+of this session's verified wins are milestone-speed levers** — they are
+reliability only.
+
+**→ NEXT BUILD: Wave 2** (skip the EM for minor deltas) — the only lever that
+moves the ~280s EM call, still unbuilt. Parked until the CEO says go.
+
+---
+
 # The 3 waves (in order)
 
 ## Wave 1 — Schema verbatim in the EM prompt (do first)
@@ -75,7 +128,9 @@ the task-key skeleton. **Risk: near-zero** (adds a constraint the validator
 already enforces).
 **Why first:** isolates H2 from H1 at almost no cost.
 **Gate/measure (pre-register) — this IS the H1/H2 separator and Wave 3's
-precondition:** replay the `.em-archive` corpus with `scripts/em-bench.sh`,
+precondition:** replay the `.em-archive` corpus by **re-sending each `.em-archive/*_plan/prompt.txt` with vs without the
+skeleton** through the EM seat (NOT `em-bench.sh` — it replays *diagnosis* calls
+only, not plan calls; a small plan-prompt re-send harness does this),
 schema-line present vs absent, tracking **two metrics independently**:
 (a) schema-guessing rate (`plan`↔`tasks`, `test_nodes`↔`tests`) and
 (b) `finish_reason=length` rate. **Expected clean signal: (a) drops while
@@ -84,7 +139,7 @@ Length-halts that *survive* Wave 1 are then attributable to H1 (context) and are
 what justifies attempting Wave 3; if they vanish here, Wave 3 has no case either
 way. **Success = fewer schema-shape rejections with length-halts unchanged.**
 
-## Wave 2 — Widen the EM-less fast paths (the headline time lever)
+## Wave 2 — Widen the EM-less fast paths (the headline time lever) — ★ NEXT BUILD
 **Change:** extend `em_needed=0` (docs/test-only merge, orch:964) and
 `trivial_construct` (one-file, no-contract-change, orch:986) to cover more minor
 deltas — i.e. more single-file additive changes get their subtree **constructed
@@ -98,7 +153,8 @@ biggest per-milestone time win available and it already has proven precedent
    failure the frozen oracle wouldn't? Widen only where the answer is "never."
    (The mandate's own machinery test.)
 2. **Corpus replay** — take the archived EM calls the *widened* rule would now
-   skip and run them through `em-bench.sh`'s mechanical construct+merge path;
+   skip and run them through validate-plan.py's `--construct-one-file` +
+   `--merge-subtree` path;
    confirm the resulting plans still validate. Without this, "proven-in-kind"
    stays a hypothesis: the two existing fast paths prove the *mechanism* works,
    not that it covers the *newly-included* delta classes.
@@ -133,7 +189,8 @@ just brief-completeness, caught by the oracle; the id-namespace guard covers
 invention.
 
 **Gate — replay before shipping (the "measure before selling" the reviewer
-demanded):** `em-bench.sh` on the `.em-archive` corpus, scoped context vs
+demanded):** the same plan-prompt re-send harness as Wave 1 (NOT `em-bench.sh`,
+which is diagnosis-only) on the `.em-archive/*_plan` corpus, scoped context vs
 current, measuring length-halt rate, plans-per-attempt, valid-plan-first-try.
 **Pre-registered falsification — Wave 3 is net-negative if:** length-halts do
 *not* fall, **OR** brief-rejection / plans-per-attempt *rises*. Ship only on

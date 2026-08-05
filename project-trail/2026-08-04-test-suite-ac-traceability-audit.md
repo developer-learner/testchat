@@ -71,10 +71,18 @@ replaced.
 - **Traceability drift (cosmetic→moderate):** tests citing superseded AC ids.
   No behavior at risk; a re-anchor pass would restore label↔spec truth. Low
   priority.
-- **The real lever is speed:** parallelize the ~60 browser tests (~4min→~1.5min)
-  rather than deleting anything. There is almost nothing safe to delete — the
-  only redundancy found earlier (~5 model-wiring tests mirroring the service
-  layer) still asserts a distinct HTTP status and was left intact.
+- **The real lever is speed — but NOT cheap parallelization (CORRECTED
+  2026-08-04).** An earlier version of this note claimed the ~60 browser tests
+  could be parallelized ~4min→~1.5min cheaply. That is WRONG: the tests share a
+  `scope="session"` app server on fixed ports (`STUB_PORT=8971`/`APP_PORT=8972`)
+  + a single `TESTCHAT_DATA` file, and the autouse `_fresh_snapshot` fixture
+  DELETEs all threads before each test — so naive `pytest-xdist` collides on
+  ports and corrupts shared storage. "Isolated per-context" is browser-context
+  only, not server/port/storage. Real parallelization needs per-worker
+  ports/server/storage isolation (a conftest rework), not a dependency add, so
+  the ~5-min suite is a fixed floor until then. There is almost nothing safe to
+  DELETE either — the only redundancy found (~5 model-wiring tests mirroring the
+  service layer) still asserts a distinct HTTP status and was left intact.
 
 ## Operator-seat note (why this is corpus-worthy)
 
