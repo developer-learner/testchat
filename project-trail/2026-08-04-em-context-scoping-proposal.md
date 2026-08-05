@@ -109,8 +109,38 @@ the dominant 27 need the mapping/coverage prompt-rule fix (item 2 below). **None
 of this session's verified wins are milestone-speed levers** — they are
 reliability only.
 
-**→ NEXT BUILD: Wave 2** (skip the EM for minor deltas) — the only lever that
-moves the ~280s EM call, still unbuilt. Parked until the CEO says go.
+**→ Wave 2 AUDITED (2026-08-04) — file-count widening NOT worth building.**
+Evidence (79-version delta history + archived plans):
+- `trivial_construct` **never fired in its lifetime** — 0 single-file-no-contract
+  deltas since the subtree machinery landed (~v54/M28 base; `trivial_construct`
+  "Cut 2" itself only since 2026-07-27, ~v68-era). Dead code, not a widen target.
+- Widening to multi-file-all-existing covers **only 3 distinct milestones**
+  (v68; v69–71; v73–77) — **all refreeze-retry storms**. (A looser
+  multi-file-no-contract count gives 5, incl. v65/v66, but those have NEW files
+  → EM needed anyway.)
+- On every candidate the EM **rewrote** briefs across spec bumps (7–33%
+  similarity — the 100% rows are within-version retries), because the spec
+  changed. Load-bearing work; a mechanical carry would freeze a stale brief →
+  oracle red → EM-via-consult anyway. No time saved, a wasted coder attempt added.
+- The motivating case **M34 (v79) had a contract change** (`schema:ModelInfo`,
+  `CatalogEntry`) → EM genuinely needed. Its EM call was not waste.
+- **Conclusion: the EM's plan call is load-bearing, not ceremony. Do not build
+  file-count Wave 2.**
+
+**Real levers (evidence-ranked):**
+1. **Spec-tier quality** — root of the refreeze storms (M31 5-for-5 spec defects;
+   the v69–71 / v73–77 storms). Biggest, TPM-tier.
+2. **Verbatim mapping/coverage rules (D-107-style)** — the dominant failure class
+   (27 of 36 plan-family rejections) AND the recurring retry rejection: M34's
+   second episode re-derived a **byte-identical** brief and failed the **same**
+   `mapped test file … imports` rule **twice**. Same shape of fix as Wave 1's
+   task-key skeleton.
+3. **Identical-retry short-circuit** — do not re-call the EM when the plan did
+   not need to change (byte-identical re-emission verified on M34). Connected to
+   #2: fix the recurring rule and the retry vanishes.
+
+Wave 1 is the one shipped win. Wave 3 (ERD trim) and suite parallelization remain
+not-worth-it. **File-count Wave 2: closed — do not build.**
 
 ---
 
@@ -139,7 +169,7 @@ Length-halts that *survive* Wave 1 are then attributable to H1 (context) and are
 what justifies attempting Wave 3; if they vanish here, Wave 3 has no case either
 way. **Success = fewer schema-shape rejections with length-halts unchanged.**
 
-## Wave 2 — Widen the EM-less fast paths (the headline time lever) — ★ NEXT BUILD
+## Wave 2 — Widen the EM-less fast paths — ✗ AUDITED 2026-08-04: NOT worth building (see Status block)
 **Change:** extend `em_needed=0` (docs/test-only merge, orch:964) and
 `trivial_construct` (one-file, no-contract-change, orch:986) to cover more minor
 deltas — i.e. more single-file additive changes get their subtree **constructed
