@@ -64,18 +64,24 @@ re-litigate.
 
 ## S5 — ACs as mechanisms, not outcomes (M29 lint)
 
-- **Trigger:** refreeze time, AC lint over the staged spec.
-- **Accept:** every AC whose verb changes resource state
-  (spawn/terminate/kill/unload/evict/delete/release/clear/cancel) carries a
-  post-condition clause naming an observable check ("such that <probe>
-  fails"); staged tests contradict no live, un-retired AC; the delta lists
-  the ACs it supersedes.
-- **Reject:** a state-changing AC without an observable post-condition;
-  a staged test contradicting a live AC (M29's unload suite asserted
-  `MagicMock.send_signal` — 5/8 process-lifecycle ACs failed while the lint
-  was absent).
-- **Mechanism:** mechanical grep lint (the correction-log entry 2026-07-25
-  already specifies the greppable shape) + the superseded-AC diff.
+- **Trigger:** refreeze time, AC lint over the staged `PRD.md` (ACs live
+  there as `AC-<N>` blocks — `check-spec-delta.py` already parses them).
+- **Accept:** every AC block containing any verb from the correction-log
+  list (spawn/terminate/kill/unload/evict/delete/release/clear/cancel) also
+  carries a "such that" post-condition naming an observable check (≥3 more
+  words after "such that").
+- **Reject — HALT (block refreeze, decided 2026-08-06):** a state-changing
+  AC without a "such that" clause on the SAME AC block → block, naming the
+  AC id, the verb, and the missing clause. Verb list used verbatim from the
+  correction-log entry — no additions or relaxations (changing it is a rule
+  change, stop-and-ask). Halt not advisory: the verb list is narrow (false
+  positives are cheap to fix at refreeze), M29 shipped a real defect class
+  off this hole, and the lint is mechanical.
+- **Mechanism:** mechanical per-AC grep lint (the correction-log entry
+  2026-07-25 already specifies the greppable shape) + the superseded-AC diff
+  (already in check-spec-delta.py). Complements D-68 (failure-visibility
+  ACs, TPM-ROLE.md): D-68 asks "WHEN it fails, user SHALL see …", this lint
+  asks "what observable outcome proves the AC passed".
 
 ## S6 — Spec-staging discipline
 
@@ -91,13 +97,17 @@ re-litigate.
 
 ## S7 — ERD section size vs brief cap (Rule 8)
 
-- **Trigger:** refreeze time, ERD section length check.
-- **Accept:** every ERD section short enough that a brief derived from it
-  fits the 2500-char cap (bound: 1200 chars/section).
-- **Reject:** an over-long section → block with the section named; the TPM
-  splits or trims it. (Archive 2026-08-03: a 266-char ERD section fed a
-  2541-char brief > the 2500 cap — the ERD shape, not the brief, was the
-  defect.)
+- **Trigger:** refreeze time, ERD section length check (advisory).
+- **Accept:** every ERD section ≤ 1200 chars (~48% of the 2500 brief cap).
+- **Warn (ADVISORY, decided 2026-08-06 — warn, proceed):** an over-long
+  section → warning naming the section + a recommendation to split/trim.
+  Not a halt: the authoritative gate is downstream and exists (Rule 8,
+  plan-brief cap in validate-plan). Section length is a weak proxy — the
+  archive's one overflow case (266-char section → 2541-char brief) shows
+  ~9.5× expansion from brief padding, so a section-only bound cannot
+  promise fit; blocking a freeze on a proxy that cannot guarantee the
+  outcome would create false halts. Advisory at source + hard halt at the
+  consumer is the correct layering.
 - **Mechanism:** mechanical length check at refreeze; the brief cap itself
   (Rule 8) is unchanged.
 
