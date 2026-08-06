@@ -470,6 +470,15 @@ curl -s --max-time 5 -o /dev/null "http://$SANDBOX_LLM_HOST:$SANDBOX_LLM_PORT/v1
 # requirements.txt and src/ it never saw).
 [ -z "$(git status --porcelain)" ] \
   || die "working tree not clean — commit or stash first (uncommitted changes would be misattributed to the first tier the lane gate checks): $(git status --porcelain | head -5 | tr '\n' ' ')"
+# S6 (2026-08-06): fail closed on a staged-but-uninstalled spec delta.
+# M34's EM plan calls ran against the STAGED spec — the [refreeze vN] commit
+# landed after the calls, so plan and spec disagreed by one freeze (~5 h 42 m
+# measured from the wrong basis). incoming/ is gitignored, so the clean-tree
+# check above cannot see it; this check must be explicit. Install the staging
+# dir (refreeze.sh) or clear it before running.
+if [ -d scripts/.approved/incoming ] && [ -n "$(ls -A scripts/.approved/incoming 2>/dev/null || true)" ]; then
+  die "scripts/.approved/incoming is populated — a staged-but-uninstalled delta would misalign this run against the frozen spec (S6, M34 class). Run scripts/refreeze.sh scripts/.approved/incoming to install it, or clear the staging dir, then retry."
+fi
 # Lost task-state reads identically to intentional success cleanup unless the
 # git history is consulted. Fail closed only when the latest task is not
 # covered by a later success; guard_task_state also provides an explicit,
@@ -1290,7 +1299,7 @@ reset_active_delta_tasks() {
     for id in $ACTIVE_AFFECTED; do
       echo "  reset: $id"
       set_tstat "$id" pending
-      rm -f "$TASK_STATE/$id."{strikes,revisions,fp} "$BRIEF_DIR/$id" 2>/dev/null || true
+      rm -f "$TASK_STATE/$id."{strikes,revisions,fp} "$BRIEF_DIR/$id" "$BRIEF_DIR/$id.spec_version" 2>/dev/null || true
     done
   fi
   # escalated/blocked tasks get a fresh chance under the revised spec/plan
@@ -1361,7 +1370,7 @@ while :; do
       if [ "$fp_now" != "$fp_then" ]; then
         echo "task $id changed in plan — resetting"
         set_tstat "$id" pending
-        rm -f "$TASK_STATE/$id."{strikes,revisions,fp} "$BRIEF_DIR/$id" 2>/dev/null || true
+        rm -f "$TASK_STATE/$id."{strikes,revisions,fp} "$BRIEF_DIR/$id" "$BRIEF_DIR/$id.spec_version" 2>/dev/null || true
       fi
     fi
   done
@@ -1394,7 +1403,21 @@ while :; do
     [ -n "$line" ] && mapped+=("$line")
   done <<< "$mapped_out"
   smoke=$(python3 -c "import json,sys; cs=json.load(open('scripts/.approved/contracts.json')).get('smoke_checks',{}); print(cs.get(sys.argv[1],''))" "$file")
-  brief=$(cat "$BRIEF_DIR/$id" 2>/dev/null || python3 scripts/validate-plan.py --task "$id" --field brief)
+  # S3 (2026-08-06): a brief revision outlives the spec version that shaped
+  # it if a re-freeze lands between consult and re-attempt (M33: a stale v74
+  # brief chased the v77 oracle — ~25 min + 4 coder calls for done work).
+  # Briefs are stamped with the FROZEN_V at write time; a missing or stale
+  # stamp means UNKNOWN, so the override is ignored and the brief is
+  # re-derived from the current (plan-gated) spec instead.
+  brief=$(cat "$BRIEF_DIR/$id" 2>/dev/null || true)
+  if [ -n "$brief" ]; then
+    bv=$(cat "$BRIEF_DIR/$id.spec_version" 2>/dev/null || true)
+    if [ "$bv" != "$FROZEN_V" ]; then
+      echo "brief for $id is stale (spec v${bv:-<unknown>} vs frozen v$FROZEN_V) — re-deriving from the current plan"
+      brief=""
+    fi
+  fi
+  [ -n "$brief" ] || brief=$(python3 scripts/validate-plan.py --task "$id" --field brief)
   strikes=$(counter "$id" strikes)
   echo "--- Task $id -> $file (strike $((strikes + 1))/$MAX_TASK_STRIKES) ---"
 
@@ -1532,6 +1555,7 @@ The previous attempt failed with: $last_fail. Fix the cause, do not just retry t
 import json, sys
 d = json.load(open('$DIAG_FILE'))
 sys.stdout.write(d['revised_brief'])" > "$BRIEF_DIR/$id"
+      write_state "briefs/$id.spec_version" "$FROZEN_V"
       set_counter "$id" strikes 0
       rm -f "$TASK_STATE/$id.lastfail"
       echo "brief revised for $id (revision $((revs + 1))/$MAX_BRIEF_REVISIONS)"
