@@ -142,6 +142,31 @@ Evidence (79-version delta history + archived plans):
 Wave 1 is the one shipped win. Wave 3 (ERD trim) and suite parallelization remain
 not-worth-it. **File-count Wave 2: closed — do not build.**
 
+**UPDATE — closure auto-repair BUILT (commit `f757bb4`, 2026-08-04).** Lever #2's
+biggest chunk shipped: `validate-plan.py --repair-closures` + `ensure_plan` wiring
+auto-fixes the **10/32 closure rejections** (D-64 browser / import / route) by
+adding the `depends_on` edge the gate already computes — only when acyclic; a
+would-be cycle is left for `validate()` to reject (identical to today). `validate()`
+is UNCHANGED and runs after, so safety is architectural (a repair bug can only fail
+to repair, never pass a bad plan). Monotone (edges push tests later only). Verified
+by a 9-case synthetic gate + real-file CLI smoke; clean plans byte-unchanged.
+
+**OPEN — ephemeral-gate finding (NEXT PASS):** the 9-case synthetic gate ran green
+but is **not in the tree** (`f757bb4` ships no test file), so a regression can't be
+caught later. Per Rule 6, "proven" ≠ "enforceable" until the suite lives in-repo.
+Not a safety issue (`validate()` backstops), but do this next: **port the cases
+into `scripts/selftest/selftest_gates.py`** — the CI-run, manifest-pinned
+control-plane test file, subprocess-fixture style; NOT `tests/` (that's the frozen
+INV-1 app suite). Cases: (1) repair adds the exact route edge; (2) adds the import
+edge; (3) browser test gains all tasks (closure=all); (4) reverts an edge that
+would cycle → `validate()` still rejects; (5) byte-unchanged no-op on a clean plan;
+(6) never self-deps; (7) already-satisfied closure → no edge. The import-owner case
+(created-file absent on disk) is ONLY reproducible synthetically. The working
+importlib version was in scratchpad `test_repair_closures.py` (ephemeral).
+
+**NOT YET exercised in a live orchestrate run** (Rule 6): the mechanism is unit- and
+CLI-proven; the first real closure-violating milestone is the live confirmation.
+
 ---
 
 # The 3 waves (in order)
