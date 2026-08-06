@@ -1,4 +1,4 @@
-ERD Delta — testchat M35: composer keyboard behavior — Ctrl+Enter sends, Enter inserts newline (spec v80)
+ERD Delta — testchat M35: composer keyboard behavior — Ctrl+Enter sends, Enter inserts newline (spec v82)
 
 ## Changed acceptance criteria
 
@@ -56,6 +56,9 @@ retired via the REMOVED staging mechanism — it had no v79 lineage.
 
 ## Test-to-file mapping
 
+Behavioral ownership (which AC each frozen test pins, and against which
+file):
+
 - `test_message_input_plain_enter_inserts_newline_without_sending` — pins
   AC-152 against `src/static/app.js`.
 - `test_message_input_ctrl_enter_sends` — pins AC-153 against
@@ -70,5 +73,63 @@ retired via the REMOVED staging mechanism — it had no v79 lineage.
   no-model guidance path is now reached via Ctrl+Enter; pins AC-131 + AC-153
   against `src/static/app.js`.
 
-Required DAG: `src/static/app.js` first (the keydown handler), then
-`src/static/index.html` (the placeholder text).
+Acceptance placement (D-64, gate terms): `tests/test_ui.py` imports
+Playwright, so every mapped test_ui.py node-id observes the rendered page
+and its only safe acceptance point is a task whose dependency closure
+contains the whole inventory — the DAG's final task, T2. The gate
+auto-places browser node-ids there (it is gate-owned, not the EM's to
+interpret); the EM must not add depends_on edges for this.
+
+## Task DAG (TPM-authored; the EM copies it, it does not compose)
+
+- T1 — `src/static/app.js` — depends_on: none. Behavioral owner of
+  AC-152, AC-153, AC-154.
+- T2 — `src/static/index.html` — depends_on: [T1]. Behavioral owner of
+  AC-155. Final task: accepts every mapped test_ui.py node-id (D-64).
+
+Required order: T1 (the keydown handler) before T2 (the placeholder text) —
+T2's brief does not depend on T1's code, but the DAG's single sink is T2
+and the browser node-ids ride on it.
+
+## Coder briefs (verbatim — the EM copies these blocks into plan.json and
+changes nothing about them; a brief_wrong verdict therefore routes back to
+the TPM as a batched bundle, not a mid-run EM rewrite)
+
+### T1 brief — src/static/app.js
+
+**Implementation constraints (FIRST):** JavaScript in the existing file;
+edit via anchored SEARCH/REPLACE blocks (D-59) — never retype unchanged
+regions. Change nothing outside the message-input keydown handler and its
+immediate surroundings. Do not alter the submit handler's empty-input
+guard (trims and no-ops on empty) and keep the `isComposing` IME guard.
+No new libraries, no new globals.
+
+**Behavioral specification:** the message-input keydown handler currently
+submits the form on plain Enter and lets Shift+Enter keep the textarea's
+default newline behavior. Invert it: plain Enter keeps the default newline
+(never sends); Shift+Enter keeps the default newline; Ctrl+Enter or
+Cmd+Enter submits the form through the same `form.requestSubmit()` path
+the current handler uses.
+
+**Acceptance condition:** the frozen tests
+`test_message_input_plain_enter_inserts_newline_without_sending`,
+`test_message_input_ctrl_enter_sends`,
+`test_message_input_cmd_enter_sends`,
+`test_message_input_ctrl_enter_empty_sends_nothing`, and
+`test_no_loaded_model_shows_placeholder_and_send_guides` (all in
+tests/test_ui.py) pass. The rename-input Enter-commit behaviors (AC-114,
+`thread-rename-input` / `current-thread-title-input`) are untouched.
+
+### T2 brief — src/static/index.html
+
+**Implementation constraints (FIRST):** HTML in the existing file; anchored
+edit of the message-input element's placeholder attribute only; no other
+markup changes; no script changes.
+
+**Behavioral specification:** update the message-input element's placeholder
+text to "Type a message... (Ctrl+Enter to send, Enter for newline)".
+Nothing else changes.
+
+**Acceptance condition:** the frozen test
+`test_message_input_placeholder_states_shortcuts` (tests/test_ui.py)
+passes.
