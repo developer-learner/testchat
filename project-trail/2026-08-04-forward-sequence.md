@@ -23,10 +23,11 @@ real (stated per phase), not preferences. Full evidence + design:
   DONE: blueprint `17b99ca`/`7af5148`/`e87c099`/`8501b7c`, byte-parity
   with testchat; drive-plan EM_TASK_KEYS fix `2011ed2`/`a9541e4`.
 - **UPDATE 2026-08-06 — CEO directive: children are OUT of scope.**
-  No further propagation to linkbox/spark/sparkv2/sparkv3/wordcount.
-  linkbox retains what it already received (ci.yml conformance `684b22f`,
-  drive-plan fix `65341f5`); the unsynced children stay unsynced and are
-  not a gap in this scope.
+  No further propagation to linkbox/spark/sparkv2/sparkv3/wordcount, and no
+  child (linkbox included) is raised in reports, plans, or open items unless
+  the CEO initiates it. linkbox retains what it already received (ci.yml
+  conformance `684b22f`, drive-plan fix `65341f5`); the unsynced children
+  stay unsynced and are not a gap in this scope.
 - **Conscious call:** this is backport-**before**-live-confirm. Acceptable because
   the risk is architecturally contained — `validate()` untouched (worst case in any
   child is "fails to repair" = today, never passes a bad plan), and the orchestrate
