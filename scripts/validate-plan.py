@@ -591,6 +591,44 @@ def validate():
                         f"{t['id']}'s depends_on."
                     )
 
+    # Placement from frozen data (M35 correction): a node-id pinned by
+    # contracts.test_mapping is accepted at the task owning its pinned
+    # file — the TPM's declared behavioral ownership is the authority,
+    # not any heuristic. The EM maps node-ids "where natural"; the gate
+    # moves each pinned node-id to its declared owner, so a mis-placement
+    # can never mis-gate. Unpinned node-ids fall through to the D-64
+    # browser rule below.
+    mapping = contracts.get("test_mapping", {}) or {}
+    if not isinstance(mapping, dict):
+        fail(["contracts.test_mapping must be an object mapping node-ids "
+              "to the file that behaviorally owns them"])
+    AUTO_PLACED.clear()
+    by_file = {t["file"]: t for t in tasks}
+    if mapping:
+        for t in tasks:
+            moved = []
+            for n in t["tests"]:
+                owner_file = mapping.get(n)
+                if not owner_file or owner_file == t["file"]:
+                    continue
+                owner = by_file.get(owner_file)
+                if owner is None:
+                    errs.append(
+                        f"task {t['id']}: test {n} is pinned by "
+                        f"contracts.test_mapping to {owner_file}, which no "
+                        f"task in this plan owns"
+                    )
+                    continue
+                moved.append(n)
+            if not moved:
+                continue
+            t["tests"] = [n for n in t["tests"] if n not in moved]
+            owner["tests"] = sorted(owner["tests"] + moved)
+            AUTO_PLACED.append(
+                f"{t['id']} -> {owner['id']} (pinned by test_mapping): "
+                f"{', '.join(moved)}"
+            )
+
     # D-64: browser tests observe the app through the DOM, not imports, so
     # the closure analysis above cannot see their dependencies — a Playwright
     # test can exercise ANY inventory file (markup, styling, and scripts all
@@ -622,7 +660,6 @@ def validate():
         return False
 
     all_task_ids = {t["id"] for t in tasks}
-    AUTO_PLACED.clear()
     finals = [t for t in tasks
               if ({t["id"]} | ancestors(t["id"])) == all_task_ids]
     final_task = finals[0] if len(finals) == 1 else None
@@ -651,6 +688,13 @@ def validate():
         AUTO_PLACED.append(
             f"{t['id']} -> {final_task['id']}: {', '.join(browser_files)}"
         )
+
+    # Non-vacuous acceptance (M35 correction): a task with no mapped test
+    # and no smoke check is rejected — enforced at plan-gate level (see
+    # the "needs an acceptance signal" check above). The complementary
+    # half lives at freeze time: every smoke check must be RED on the
+    # unchanged file (refreeze.sh), so a vacuous check can never satisfy
+    # the invariant.
 
     # oracle projection, part 2 (D-57) — the carried-forward split, computed
     # from the same ownership signals the reachability gates already extract:
@@ -1752,8 +1796,9 @@ def main(argv):
         if AUTO_PLACED:
             PLAN.write_text(json.dumps(plan, indent=2) + "\n")
             print(
-                "validate-plan: D-64 gate-owned placement — browser node-ids "
-                f"moved to the final task: {'; '.join(AUTO_PLACED)}",
+                "validate-plan: gate-owned placement (test_mapping/D-64) — "
+                f"node-ids moved to their acceptance task: "
+                f"{'; '.join(AUTO_PLACED)}",
                 file=sys.stderr,
             )
         return

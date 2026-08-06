@@ -662,6 +662,7 @@ rm -f "$TMP/refreeze-old-nodeids" "$TMP/refreeze-changed-files" "$TMP/refreeze-r
 # acceptance per D-65, carried-forward behavior), so this surfaces a claim
 # for the human, never a halt. changed_tests includes REMOVED node-ids —
 # filter to ids that exist in the new frozen set before running.
+rm -f .cache/redcheck-already-green
 RED_IDS=$(python3 - "$NEW" "$APPROVED/test-nodeids" <<'PYEOF'
 import json, sys
 from pathlib import Path
@@ -689,6 +690,7 @@ passed = sorted(t["nodeid"] for t in r.get("tests", [])
                 if t.get("outcome") == "passed")
 print("  red-check ran via: sandbox")
 if passed:
+    open(".cache/redcheck-already-green", "w").close()
     print("")
     print("  WARNING (D-75): delta test(s) ALREADY PASS with no implementation done:")
     for n in passed:
@@ -702,6 +704,55 @@ PYEOF
   rm -f .cache/redcheck-report.json
 else
   echo "red-before-green check (D-75): delta carries no runnable test changes — nothing to check"
+fi
+
+# --- M35: smoke checks must be RED on the pre-implementation tree ------------
+# A smoke check that passes on the tree BEFORE the milestone runs gates
+# nothing: the task can be accepted with zero implementation. testchat M35:
+# the app.js smoke check grepped three pre-existing symbols
+# (webToggle/pollStatus/queueRender) and T1 sailed through with no real
+# acceptance — the milestone's new behavior was never probed. So a NEW or
+# CHANGED smoke check must fail on the current tree. Exemptions: D-65
+# no_edit_files (their acceptance is green-on-unchanged BY CONTRACT), and a
+# re-freeze over a tree that already carries an earlier run's implementation
+# (the D-75 marker above — then the check passes for the right reason and the
+# warning is the verdict, not a halt).
+if [ "$CONTRACTS_STAGED" = "1" ] && [ -f "$IN/contracts.json" ]; then
+  NEW_SMOKE=$(python3 - "$APPROVED/contracts.json" "$IN/contracts.json" <<'PYEOF'
+import json, sys
+old = json.load(open(sys.argv[1])).get("smoke_checks", {})
+new = json.load(open(sys.argv[2])).get("smoke_checks", {})
+no_edit = set(json.load(open(sys.argv[2])).get("no_edit_files", []))
+for f, cmd in sorted(new.items()):
+    if f in no_edit:
+        continue
+    if old.get(f) != cmd:
+        print(f + "\t" + cmd)
+PYEOF
+)
+  if [ -n "$NEW_SMOKE" ]; then
+    echo "smoke red-check (M35): running new/changed smoke check(s) against the current tree..."
+    SMOKE_RED_FAIL=0
+    while IFS=$'\t' read -r _f _cmd; do
+      [ -n "$_f" ] || continue
+      if [ -n "$_cmd" ] && scripts/sandbox-run.sh -- sh -c "$_cmd" >/dev/null 2>&1; then
+        echo "  NOT RED: smoke check for $_f PASSES on the current tree — it gates nothing:"
+        echo "    $_cmd"
+        SMOKE_RED_FAIL=1
+      else
+        echo "  red as expected: $_f"
+      fi
+    done <<< "$NEW_SMOKE"
+    if [ "$SMOKE_RED_FAIL" = "1" ]; then
+      if [ -e .cache/redcheck-already-green ]; then
+        echo "  WARNING: tree already carries this delta's implementation — a passing smoke"
+        echo "  check here proves nothing about the milestone; re-verify after the run."
+      else
+        die "a staged smoke check passes on the pre-implementation tree — it gates nothing (M35: a vacuous app.js smoke check accepted T1 with zero evidence). Reauthor the check to probe the delta's new behavior so it is red before the milestone runs, or pin real tests."
+      fi
+    fi
+    rm -f .cache/redcheck-already-green
+  fi
 fi
 
 # --- Re-freeze: hash-pin every frozen artifact, bump VERSION ---

@@ -130,6 +130,13 @@
    },
    "description": "D-56: every external interface the spec makes assumptions about (third-party APIs, model output formats, wire protocols) must be declared here with a captured real response. refreeze.sh fails the freeze if a declared capture is missing. Mocks and tests derive from captures, never from the TPM's memory of how the dependency probably behaves."
   },
+  "test_mapping": {
+   "type": "object",
+   "additionalProperties": {
+    "type": "string"
+   },
+   "description": "M35 correction: the TPM's frozen declaration of behavioral ownership — maps each delta node-id to the inventory file that behaviorally owns it (one entry per node-id; the file must be in the files array). The plan gate places every pinned node-id at the task owning its pinned file, wherever the EM mapped it; placement is derived from this data, never from a heuristic or an EM interpretation. check-spec-delta.py rejects keys that are not frozen node-ids and targets outside the files array."
+  },
   "smoke_checks": {
    "type": "object",
    "additionalProperties": {

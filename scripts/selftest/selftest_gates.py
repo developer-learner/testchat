@@ -446,7 +446,7 @@ def test_browser_test_auto_placed_at_final_task(repo):
     ]
     r = run_validate(repo, plan)
     assert r.returncode == 0, r.stderr
-    assert "D-64 gate-owned placement" in r.stderr
+    assert "gate-owned placement (test_mapping/D-64)" in r.stderr
     assert "T1 -> T2" in r.stderr
     on_disk = json.loads((repo / "tasks" / "plan.json").read_text())
     placed = [t["id"] for t in on_disk["tasks"]
@@ -478,6 +478,127 @@ def test_browser_test_already_on_final_task_untouched(repo):
     on_disk = json.loads((repo / "tasks" / "plan.json").read_text())
     by_id = {t["id"]: t for t in on_disk["tasks"]}
     assert "tests/test_browser.py::test_sees_page" in by_id["T2"]["tests"]
+
+
+def test_mapping_pins_nodeid_to_owner_task(repo):
+    """M35 correction: a node-id pinned by contracts.test_mapping is
+    accepted at the task owning its pinned file, wherever the EM mapped
+    it — declared behavioral ownership is the authority, not the EM's
+    guess. The receiving task must still gate something itself (the
+    non-vacuous invariant), so a smoke check covers the emptied task."""
+    contracts = dict(CONTRACTS, smoke_checks={"src/b.py": "grep -q . src/b.py"})
+    contracts["test_mapping"] = {
+        "tests/test_b.py::test_two": "src/a.py",
+        "tests/test_a.py::test_one": "src/a.py",
+    }
+    (repo / "scripts" / ".approved" / "contracts.json").write_text(
+        json.dumps(contracts))
+    plan = good_plan()
+    plan["tasks"][1]["tests"] = [
+        "tests/test_b.py::test_two",      # mis-placed by the EM on T2
+    ]
+    r = run_validate(repo, plan)
+    assert r.returncode == 0, r.stderr
+    assert "(pinned by test_mapping)" in r.stderr
+    assert "T2 -> T1" in r.stderr
+    on_disk = json.loads((repo / "tasks" / "plan.json").read_text())
+    by_id = {t["id"]: t for t in on_disk["tasks"]}
+    assert "tests/test_b.py::test_two" in by_id["T1"]["tests"]
+    assert "tests/test_b.py::test_two" not in by_id["T2"]["tests"]
+
+
+def test_mapping_pinned_owner_outside_plan_fails(repo):
+    """A node-id pinned to a file no task owns is a spec defect: the
+    declaration says this delta must exercise a file it does not plan."""
+    contracts = dict(CONTRACTS)
+    contracts["test_mapping"] = {"tests/test_b.py::test_two": "src/nope.py"}
+    (repo / "scripts" / ".approved" / "contracts.json").write_text(
+        json.dumps(contracts))
+    r = run_validate(repo, good_plan())
+    assert r.returncode == 1
+    assert "no task in this plan owns" in r.stderr
+
+
+def test_task_gating_nothing_rejected(repo):
+    """M35 correction: a task with no mapped test and no smoke check can
+    never be proven or disproven — its acceptance is theater and a broken
+    implementation would sail through green. Rejected."""
+    plan = good_plan()
+    plan["tasks"][0]["tests"] = []
+    r = run_validate(repo, plan)
+    assert r.returncode == 1
+    assert "every task needs an acceptance signal" in r.stderr
+    assert "src/a.py" in r.stderr
+
+
+def run_spec_delta(staging, approved, repo, version=2):
+    return subprocess.run(
+        [sys.executable, str(SCRIPTS / "check-spec-delta.py"),
+         "--staging", str(staging), "--approved", str(approved),
+         "--repo", str(repo), "--current-version", str(version)],
+        cwd=repo, capture_output=True, text=True,
+    )
+
+
+@pytest.fixture
+def delta_repo(tmp_path):
+    """approved spec at v2 + a staging dir holding the v3 delta candidate."""
+    approved = tmp_path / "scripts" / ".approved"
+    approved.mkdir(parents=True)
+    staging = tmp_path / "scripts" / ".approved" / "incoming"
+    staging.mkdir()
+    (approved / "contracts.json").write_text(json.dumps({
+        "files": ["src/a.py"],
+        "changed_files": [],
+    }))
+    (approved / "test-nodeids").write_text(
+        "tests/test_a.py::test_one\n")
+    (approved / "PRD.md").write_text("# PRD\nAC-1\n")
+    return tmp_path, approved, staging
+
+
+def _stage_delta(staging, mapping):
+    (staging / "contracts.json").write_text(json.dumps({
+        "files": ["src/a.py"],
+        "changed_files": ["src/a.py"],
+        "test_mapping": mapping,
+    }))
+    (staging / "ERD-DELTA.md").write_text(
+        "## Changed acceptance criteria\nAC-1\n"
+        "## Superseded acceptance criteria\nNone\n"
+        "## Changed files\nsrc/a.py\n"
+        "## Test-to-file mapping\nAC-1 -> src/a.py\n"
+    )
+
+
+def test_spec_delta_valid_test_mapping_passes(delta_repo):
+    """A test_mapping whose keys are frozen node-ids and whose pinned
+    files are in contracts.files is well-formed."""
+    _, approved, staging = delta_repo
+    _stage_delta(staging, {"tests/test_a.py::test_one": "src/a.py"})
+    r = run_spec_delta(staging, approved, staging.parents[2])
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "behavioral"
+
+
+def test_spec_delta_mapping_unknown_nodeid_fails(delta_repo):
+    """A mapping key that is not a frozen node-id is a spec defect: the
+    gate cannot honor a placement for a test that does not exist."""
+    _, approved, staging = delta_repo
+    _stage_delta(staging, {"tests/test_a.py::test_ghost": "src/a.py"})
+    r = run_spec_delta(staging, approved, staging.parents[2])
+    assert r.returncode == 1
+    assert "unknown node-id" in r.stderr
+
+
+def test_spec_delta_mapping_file_outside_inventory_fails(delta_repo):
+    """A mapping pinned to a file outside contracts.files claims the
+    delta exercises work the freeze does not plan."""
+    _, approved, staging = delta_repo
+    _stage_delta(staging, {"tests/test_a.py::test_one": "src/nope.py"})
+    r = run_spec_delta(staging, approved, staging.parents[2])
+    assert r.returncode == 1
+    assert "not in contracts.files" in r.stderr
 
 
 def test_route_check_fails_open_on_dynamic_path(repo):
@@ -4147,7 +4268,7 @@ def test_plan_subtree_replan_one_em_call(tmp_path):
     assert "src/b.py (keep id T2)" in prompt
     assert "src/c.py (new file)" in prompt
     assert "build a" not in prompt        # carried briefs stay out of the call
-    assert "auto-placed at the DAG's final task by the gate (D-64)" in prompt
+    assert "pinned by contracts.json's test_mapping is auto-placed" in prompt
     assert "add NO depends_on edges for this" in prompt
     assert "empty contracts array" in prompt
     assert "command not found" not in r.stderr

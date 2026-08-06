@@ -105,6 +105,31 @@ def validate(staging: Path, approved: Path, repo: Path, current_version: int) ->
     missing_acs = sorted(introduced_acs - set(AC_ID.findall(text)))
     missing_files = sorted(path for path in changed_files if path not in text)
     errors: list[str] = []
+    if contract_delta:
+        incoming = load_json(staging / "contracts.json")
+        mapping = incoming.get("test_mapping", {})
+        if not isinstance(mapping, dict):
+            errors.append("contracts.test_mapping must be an object")
+        else:
+            nodeids_path = approved / "test-nodeids"
+            nodeids = {
+                line.strip()
+                for line in nodeids_path.read_text().splitlines()
+                if line.strip()
+            } if nodeids_path.is_file() else set()
+            files = set(incoming.get("files", []))
+            for node_id, pinned in sorted(mapping.items()):
+                if node_id not in nodeids:
+                    errors.append(
+                        f"contracts.test_mapping pins unknown node-id "
+                        f"{node_id} — every key must be a frozen node-id "
+                        f"in test-nodeids"
+                    )
+                if pinned not in files:
+                    errors.append(
+                        f"contracts.test_mapping pins {node_id} to "
+                        f"{pinned}, which is not in contracts.files"
+                    )
     if missing_sections:
         errors.append("missing required section(s): " + ", ".join(missing_sections))
     if missing_acs:
