@@ -119,9 +119,10 @@
         el.appendChild(c);
       }
 
-      // Enter submits, Shift+Enter inserts newline. Also auto-grow the
-      // textarea up to ~40vh so a multi-line paste (markdown blocks, code)
-      // is readable without hiding the messages behind a scrolling wall.
+      // Ctrl/Cmd+Enter submits; plain Enter and Shift+Enter keep the default
+      // newline behavior. Also auto-grow the textarea up to ~40vh so a
+      // multi-line paste (markdown blocks, code) is readable without hiding
+      // the messages behind a scrolling wall.
       function autogrow() {
         input.style.height = 'auto';
         var cap = Math.round(window.innerHeight * 0.4);
