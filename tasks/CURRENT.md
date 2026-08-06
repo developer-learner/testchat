@@ -5,6 +5,43 @@
 
 ---
 
+## State at 2026-08-04 — M34 shipped (spec v79); tree clean
+
+Verified against the tree, not from memory or a prior handoff.
+
+**Frozen spec:** v79 (`scripts/.approved/VERSION` = 79). Shipped at
+`79a2d20 [success] spec v79`. Full frozen TPM suite green against v79.
+
+**Working tree:** clean — nothing uncommitted, nothing unpushed to inherit.
+`.pipeline-state/tasks/` and `.pipeline-state/escalations/` are empty, the
+expected post-success state (D-99), not lost state.
+
+**HEAD:** `d354601 [bugfix] orchestrate: exit trap no longer flips a green run
+to exit 1` — a one-commit follow-up so a green run stops falsely exiting 1.
+
+**What M34 was.** A small 2-task delta adding the `deepseek-v4-flash-0731`
+model to the catalog, both tasks landed attempt 1:
+
+- T1 (`src/services/models.py`) — added the `deepseek-v4-flash-0731`
+  script-model registry entry.
+- T2 (`src/api/models.py`) — widened the `source` Literal unions
+  (`ModelInfo`, `CatalogEntry`, schema) to accept `"deepseek-v4-flash-0731"`.
+
+Commit trail: `b5a2769 [plan]` → `a3eefed [task T1]` → `d1714b5 [task T2]` →
+`79a2d20 [success] spec v79` → `d354601 [bugfix]`.
+
+**Open thread (not started).** The pipeline declutter/proportionality work —
+make the machinery proportional to the change, cut ceremony that never caught
+a real failure. Starting point:
+`project-trail/2026-08-04-pipeline-declutter-proportionality.md`; its plan
+item 1 (the evidence audit that gates any cut) is untouched.
+
+> The M33 T1 finding below is superseded — M33 closed out (v77, see the
+> Results block for the 2026-08-03 manual close-out) and M34 has since shipped.
+> Kept as history.
+
+---
+
 ## Finding at 2026-08-02 — M33 T1 brief is bloated (3 of 4 defects stale)
 
 Non-mutating diagnostic run outside testchat's tracked lanes:
