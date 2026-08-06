@@ -1982,6 +1982,29 @@ def test_contract_id_rule_mirrored_in_drive_plan():
     )
 
 
+def test_repair_contracts_wired_before_gate():
+    orch = ORCHESTRATE.read_text()
+    closure = ("[ -f tasks/plan.json ] && python3 scripts/validate-plan.py "
+               "--repair-closures tasks/plan.json || true")
+    contracts = ("[ -f tasks/plan.json ] && python3 scripts/validate-plan.py "
+                 "--repair-contracts tasks/plan.json || true")
+    assert contracts in orch, "repair-contracts pre-gate call site missing"
+    assert orch.count("--repair-contracts") == 1, (
+        "exactly one repair-contracts call site"
+    )
+    lines = orch.splitlines()
+    for i, ln in enumerate(lines):
+        if closure in ln:
+            assert contracts in lines[i + 1], (
+                "repair-contracts must sit directly after --repair-closures "
+                "inside ensure_plan (drive-plan extracts the whole body — the "
+                "EM_TASK_KEYS regression class)"
+            )
+            break
+    else:
+        raise AssertionError("closure pre-pass line missing")
+
+
 # --- preflight: TPM scope declaration (D-86) ---------------------------------
 # changed_files reaches the coder's editable set through --affected. An entry
 # the plan gate can never map to a task declares nothing, silently — the
