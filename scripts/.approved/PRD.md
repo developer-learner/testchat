@@ -198,7 +198,8 @@ awareness, free model selection, conflict-safe history persistence, and the loca
 
 * **AC-140:** WHEN DELETE `/api/v1/threads` omits its required non-negative
   integer `revision`, THE SYSTEM SHALL return HTTP 422 and create or change no
-  persistence artifact.
+  persistence artifact, such that the primary snapshot bytes and revision are
+  unchanged after the request.
 
 * **AC-141:** WHEN PUT `/api/v1/threads` supplies the current revision, THE
   SYSTEM SHALL replace the snapshot and return a revision exactly one greater
@@ -208,7 +209,8 @@ awareness, free model selection, conflict-safe history persistence, and the loca
 * **AC-142:** WHEN DELETE `/api/v1/threads` supplies the current revision, THE
   SYSTEM SHALL persist an empty threads array and return a revision exactly one
   greater than the supplied revision, including when the snapshot is already
-  empty.
+  empty, such that a subsequent GET returns revision n+1 with an empty threads
+  array.
 
 * **AC-143:** WHEN PUT `/api/v1/threads` supplies a stale revision, THE SYSTEM
   SHALL return HTTP 409 with exactly `{"error":"revision_conflict",
@@ -218,7 +220,8 @@ awareness, free model selection, conflict-safe history persistence, and the loca
 * **AC-144:** WHEN DELETE `/api/v1/threads` supplies a stale revision, THE
   SYSTEM SHALL return HTTP 409 with exactly `{"error":"revision_conflict",
   "current_revision":<current>}` and leave the primary and one-generation
-  backup byte-for-byte unchanged.
+  backup byte-for-byte unchanged, such that a subsequent GET still returns the
+  last-accepted snapshot and revision.
 
 * **AC-145:** WHEN two process-local mutation requests concurrently supply the
   same current revision, THE SYSTEM SHALL accept exactly one and reject the
@@ -236,7 +239,9 @@ awareness, free model selection, conflict-safe history persistence, and the loca
 
 * **AC-148:** WHEN a conflict-latched page is reloaded, THE SYSTEM SHALL
   hydrate the server's current threads and revision, clear `save-status`, and
-  allow the next user mutation to persist against that hydrated revision.
+  allow the next user mutation to persist against that hydrated revision
+  such that the next save against the hydrated revision is accepted and
+  `save-status` shows the empty state.
 
 **Additional local model — deepseek-v4-flash-0731**
 
@@ -264,6 +269,24 @@ awareness, free model selection, conflict-safe history persistence, and the loca
   (`src/api/models.py`) SHALL NOT raise a validation error, so that
   `GET /api/v1/models` and `GET /api/v1/models/catalog` can surface the new
   model once its server is discoverable.
+
+**Composer keyboard behavior**
+
+* **AC-152:** WHEN the message input has focus AND the user presses the
+  Enter key AND no IME composition is in progress, THE SYSTEM SHALL insert
+  a newline at the cursor position and SHALL NOT send the message.
+
+* **AC-153:** WHEN the message input has focus AND the user presses
+  Ctrl+Enter (or Cmd+Enter on macOS) AND no IME composition is in progress
+  AND the input contains non-whitespace text, THE SYSTEM SHALL send the
+  message through the same path as the send button.
+
+* **AC-154:** WHEN the user presses Ctrl+Enter (or Cmd+Enter on macOS)
+  while the message input is empty or whitespace-only, THE SYSTEM SHALL
+  send nothing and SHALL leave the input unchanged.
+
+* **AC-155:** THE message input's placeholder SHALL state the keyboard
+  shortcuts: "Ctrl+Enter to send, Enter for newline".
 
 ## Out of scope
 

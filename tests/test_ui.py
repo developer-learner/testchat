@@ -953,7 +953,7 @@ def test_no_loaded_model_shows_placeholder_and_send_guides(
     # bypasses the disabled submitter), which must guide, not 422.
     expect(page.get_by_test_id("send-btn")).to_be_disabled()
     page.get_by_test_id("message-input").fill("hello without a model")
-    page.get_by_test_id("message-input").press("Enter")
+    page.get_by_test_id("message-input").press("Control+Enter")
     expect(page.get_by_test_id("msg-error")).to_contain_text("Pick a model")
     expect(page.get_by_test_id("msg-user")).to_have_count(0)
 
@@ -1067,3 +1067,67 @@ def test_mid_chat_switch_updates_thread_model_and_routes_next_send(
     # reload — the switched model is persisted for this thread
     page.reload()
     expect(select).to_have_value("beta-model")
+
+
+# AC-152: plain Enter inserts a newline, never sends
+def test_message_input_plain_enter_inserts_newline_without_sending(
+    page: Page, app_url: str
+) -> None:
+    page.goto(app_url)
+    box = page.get_by_test_id("message-input")
+    box.fill("first line")
+    box.press("Enter")
+    assert box.input_value() == "first line\n", (
+        "plain Enter must insert a newline, not send"
+    )
+    expect(page.get_by_test_id("msg-user")).to_have_count(0)
+
+
+# AC-153: Ctrl+Enter sends through the send path
+def test_message_input_ctrl_enter_sends(
+    page: Page, app_url: str
+) -> None:
+    page.goto(app_url)
+    box = page.get_by_test_id("message-input")
+    box.fill("sent via ctrl enter")
+    box.press("Control+Enter")
+    expect(page.get_by_test_id("msg-user")).to_have_count(1)
+    expect(page.get_by_test_id("msg-user").first).to_contain_text(
+        "sent via ctrl enter"
+    )
+
+
+# AC-153 (macOS modifier): Cmd+Enter is the send shortcut on macOS
+def test_message_input_cmd_enter_sends(
+    page: Page, app_url: str
+) -> None:
+    page.goto(app_url)
+    box = page.get_by_test_id("message-input")
+    box.fill("sent via cmd enter")
+    box.press("Meta+Enter")
+    expect(page.get_by_test_id("msg-user")).to_have_count(1)
+
+
+# AC-154: Ctrl+Enter with empty or whitespace-only input sends nothing
+def test_message_input_ctrl_enter_empty_sends_nothing(
+    page: Page, app_url: str
+) -> None:
+    page.goto(app_url)
+    box = page.get_by_test_id("message-input")
+    box.press("Control+Enter")
+    box.fill("   ")
+    box.press("Control+Enter")
+    expect(page.get_by_test_id("msg-user")).to_have_count(0)
+
+
+# AC-155: the placeholder states the shortcuts
+def test_message_input_placeholder_states_shortcuts(
+    page: Page, app_url: str
+) -> None:
+    page.goto(app_url)
+    placeholder = page.get_by_test_id("message-input").get_attribute(
+        "placeholder"
+    )
+    assert placeholder is not None, "message-input needs a placeholder"
+    assert "Ctrl+Enter to send" in placeholder, placeholder
+    assert "Enter for newline" in placeholder, placeholder
