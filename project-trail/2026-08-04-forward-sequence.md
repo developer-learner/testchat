@@ -4,7 +4,9 @@ Sequenced next steps out of the EM-context/reliability session. Dependencies are
 real (stated per phase), not preferences. Full evidence + design:
 `project-trail/2026-08-04-em-context-scoping-proposal.md`.
 
-**First line for the next pass:** nothing moves until Phase 0 is settled.
+**First line for the next pass:** build `--repair-contracts` (Phase 3 v2) —
+deterministic DROP of unregistered contract ids; corpus-proven 58→0 in
+pre-verification; build assigned, acceptance harness ready.
 
 ## Phase 0 — Housekeeping (one decision, ~0 effort)
 - Decide `tasks/CURRENT.md` (modified at session start, not this work's; excluded
@@ -39,6 +41,34 @@ real (stated per phase), not preferences. Full evidence + design:
 - id-format / never-invent-contract-id **verbatim rules** — the 5/32 id subtype.
   Same replay harness + measure-first gate as Wave 1. Cheap.
 - **Also shrinks the Phase-5 population** — the recurring rule is the retry generator.
+- **MEASURED 2026-08-06 — rule alone FAILED (0/5).** The shipped rule (`14aa694`,
+  verbatim-id instruction + flat id list at all 4 emission sites, 2 static
+  guards) was replayed through the real EM seat (`llm-call.sh` + schema + 8192
+  budget, rule at production position): 0/5 replies passed — 2 unparseable,
+  3 invented ids anyway (`src.api.models`, `src.static.*` dotted paths,
+  `entry_point:` prefixes). Third proof of Rule 6: prose does not change model
+  behavior; deterministic beats prompt-compliance. **No backport.**
+- **Phase 3 v2 — `--repair-contracts` (deterministic DROP).** Keep the rule as a
+  cheap nudge (static-guarded, zero risk); the fix is a validator-side repair in
+  the closure-repair pattern: drop any task `contracts` entry not in
+  `contract_ids()`. `validate()` untouched and runs after — worst case fails to
+  repair, never passes a bad plan. Scope is the **unknown-id subset only**:
+  3 of 5 archived entries (004539: 1 id, 005754: 10, 235017: 6 + dup T12);
+  pre-verified 58 → 0 on the raw corpus (harness imports `contract_ids()` from
+  validate-plan.py itself; calibrated exactly against the two pure unknown-id
+  archived verdicts). **Residuals out of v1 scope:** carried-id drift (235145,
+  012624 — merge-time check) and dup task id (235017); revisit only if they
+  recur post-v2.
+- **Status:** build assigned (single committer on validate-plan.py); acceptance =
+  7-case selftest (drop-only, `entry_point:` inventions, no-op, idempotence,
+  empty-after-drop) + 5-entry deterministic replay → 0 unknown ids + full suite
+  + manifests; then orchestrate.sh wiring (repair before gate, next to
+  `--repair-closures`) + blueprint backport after green.
+- **Archive evidence (for any replay):** archived `reply.json` = the raw EM
+  reply; archived `plan.json` = the carried full plan (`cp tasks/plan.json`,
+  orchestrate.sh) — never replay `plan.json`. `test-nodeids` is not archived,
+  so full-validator replay from the archive is impossible; targeted membership
+  replay is the faithful measure.
 
 ## Phase 4 — Measure, then decide (don't build blind)
 - Re-measure the identical-retry population AFTER Phase 3. If the rules killed it →
