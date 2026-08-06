@@ -129,7 +129,7 @@
       }
       input.addEventListener('input', autogrow);
       input.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) {
           e.preventDefault();
           form.requestSubmit();
         }
