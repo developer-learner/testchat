@@ -24,6 +24,9 @@ htmlcov/
 # EM call archive (prompt+reply pairs for offline bench-testing, backlog item 6)
 .em-archive/
 
+# Phase 5 run-measurement sink (durable counters + timings copies)
+.measurement/
+
 # EM consult output — consumed and archived by the orchestrator, never committed
 tasks/diagnosis.json
 

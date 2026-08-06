@@ -57,6 +57,7 @@ TASK_STATE="$STATE_DIR/tasks"
 BRIEF_DIR="$STATE_DIR/briefs"
 LOG_DIR="$STATE_DIR/logs"
 ESC_DIR="$STATE_DIR/escalations"
+MEAS_DIR=".measurement"
 APPROVED="scripts/.approved"
 AGENT_TIMEOUT=60
 MAX_PLAN_REVISIONS="${MAX_PLAN_REVISIONS:-2}"
@@ -72,6 +73,13 @@ EM_TASK_KEYS=$(sed -n "s/^EM_TASK_KEYS='\(.*\)'$/\1/p" "$REPO/scripts/orchestrat
 # helper (both are interpolated into ensure_plan's prompts at runtime).
 EM_CONTRACT_ID_RULE=$(sed -n "s/^EM_CONTRACT_ID_RULE='\(.*\)'$/\1/p" "$REPO/scripts/orchestrate.sh")
 [ -n "$EM_CONTRACT_ID_RULE" ] || { echo "drive-plan: could not extract EM_CONTRACT_ID_RULE from orchestrate.sh" >&2; exit 65; }
+# Phase 5 instrumentation: same anti-drift mirror for meas() (ensure_plan
+# calls it; the body is a one-liner defined in orchestrate's init, so it is
+# not covered by the function extract() above). The shape check fails loudly
+# if meas stops being a one-liner of this form.
+MEAS_BODY=$(sed -n "s/^meas() { \(.*\) }$/\1/p" "$REPO/scripts/orchestrate.sh")
+[ -n "$MEAS_BODY" ] || { echo "drive-plan: could not extract meas() from orchestrate.sh" >&2; exit 65; }
+meas() { eval "$MEAS_BODY"; }
 mkdir -p "$STATE_DIR" "$TASK_STATE" "$BRIEF_DIR" "$LOG_DIR" "$ESC_DIR"
 
 die() { echo "FAIL: $*" >&2; exit 1; }

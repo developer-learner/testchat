@@ -47,24 +47,37 @@ wiped. Only .em-archive (per-EM-call) and git survive — M32/M33/M34 timing was
 reconstructed from git, not measured.
 
 **Design (monotone, write-only, zero behavior change):**
-1. **`exec` tee alternative — terminal-event capture:** the existing exit trap
-   (:249) already writes run-exit.log. Extend it: at every terminal event
-   (success, halt, die) copy `$LOG_DIR/timings.tsv` + the run's stdout capture
-   into `.measurement/<run-ts>-<outcome>.json` — a NEW gitignored dir (same
-   precedent as .em-archive, survives the .pipeline-state wipe). JSON shape:
-   spec_version, outcome, wall seconds, timings rows, counters (below).
-2. **Counters (derived from stdout lines, no new writes in the hot path):**
-   EM plan revisions, EM consults, coder calls + revisions, `closure-repair:`
-   firings, `contract-repair:` firings, SPEC-DEFECT (D-79) halts, drift halts,
-   escalations.
-3. **Identical-retry counter (Phase 4's population, captured live):** in
-   `ensure_plan`, hash the `verrs` feedback string per revision; when the hash
-   equals the previous revision's hash → `identical_retry_count++` (a
-   deterministic, model-free measure of "same rejection, re-emitted"). This is
-   Phase 4's measurement without any replay or seat compute.
-4. **Guardrail + guard:** all copies `|| true` (measurement never blocks the
-   pipeline); `.measurement/` added to .gitignore/.dockerignore; one static
-   selftest asserts the trap's .measurement copy lines exist (anti-drift).
+1. **`.measurement/` — durable sink (SHIPPED 2026-08-06, c9ea443+):** new
+   gitignored + self-ignoring dir (same pattern as .em-archive). `meas()`
+   appends one timestamped row per firing to `.measurement/counters`; a write
+   can never fail the run.
+2. **Terminal-event capture (SHIPPED):** `record_exit` (the EXIT trap, every
+   path: success/halt/die) copies `$LOG_DIR/timings.tsv` to
+   `.measurement/timings-<ts>.tsv` and appends one summary row — rc, phase,
+   task, spec version, plan revisions used, elapsed. Survives the success
+   teardown wipe.
+3. **Counters (SHIPPED, site-appended — the committed design's
+   stdout-derived variant was dropped as less robust):** `identical_retry`
+   and `spec_defect` (D-79 branch). Repair-firing counts (closure/contract)
+   are derived offline from .em-archive instead: replay each raw `reply.json`
+   through `validate-plan.py --repair-closures/--repair-contracts` in the
+   same pre-gate order; a changed plan = firing. Repair counters are NOT
+   appended in orchestrate (the static wiring guard pins exactly one
+   `--repair-contracts` call site).
+4. **Identical-retry counter (SHIPPED — Phase 4's population, captured
+   live):** in `ensure_plan`'s reject path, hash the `verrs` feedback string;
+   hash equal to the previous revision's hash → `meas identical_retry`.
+   Model-free, deterministic, no replay or seat compute. Per
+   `2026-08-06-phase4-preregistered-gate.md`, Phase 4 is **CLOSED as
+   evidence-ruled-out** (9 identical pairs/35%, 22% false-positive rate,
+   ~18 min/month saved vs 2–3 h build); this counter is the live instrument
+   for that gate's post-Phase-5 re-check (re-measure against the
+   post-Phase-5 archive, decision criteria unchanged).
+5. **Guardrails + guards (SHIPPED):** all writes `|| true`; `.measurement/`
+   in .gitignore; `test_measurement_sink_wired` statically pins the sink's
+   call sites; the exit-trap selftest now runs with meas mirror + asserts the
+   summary row is captured on clean exit; drive-plan.sh mirrors `meas` by
+   anti-drift sed (fails loudly on shape change).
 
 ## D. Pre-registered Phase 5 acceptance (after-measurement, next feature milestone)
 

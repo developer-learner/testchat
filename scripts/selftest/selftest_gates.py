@@ -1297,8 +1297,12 @@ def test_run_exit_trap_records_every_termination_path(tmp_path):
 set -euo pipefail
 STATE_DIR={state}
 LOG_DIR=$STATE_DIR/logs
+MEAS_DIR={tmp_path / ".measurement"}
 RUN_T0=$(date +%s)
 run_elapsed() {{ echo $(( $(date +%s) - RUN_T0 )); }}
+meas() {{ printf '%s\\t%s\\n' "$(date -u +%FT%TZ)" "$1" >> "$MEAS_DIR/counters" 2>/dev/null || true; }}
+plan_revisions_used() {{ echo 0; }}
+FROZEN_V=77
 
 {fn_body}
 
@@ -1315,6 +1319,8 @@ trap 'record_exit' EXIT
     assert rc == 0 and "rc=0" in log and "phase=task-T2" in log
     assert "task=src/api/threads.py" in log
     assert "coder T1 attempt 1 start" in log
+    assert (tmp_path / ".measurement" / "counters").is_file(), \
+        "measurement summary row must be captured on clean exit"
 
     # 2) uncaught error (simulates the M33 crash): rc!=0 recorded, no bundle
     (state / "logs" / "run-exit.log").unlink(missing_ok=True)
@@ -2003,6 +2009,26 @@ def test_repair_contracts_wired_before_gate():
             break
     else:
         raise AssertionError("closure pre-pass line missing")
+
+
+def test_measurement_sink_wired():
+    orch = ORCHESTRATE.read_text()
+    assert 'MEAS_DIR=".measurement"' in orch, (
+        "durable measurement sink (.measurement) must exist in orchestrate"
+    )
+    assert 'meas() { printf' in orch, "meas() helper missing"
+    assert 'meas "exit rc=$rc' in orch, (
+        "record_exit must append the terminal summary row (drift would blind "
+        "the milestone-run after-measurement)"
+    )
+    assert 'meas "identical_retry"' in orch, (
+        "identical-retry counter missing from ensure_plan reject path"
+    )
+    assert 'meas "spec_defect"' in orch, "spec-defect counter missing at D-79"
+    assert "plan-feedback-hash" in orch, "feedback fingerprint state missing"
+    assert '"$MEAS_DIR/timings-$(date -u +%FT%TZ).tsv"' in orch, (
+        "timings copy missing from record_exit"
+    )
 
 
 # --- preflight: TPM scope declaration (D-86) ---------------------------------

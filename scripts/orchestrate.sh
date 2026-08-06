@@ -125,6 +125,17 @@ mkdir -p "$ARCHIVE_DIR"
 [ -f "$ARCHIVE_DIR/.gitignore" ] || printf '*\n' > "$ARCHIVE_DIR/.gitignore"
 LAST_ARCHIVE_ENTRY=""
 
+# Durable run-measurement sink (Phase 5 instrumentation, 2026-08-06): one
+# timestamped row per firing in .measurement/counters. Survives the success
+# teardown's rm -rf .pipeline-state (timings.tsv is wiped with it). Pure
+# capture — nothing reads it during a run, and a write can never fail the run.
+# Same self-ignoring pattern as .em-archive so it never surfaces in the
+# clean-tree pre-flight.
+MEAS_DIR=".measurement"
+mkdir -p "$MEAS_DIR" 2>/dev/null || true
+[ -f "$MEAS_DIR/.gitignore" ] || printf '*\n' > "$MEAS_DIR/.gitignore" 2>/dev/null || true
+meas() { printf '%s\t%s\n' "$(date -u +%FT%TZ)" "$1" >> "$MEAS_DIR/counters" 2>/dev/null || true; }
+
 die() { echo "FAIL: $*" >&2; exit 1; }
 
 # Single-writer lock on the state dir. Every counter in .pipeline-state/
@@ -266,6 +277,18 @@ record_exit() {
       "$(date -u +%FT%TZ)" "$rc" "${phase:-<none>}" "${task:-<none>}" \
       "$(run_elapsed)" "${last_ts:-<none>}" \
       >> "$LOG_DIR/run-exit.log"
+  fi
+  # Phase 5 instrumentation (2026-08-06): durable terminal-event capture. The
+  # success teardown wipes .pipeline-state BEFORE this EXIT trap fires, so
+  # copy timings.tsv here and append one summary row (spec version, exit code,
+  # phase, task, revisions used, elapsed) — the run's after-measurement
+  # record. Guarded: measurement can never fail the run or alter its exit
+  # code.
+  mkdir -p "$MEAS_DIR" 2>/dev/null || true
+  if [ -d "$MEAS_DIR" ]; then
+    [ -f "$LOG_DIR/timings.tsv" ] \
+      && cp "$LOG_DIR/timings.tsv" "$MEAS_DIR/timings-$(date -u +%FT%TZ).tsv" 2>/dev/null || true
+    meas "exit rc=$rc phase=${phase:-<none>} task=${task:-<none>} spec=${FROZEN_V:-unknown} revisions=$(plan_revisions_used) elapsed=$(run_elapsed)s"
   fi
   return $rc
 }
@@ -953,6 +976,20 @@ ensure_plan() {
       verrs="$subtree_feedback"
       subtree_feedback=""
     fi
+    # Phase 4 re-check instrument (2026-08-06): identical plan-gate rejection
+    # across consecutive revisions — hash the feedback string; equal hash =
+    # the EM was handed the same rejection again. Model-free, deterministic;
+    # lands in the durable .measurement counter log, which survives the
+    # success teardown that wipes .pipeline-state. Phase 4 closed as
+    # evidence-ruled-out on archive replay; this is the live post-Phase-5
+    # population for the re-check.
+    local fb_hash prior_hash
+    fb_hash=$(printf '%s' "$verrs" | shasum -a 256 | cut -c1-16)
+    prior_hash=$(read_state plan-feedback-hash)
+    write_state plan-feedback-hash "$fb_hash"
+    if [ -n "$prior_hash" ] && [ "$prior_hash" = "$fb_hash" ]; then
+      meas "identical_retry"
+    fi
     if [ -n "${LAST_ARCHIVE_ENTRY:-}" ] && [ -d "$LAST_ARCHIVE_ENTRY" ]; then
       printf 'plan_gate=rejected\nplan_gate_errors=%s\n' \
         "$(printf '%s' "$verrs" | tr '\n' ' ')" >> "$LAST_ARCHIVE_ENTRY/meta.txt"
@@ -978,6 +1015,7 @@ ensure_plan() {
         echo "gate would reject EVERY decomposition. Swapping or escalating the"
         echo "EM cannot fix this; the delta below belongs to the TPM."
         echo "$audit"
+        meas "spec_defect"
         package_escalation "spec-defect" "SPEC-DEFECT" "plan gate rejected $revs consecutive EM plans; last validator output:
 $verrs
 
