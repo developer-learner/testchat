@@ -1947,6 +1947,41 @@ def test_plan_valid_first_emit_needs_no_rung(tmp_path):
     assert "SPEC DEFECT" not in r.stdout, r.stdout
 
 
+# --- Phase 3: verbatim contract-id rule (bash prompt text, static guard) ------
+# 5 of 32 archived plan-gate rejections were invented contract ids — dotted
+# path guesses like "src.api.models" for "src/api/models.py", all in subtree
+# re-plans. The never-invent rule existed in prose but was inoperative; the
+# shell now prints the flat verbatim id list (contract_ids) next to the rule
+# at every plan-emission site. These guards keep all four sites and the
+# drive-plan.sh mirror intact — a dropped site is a silent regression, and
+# the same set -u trap that caught EM_TASK_KEYS would fire if the mirror
+# went missing (the drive-plan tests above exercise the rule at runtime).
+
+ORCHESTRATE = SCRIPTS / "orchestrate.sh"
+DRIVE_PLAN_SH = SCRIPTS / "selftest" / "drive-plan.sh"
+
+
+def test_contract_id_rule_present_at_all_plan_sites():
+    orch = ORCHESTRATE.read_text()
+    assert "EM_CONTRACT_ID_RULE=" in orch, "rule var missing"
+    assert "contract_ids() {" in orch, "id-list helper missing"
+    assert orch.count("$EM_CONTRACT_ID_RULE") == 4, (
+        "rule must appear at all 4 plan-emission sites"
+    )
+    assert orch.count("$(contract_ids)") == 4, (
+        "verbatim id list must be injected at all 4 plan-emission sites"
+    )
+    assert "never convert a file path to dotted form" in orch
+
+
+def test_contract_id_rule_mirrored_in_drive_plan():
+    dp = DRIVE_PLAN_SH.read_text()
+    assert "EM_CONTRACT_ID_RULE=" in dp, "drive-plan mirror missing"
+    assert 'eval "$(extract contract_ids)"' in dp, (
+        "contract_ids helper must be extracted in drive-plan"
+    )
+
+
 # --- preflight: TPM scope declaration (D-86) ---------------------------------
 # changed_files reaches the coder's editable set through --affected. An entry
 # the plan gate can never map to a task declares nothing, silently — the

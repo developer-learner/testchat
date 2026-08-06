@@ -68,6 +68,10 @@ FROZEN_V=$(cat "$APPROVED/VERSION")
 # assignment shape changes.
 EM_TASK_KEYS=$(sed -n "s/^EM_TASK_KEYS='\(.*\)'$/\1/p" "$REPO/scripts/orchestrate.sh")
 [ -n "$EM_TASK_KEYS" ] || { echo "drive-plan: could not extract EM_TASK_KEYS from orchestrate.sh" >&2; exit 65; }
+# Phase 3: same anti-drift mirror for the contract-id rule and the id-list
+# helper (both are interpolated into ensure_plan's prompts at runtime).
+EM_CONTRACT_ID_RULE=$(sed -n "s/^EM_CONTRACT_ID_RULE='\(.*\)'$/\1/p" "$REPO/scripts/orchestrate.sh")
+[ -n "$EM_CONTRACT_ID_RULE" ] || { echo "drive-plan: could not extract EM_CONTRACT_ID_RULE from orchestrate.sh" >&2; exit 65; }
 mkdir -p "$STATE_DIR" "$TASK_STATE" "$BRIEF_DIR" "$LOG_DIR" "$ESC_DIR"
 
 die() { echo "FAIL: $*" >&2; exit 1; }
@@ -92,6 +96,7 @@ extract() {
 eval "$(extract build_context)"
 eval "$(extract em_call)"
 eval "$(extract check_budget)"
+eval "$(extract contract_ids)"
 eval "$(extract plan_revisions_used)"
 eval "$(extract plan_subtree_prepare)"
 eval "$(extract ensure_plan)"
