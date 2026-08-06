@@ -519,6 +519,12 @@ PYEOF
   )
 fi
 
+# Pre-apply snapshot of the frozen contracts: the M35 smoke red-check
+# compares against THIS, not against the installed copy (which by the time
+# the check runs has already been overwritten by the apply).
+mkdir -p .pipeline-state
+cp "$APPROVED/contracts.json" .pipeline-state/refreeze-old-contracts.json 2>/dev/null || true
+
 # --- Approval gate ---
 # D-95 auto (default): every mechanical preflight above already died on hard
 # failure — reaching this line means the artifact IS approved by the gates
@@ -718,7 +724,7 @@ fi
 # (the D-75 marker above — then the check passes for the right reason and the
 # warning is the verdict, not a halt).
 if [ "$CONTRACTS_STAGED" = "1" ] && [ -f "$IN/contracts.json" ]; then
-  NEW_SMOKE=$(python3 - "$APPROVED/contracts.json" "$IN/contracts.json" <<'PYEOF'
+  NEW_SMOKE=$(python3 - ".pipeline-state/refreeze-old-contracts.json" "$IN/contracts.json" <<'PYEOF'
 import json, sys
 old = json.load(open(sys.argv[1])).get("smoke_checks", {})
 new = json.load(open(sys.argv[2])).get("smoke_checks", {})

@@ -3754,11 +3754,16 @@ def freezable_repo(tmp_path):
         "spec_artifacts.py",
         "check-spec-delta.py",
         "check-ac-postconditions.py",
+        "validate-plan.py",
     ):
         target = tmp_path / "scripts" / name
         target.write_bytes((SCRIPTS / name).read_bytes())
         if name.endswith(".sh"):
             target.chmod(0o755)
+    schemas = tmp_path / "scripts" / "schemas"
+    schemas.mkdir()
+    (schemas / "contracts.schema.json").write_bytes(
+        (SCRIPTS / "schemas" / "contracts.schema.json").read_bytes())
     sandbox = tmp_path / "scripts" / "sandbox-run.sh"
     sandbox.write_text(
         "#!/usr/bin/env bash\n"
@@ -3840,6 +3845,51 @@ def test_refreeze_redcheck_runs_only_in_sandbox(freezable_repo):
     assert "INCONCLUSIVE" not in r.stdout, r.stdout
     assert "ALREADY PASS" in r.stdout, r.stdout
     assert "test_param" in r.stdout, r.stdout
+
+
+def _stage_contracts_smoke(repo, cmd):
+    """Stage a contracts change (v2) adding one smoke check; returns the
+    approve-path result for the staged freeze. src/app.py exists with a
+    pre-existing symbol, mirroring the M35 shape (a file in the inventory
+    whose current content must NOT satisfy the check)."""
+    approved = repo / "scripts" / ".approved"
+    (repo / "src").mkdir(exist_ok=True)
+    (repo / "src" / "app.py").write_text(
+        "def preexisting():\n    pass\n")
+    contracts = json.loads((approved / "contracts.json").read_text())
+    contracts["erd_version"] = 2
+    contracts["smoke_checks"] = {"src/app.py": cmd}
+    contracts["changed_files"] = []
+    (approved / "incoming" / "contracts.json").write_text(
+        json.dumps(contracts))
+    return _run_refreeze_approve(repo)
+
+
+def test_refreeze_smoke_check_must_be_red_on_unchanged_tree(freezable_repo):
+    """M35 correction: a staged smoke check that PASSES on the
+    pre-implementation tree gates nothing — a task could be accepted with
+    zero evidence (the app.js webToggle/pollStatus/queueRender check). The
+    freeze must fail. The staged delta test is genuinely red (assert False)
+    so the D-75 already-implemented exemption cannot mask the defect."""
+    incoming = freezable_repo / "scripts" / ".approved" / "incoming" / "tests"
+    (incoming / "test_delta.py").write_text(
+        "def test_red_probe():\n    assert False\n")
+    r = _stage_contracts_smoke(
+        freezable_repo,
+        "grep -q 'def preexisting' src/app.py")
+    assert r.returncode != 0, r.stdout
+    assert "gates nothing" in r.stderr, r.stderr
+    assert "NOT RED" in r.stdout, r.stdout
+
+
+def test_refreeze_smoke_check_red_on_unchanged_tree_passes(freezable_repo):
+    """A smoke check that fails on the pre-implementation tree (the file it
+    probes does not exist yet) is a real gate — the freeze proceeds."""
+    r = _stage_contracts_smoke(
+        freezable_repo,
+        "grep -q 'def not_implemented_yet' src/app.py")
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "red as expected" in r.stdout, r.stdout
 
 
 def test_refreeze_identical_staged_test_does_not_widen_delta(freezable_repo):
