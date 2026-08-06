@@ -3,7 +3,8 @@ Unit-level oracle for src/services/models.py in isolation, independent of
 the HTTP route layer. Observes ONLY contracts.entry_points: src.services.models
 (bare) and the colon-qualified list_models / load_nemotron / unload_nemotron /
 is_nemotron_loaded / load_script_model / unload_script_model /
-is_script_model_loaded symbols.
+is_script_model_loaded symbols, plus src.api.models:ModelInfo and
+src.api.models:CatalogEntry for the response-schema acceptance check (AC-151).
 
 M29 (v58) re-cut. The process-lifecycle criteria are now stated as outcomes
 (AC-102..AC-106), so their tests assert reachability transitions against REAL
@@ -15,8 +16,6 @@ Mock-based tests are retained only where the criterion is genuinely about a
 call being made (e.g. "does not spawn a second instance"), never where it is
 about a resource reaching a state.
 """
-import json
-import os
 import socket
 import subprocess
 import sys
@@ -26,6 +25,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import src.services.models as models_mod
+from src.api.models import CatalogEntry, ModelInfo
 
 # A minimal OpenAI-compatible readiness server: 200 on any GET.
 _SERVER_SRC = (
@@ -235,100 +235,28 @@ def test_registry_contains_expected_script_models():
         "deepseek-v4-flash",
         "deepseek-v4-flash-0731",
     }
+    entry = models_mod.SCRIPT_MODELS["deepseek-v4-flash"]
+    assert entry["chat_endpoint"].endswith("/v1/chat/completions")
+    assert entry["ready_url"].endswith("/v1/models")
+    assert entry["command"] == ["/Users/arc.elixir/dev/ds4/run-server.sh"]
 
-    existing = models_mod.SCRIPT_MODELS["deepseek-v4-flash"]
-    assert existing["chat_endpoint"].endswith("/v1/chat/completions")
-    assert existing["ready_url"].endswith("/v1/models")
-    assert existing["command"] == ["/Users/arc.elixir/dev/ds4/run-server.sh"]
+    entry_0731 = models_mod.SCRIPT_MODELS["deepseek-v4-flash-0731"]
+    assert entry_0731["id"] == "deepseek-v4-flash-0731"
+    assert entry_0731["chat_endpoint"].endswith("/v1/chat/completions")
+    assert entry_0731["ready_url"].endswith("/v1/models")
+    assert entry_0731["command"] == ["/Users/arc.elixir/dev/ds4/run-server-0731.sh"]
+    assert entry_0731["base_url"] == "http://127.0.0.1:8005"
 
-    entry = models_mod.SCRIPT_MODELS["deepseek-v4-flash-0731"]
-    assert entry["base_url"] == "http://127.0.0.1:8002"
-    assert entry["ready_url"] == "http://127.0.0.1:8002/v1/models"
-    assert entry["chat_endpoint"] == (
-        "http://127.0.0.1:8002/v1/chat/completions"
+
+def test_registry_0731_source_string_is_accepted_by_response_schema():
+    # AC-151: the model-list response schemas accept the new source string, so
+    # GET /api/v1/models and /api/v1/models/catalog can surface the 0731 model.
+    info = ModelInfo(id="deepseek-v4-flash-0731", source="deepseek-v4-flash-0731")
+    catalog = CatalogEntry(
+        id="deepseek-v4-flash-0731", source="deepseek-v4-flash-0731", loaded=False
     )
-    assert entry["command"] == [
-        "/Users/arc.elixir/dev/ds4/ds4-server",
-        "--model",
-        "/Users/arc.elixir/.lmstudio/models/jmilnz/"
-        "DeepSeek-V4-Flash-0731-antirez-ds4-GGUF/"
-        "DeepSeek-V4-Flash-0731-Layers37-42Q4K-mixed-realimatrix-v2.gguf",
-        "--ctx",
-        "100000",
-        "--kv-disk-dir",
-        "/Users/arc.elixir/.ds4/server-kv-0731",
-        "--kv-disk-space-mb",
-        "16384",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        "8002",
-    ]
-
-
-def test_deepseek_0731_environment_overrides_are_isolated():
-    env = os.environ.copy()
-    env["DS4_0731_URL"] = "http://127.0.0.1:9902"
-    env["DS4_0731_MODEL_PATH"] = "/tmp/fake-0731.gguf"
-    code = (
-        "import json\n"
-        "from src.services.models import SCRIPT_MODELS\n"
-        "print(json.dumps(SCRIPT_MODELS['deepseek-v4-flash-0731']))\n"
-    )
-    completed = subprocess.run(
-        [sys.executable, "-c", code],
-        check=True,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    entry = json.loads(completed.stdout)
-
-    assert entry["base_url"] == "http://127.0.0.1:9902"
-    assert entry["ready_url"] == "http://127.0.0.1:9902/v1/models"
-    assert entry["chat_endpoint"] == (
-        "http://127.0.0.1:9902/v1/chat/completions"
-    )
-    assert entry["command"][0] == "/Users/arc.elixir/dev/ds4/ds4-server"
-    assert entry["command"][entry["command"].index("--model") + 1] == (
-        "/tmp/fake-0731.gguf"
-    )
-    assert entry["command"][entry["command"].index("--host") + 1] == (
-        "127.0.0.1"
-    )
-    assert entry["command"][entry["command"].index("--port") + 1] == "8002"
-
-
-def test_deepseek_0731_catalog_visibility_and_readiness_are_independent(
-    monkeypatch,
-):
-    old_id = "deepseek-v4-flash"
-    new_id = "deepseek-v4-flash-0731"
-    old_ready = models_mod.SCRIPT_MODELS[old_id]["ready_url"]
-    new_ready = models_mod.SCRIPT_MODELS[new_id]["ready_url"]
-    ready_url = old_ready
-
-    monkeypatch.setattr(models_mod, "list_models", lambda: [])
-
-    def fake_get(url, *args, **kwargs):
-        if url == ready_url:
-            response = MagicMock()
-            response.status_code = 200
-            return response
-        raise models_mod.httpx.ConnectError("not running")
-
-    monkeypatch.setattr(models_mod.httpx, "get", fake_get)
-
-    catalog = {m["id"]: m for m in models_mod.list_model_catalog()}
-    assert old_id in catalog
-    assert new_id in catalog
-    assert catalog[old_id]["loaded"] is True
-    assert catalog[new_id]["loaded"] is False
-
-    ready_url = new_ready
-    catalog = {m["id"]: m for m in models_mod.list_model_catalog()}
-    assert catalog[old_id]["loaded"] is False
-    assert catalog[new_id]["loaded"] is True
+    assert info.source == "deepseek-v4-flash-0731"
+    assert catalog.source == "deepseek-v4-flash-0731"
 
 
 def test_load_nemotron_expands_script_path(monkeypatch):
@@ -505,35 +433,6 @@ def test_load_refuses_when_the_other_model_cannot_be_evicted(script_model, monke
     assert not _reachable(requested_port), (
         "AC-104: the requested model must not have been spawned"
     )
-
-
-@pytest.mark.parametrize(
-    ("running_id", "requested_id"),
-    [
-        ("nemotron", "deepseek-v4-flash-0731"),
-        ("deepseek-v4-flash", "deepseek-v4-flash-0731"),
-        ("deepseek-v4-flash-0731", "nemotron"),
-        ("deepseek-v4-flash-0731", "deepseek-v4-flash"),
-    ],
-)
-def test_deepseek_0731_mutual_eviction_is_bidirectional(
-    script_model, spawned, running_id, requested_id
-):
-    running_port = script_model(running_id)
-    requested_port = script_model(requested_id)
-    spawned(running_port)
-    _simulate_process_restart()
-
-    try:
-        result = models_mod.load_script_model(requested_id)
-        assert not _reachable(running_port), (
-            f"AC-154: {running_id} remained reachable before {requested_id} "
-            "was spawned"
-        )
-        assert result["status"] == "loaded"
-        assert _reachable(requested_port)
-    finally:
-        models_mod.unload_script_model(requested_id)
 
 
 def test_load_is_idempotent_when_already_running(script_model, spawned):

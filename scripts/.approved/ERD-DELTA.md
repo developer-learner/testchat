@@ -41,6 +41,19 @@ the IME `isComposing` guard. No other behavior in the file changes.
 Update the message-input placeholder text to "Type a message... (Ctrl+Enter
 to send, Enter for newline)".
 
+### Frozen-suite restoration (install correction for v80)
+
+The initial v80 install accidentally carried four stale M34-draft test
+artifacts — a pre-existing `.tpm/outbox/tests/` directory was staged
+alongside the M35 bundle. This freeze corrects the install:
+`test_chat_model_routing.py`, `test_models_api.py`, and
+`test_models_service.py` are restored to their v79-frozen bytes, which
+restores the AC-151 response-schema acceptance coverage that the draft had
+dropped (the draft also carried an undeclared AC-154-labeled assertion
+string, dropped with the restoration); `tests/test_ui_model_0731.py` is
+retired via the REMOVED staging mechanism — it had no v79 lineage.
+`tests/test_ui.py` is unchanged from the M35 bundle.
+
 ## Test-to-file mapping
 
 - `test_message_input_plain_enter_inserts_newline_without_sending` — pins

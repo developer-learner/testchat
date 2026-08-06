@@ -171,24 +171,6 @@ def test_list_models_omits_nemotron_when_not_loaded(client, monkeypatch):
     assert "nemotron" not in [m["id"] for m in resp.json()["models"]]
 
 
-def test_deepseek_0731_catalog_is_visible_while_unloaded(client, monkeypatch):
-    def unreachable(*args, **kwargs):
-        raise models_mod.httpx.ConnectError("connection refused")
-
-    monkeypatch.setattr(models_mod.httpx, "get", unreachable)
-
-    resp = client.get("/api/v1/models/catalog")
-
-    assert resp.status_code == 200
-    catalog = {m["id"]: m for m in resp.json()["models"]}
-    assert "deepseek-v4-flash" in catalog
-    assert catalog["deepseek-v4-flash-0731"] == {
-        "id": "deepseek-v4-flash-0731",
-        "source": "deepseek-v4-flash-0731",
-        "loaded": False,
-    }
-
-
 # ---------------------------------------------------------------------------
 # Load routes
 # ---------------------------------------------------------------------------
@@ -224,25 +206,6 @@ def test_load_deepseek_via_generic_endpoint(client, script_model):
     assert resp.status_code == 200
     assert resp.json()["status"] == "loaded"
     assert _reachable(port)
-
-
-def test_deepseek_0731_generic_load_and_unload_lifecycle(client, script_model):
-    model_id = "deepseek-v4-flash-0731"
-    port = script_model(model_id)
-
-    try:
-        loaded = client.post(f"/api/v1/script-models/{model_id}/load")
-        assert loaded.status_code == 200
-        assert loaded.json()["status"] == "loaded"
-        assert _reachable(port)
-
-        _simulate_process_restart()
-        unloaded = client.post(f"/api/v1/script-models/{model_id}/unload")
-        assert unloaded.status_code == 200
-        assert unloaded.json()["status"] == "unloaded"
-        assert _wait_until(lambda: not _reachable(port))
-    finally:
-        models_mod.unload_script_model(model_id)
 
 
 def test_nemotron_load_alias_matches_generic_endpoint(client, monkeypatch):
