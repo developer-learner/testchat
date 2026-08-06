@@ -423,6 +423,63 @@ def test_route_test_mapped_to_claiming_task_passes(repo):
     assert r.returncode == 0, r.stderr
 
 
+def test_browser_test_auto_placed_at_final_task(repo):
+    """M35: a browser (Playwright-importing) test mapped to a NON-final task
+    is moved to the DAG's final task by the gate, not rejected — the
+    placement is deterministic, so it is gate-owned (D-64). The fix is
+    written back to tasks/plan.json so downstream readers see it."""
+    (repo / "tests").mkdir()
+    (repo / "tests" / "test_browser.py").write_text(
+        "from playwright.sync_api import sync_playwright\n"
+        "def test_sees_page():\n"
+        "    assert True\n"
+    )
+    (repo / "scripts" / ".approved" / "test-nodeids").write_text(
+        "tests/test_a.py::test_one\n"
+        "tests/test_b.py::test_two\n"
+        "tests/test_browser.py::test_sees_page\n"
+    )
+    plan = good_plan()
+    plan["tasks"][0]["tests"] = [
+        "tests/test_a.py::test_one",
+        "tests/test_browser.py::test_sees_page",
+    ]
+    r = run_validate(repo, plan)
+    assert r.returncode == 0, r.stderr
+    assert "D-64 gate-owned placement" in r.stderr
+    assert "T1 -> T2" in r.stderr
+    on_disk = json.loads((repo / "tasks" / "plan.json").read_text())
+    placed = [t["id"] for t in on_disk["tasks"]
+              if "tests/test_browser.py::test_sees_page" in t["tests"]]
+    assert placed == ["T2"]
+    assert "tests/test_browser.py::test_sees_page" not in on_disk["tasks"][0]["tests"]
+
+
+def test_browser_test_already_on_final_task_untouched(repo):
+    """A browser test already mapped to the final task is left alone."""
+    (repo / "tests").mkdir()
+    (repo / "tests" / "test_browser.py").write_text(
+        "from playwright.sync_api import sync_playwright\n"
+        "def test_sees_page():\n"
+        "    assert True\n"
+    )
+    (repo / "scripts" / ".approved" / "test-nodeids").write_text(
+        "tests/test_a.py::test_one\n"
+        "tests/test_b.py::test_two\n"
+        "tests/test_browser.py::test_sees_page\n"
+    )
+    plan = good_plan()
+    plan["tasks"][1]["tests"] = [
+        "tests/test_b.py::test_two",
+        "tests/test_browser.py::test_sees_page",
+    ]
+    r = run_validate(repo, plan)
+    assert r.returncode == 0, r.stderr
+    on_disk = json.loads((repo / "tasks" / "plan.json").read_text())
+    by_id = {t["id"]: t for t in on_disk["tasks"]}
+    assert "tests/test_browser.py::test_sees_page" in by_id["T2"]["tests"]
+
+
 def test_route_check_fails_open_on_dynamic_path(repo):
     """A dynamically-built path is invisible to the AST scan — no false fire."""
     route_repo(repo, (
@@ -4090,8 +4147,8 @@ def test_plan_subtree_replan_one_em_call(tmp_path):
     assert "src/b.py (keep id T2)" in prompt
     assert "src/c.py (new file)" in prompt
     assert "build a" not in prompt        # carried briefs stay out of the call
-    assert "Playwright-importing test file" in prompt
-    assert "MERGED plan (D-64)" in prompt
+    assert "auto-placed at the DAG's final task by the gate (D-64)" in prompt
+    assert "add NO depends_on edges for this" in prompt
     assert "empty contracts array" in prompt
     assert "command not found" not in r.stderr
     merged = json.loads((work / "tasks" / "plan.json").read_text())
