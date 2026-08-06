@@ -2365,7 +2365,8 @@ def test_plan_gate_brief_overflow_names_erd_mass(tmp_path):
 
 def refreeze_scripts(repo):
     for name in ("validate-plan.py", "check-test-surface.py",
-                 "check-swallowed-errors.py", "check-spec-delta.py"):
+                 "check-swallowed-errors.py", "check-spec-delta.py",
+                 "check-ac-postconditions.py"):
         (repo / "scripts" / name).write_bytes((SCRIPTS / name).read_bytes())
     (repo / "scripts" / ".approved" / "incoming"
      / "ERD-DELTA.md").write_text(VALID_ERD_DELTA)
@@ -3574,6 +3575,7 @@ def freezable_repo(tmp_path):
         "check-test-surface.py",
         "spec_artifacts.py",
         "check-spec-delta.py",
+        "check-ac-postconditions.py",
     ):
         target = tmp_path / "scripts" / name
         target.write_bytes((SCRIPTS / name).read_bytes())
@@ -4341,6 +4343,82 @@ def test_refreeze_docs_only_retires_previous_erd_delta(freezable_repo):
     assert r.returncode == 0, (r.stdout, r.stderr)
     assert not (approved / "ERD-DELTA.md").exists()
     assert "ERD-DELTA.md" not in (approved / "frozen-manifest").read_text()
+
+
+def test_refreeze_byte_identical_test_excluded_from_delta(freezable_repo):
+    """S4: a whole-suite TPM return re-stages a byte-identical test file.
+    The byte-identical filter must exclude it from the delta — M33's subtree
+    invalidation re-executed completed tasks because restaged identical tests
+    widened changed_tests."""
+    approved = freezable_repo / "scripts" / ".approved"
+    existing = (freezable_repo / "tests" / "test_carried.py").read_text()
+    (approved / "incoming" / "tests" / "test_carried.py").write_text(existing)
+    r = _run_refreeze_diff(freezable_repo)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "test_carried" not in r.stdout, (
+        "byte-identical restaged test appeared in the diff — "
+        "the M33 subtree-invalidation class is not guarded"
+    )
+
+
+def test_refreeze_rejects_ac_without_postcondition(freezable_repo):
+    """S5: a staged PRD carrying a state-changing AC without a 'such that'
+    post-condition clause must halt the freeze."""
+    approved = freezable_repo / "scripts" / ".approved"
+    (approved / "incoming" / "PRD.md").write_text(
+        "# Product Requirements\n\n"
+        "## Features\n\n"
+        "- AC-50: WHEN the admin clicks unload, the system SHALL terminate "
+        "the process and return {status: unloaded}\n"
+    )
+    (approved / "incoming" / "ERD-DELTA.md").write_text(
+        "# Current milestone\n\n"
+        "## Changed acceptance criteria\n\nAC-50\n\n"
+        "## Superseded acceptance criteria\n\nNone.\n\n"
+        "## Changed files\n\n- src/app.py\n\n"
+        "## Test-to-file mapping\n\nNo new mapping.\n"
+    )
+    r = _run_refreeze_diff(freezable_repo)
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    combined = r.stdout + r.stderr
+    assert "S5" in combined
+    assert "AC-50" in combined
+
+
+def test_refreeze_accepts_ac_with_postcondition(freezable_repo):
+    """S5: a state-changing AC with a 'such that' clause passes the lint."""
+    approved = freezable_repo / "scripts" / ".approved"
+    (approved / "incoming" / "PRD.md").write_text(
+        "# Product Requirements\n\n"
+        "## Features\n\n"
+        "- AC-50: WHEN the admin clicks unload, the system SHALL terminate "
+        "the process such that the health endpoint returns 503\n"
+    )
+    (approved / "incoming" / "ERD-DELTA.md").write_text(
+        "# Current milestone\n\n"
+        "## Changed acceptance criteria\n\nAC-50\n\n"
+        "## Superseded acceptance criteria\n\nNone.\n\n"
+        "## Changed files\n\n- src/app.py\n\n"
+        "## Test-to-file mapping\n\nNo new mapping.\n"
+    )
+    r = _run_refreeze_diff(freezable_repo)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+
+
+def test_refreeze_warns_oversized_erd_section(freezable_repo):
+    """S7: an ERD section exceeding 1200 chars produces an advisory warning
+    but does not halt the freeze."""
+    approved = freezable_repo / "scripts" / ".approved"
+    big_section = "x " * 700  # 1400 chars
+    (approved / "incoming" / "ERD.md").write_text(
+        "# ERD\n\n"
+        "## Small section\n\nShort content.\n\n"
+        f"## Oversized section\n\n{big_section}\n"
+    )
+    r = _run_refreeze_diff(freezable_repo)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "WARNING (S7)" in r.stdout
+    assert "Oversized section" in r.stdout
 
 
 def test_tpm_shuttle_carries_erd_delta_end_to_end(tmp_path):

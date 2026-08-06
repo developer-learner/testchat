@@ -231,6 +231,22 @@ if [ "$SPEC_DELTA_KIND" = "nonbehavioral" ] \
   RETIRE_ERD_DELTA=1
 fi
 
+# --- S5: state-changing ACs must carry post-condition clauses -----------
+# The M29 defect class: ACs specifying mechanisms ("SIGINT the process")
+# without observable postconditions ("such that the health endpoint returns
+# 503") produce tests that cannot fail and implementations that can fail
+# silently (5 of 8 process-lifecycle ACs; correction log 2026-07-25). Any
+# staged PRD or ERD-DELTA carrying a state-changing AC without a "such that"
+# clause is rejected before it enters the frozen spec.
+S5_FILES=""
+for _s5f in PRD.md ERD-DELTA.md; do
+  [ -f "$IN/$_s5f" ] && S5_FILES="$S5_FILES $IN/$_s5f"
+done
+if [ -n "$S5_FILES" ]; then
+  python3 scripts/check-ac-postconditions.py $S5_FILES \
+    || die "S5 rejected: state-changing AC(s) without 'such that' post-condition clause — every AC that spawns/terminates/kills/unloads/evicts/deletes/releases/clears/cancels MUST name an observable check"
+fi
+
 # --- Sanity-check incoming contracts against the schema's structural core ---
 if [ -f "$IN/contracts.json" ]; then
   python3 - "$IN/contracts.json" "$NEW" <<'PYEOF' || exit 1
@@ -431,6 +447,36 @@ if [ -n "$SWEEP_FILES" ]; then
     echo "$SWEEP_OUT" | sed 's/^/    /'
   fi
 fi
+
+# --- S7: ERD section size advisory (brief overrun warning) ---------------
+# An ERD section exceeding 1200 chars will likely overflow MAX_BRIEF_CHARS
+# (2500) downstream when the EM builds the plan brief. Advisory, not a halt:
+# the right response may be to restructure, split, or accept the risk — a
+# TPM call. Fires only on staged files (the approved copy was checked at
+# its own freeze).
+for _s7f in ERD.md ERD-DELTA.md; do
+  [ -f "$IN/$_s7f" ] || continue
+  _S7_OUT=$(python3 - "$IN/$_s7f" 1200 <<'PYS7'
+import re, sys
+path, limit = sys.argv[1], int(sys.argv[2])
+text = open(path).read()
+parts = re.split(r"^(## .+)$", text, flags=re.MULTILINE)
+for i in range(1, len(parts), 2):
+    body = parts[i + 1] if i + 1 < len(parts) else ""
+    chars = len(body.strip())
+    if chars > limit:
+        print(f"  {parts[i].strip()}: {chars} chars (threshold {limit})")
+PYS7
+  )
+  if [ -n "$_S7_OUT" ]; then
+    echo ""
+    echo "  WARNING (S7): ERD section(s) in $_s7f exceed 1200 chars — downstream"
+    echo "  plan briefs will likely exceed MAX_BRIEF_CHARS and trigger the plan"
+    echo "  gate's mass rejection. Trim or restructure before the pipeline burns"
+    echo "  EM calls against an impossible brief:"
+    echo "$_S7_OUT"
+  fi
+done
 
 if [ "$MODE" = "diff" ]; then
   echo ""

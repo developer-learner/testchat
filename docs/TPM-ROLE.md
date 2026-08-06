@@ -81,6 +81,16 @@ every test was green because no AC ever asked). The mechanical backstop
 (`check-swallowed-errors.py`) rejects silent swallows in code — this rule is
 the spec-side half: decide what the user sees, don't leave it to the coder.
 
+**Every state-changing AC needs a post-condition clause (S5).** Any AC whose
+verb changes resource state — spawn, terminate, kill, unload, evict, delete,
+release, clear, cancel — MUST carry a "such that" clause naming an observable
+check ("such that the health endpoint returns 503"), not just the action.
+Without a post-condition, the test asserts the mechanism was called, not that
+the state actually changed — and a MagicMock assertion on `send_signal` cannot
+fail (the M29 class: 5 of 8 process-lifecycle ACs). `refreeze.sh` rejects any
+staged PRD or ERD-DELTA that violates this rule
+(`scripts/check-ac-postconditions.py`).
+
 **The ERD is a standing doc plus a required behavioral-delta doc (D-107).**
 The standing content eventually grows too large for a planner to reliably
 separate current instructions from history. M32 demonstrated the failure:
