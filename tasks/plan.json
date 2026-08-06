@@ -1,75 +1,31 @@
 {
-  "erd_version": 79,
+  "erd_version": 82,
   "tasks": [
     {
-      "brief": "Add the `deepseek-v4-flash-0731` script-model registry entry to `src/services/models.py`. \n\n(1) Implementation constraints: Sync module-level additions only. `os` is already imported. Do not modify any existing function, constant block (`NEMOTRON_*`, `DEEPSEEK_*`), or existing `SCRIPT_MODELS` entries (`nemotron`, `deepseek-v4-flash`). Do not change imports or exports.\n\n(2) Behavioral specification: \n- Add these five constants immediately below the existing `DEEPSEEK_*` block:\n  ```python\n  DEEPSEEK_0731_BASE_URL = os.environ.get('DS4_0731_URL', 'http://127.0.0.1:8005')\n  DEEPSEEK_0731_CHAT_ENDPOINT = DEEPSEEK_0731_BASE_URL + '/v1/chat/completions'\n  DEEPSEEK_0731_READY_URL = DEEPSEEK_0731_BASE_URL + '/v1/models'\n  DEEPSEEK_0731_SCRIPT_PATH = '/Users/arc.elixir/dev/ds4/run-server-0731.sh'\n  DEEPSEEK_0731_READY_TIMEOUT_SECONDS = 300\n  ```\n- Add exactly one new key `'deepseek-v4-flash-0731'` to the `SCRIPT_MODELS` dict, shaped identically to the `deepseek-v4-flash` entry but sourcing the new constants:\n  ```python\n  'deepseek-v4-flash-0731': {\n      'id': 'deepseek-v4-flash-0731',\n      'base_url': DEEPSEEK_0731_BASE_URL,\n      'chat_endpoint': DEEPSEEK_0731_CHAT_ENDPOINT,\n      'ready_url': DEEPSEEK_0731_READY_URL,\n      'command': [DEEPSEEK_0731_SCRIPT_PATH],\n      'ready_timeout_attr': 'DEEPSEEK_0731_READY_TIMEOUT_SECONDS',\n  },\n  ```\n\n(3) Acceptance condition: `tests/test_models_service.py::test_registry_contains_expected_script_models` passes, asserting the new id is in the registry with correct `command`, `chat_endpoint`, `ready_url`, and default `base_url`.",
-      "contracts": [
-        "src.services.models"
-      ],
+      "brief": "**Implementation constraints (FIRST):** JavaScript in the existing file; edit via anchored SEARCH/REPLACE blocks (D-59) \u2014 never retype unchanged regions. Change nothing outside the message-input keydown handler and its immediate surroundings. Do not alter the submit handler's empty-input guard (trims and no-ops on empty) and keep the `isComposing` IME guard. No new libraries, no new globals.\n\n**Behavioral specification:** the message-input keydown handler currently submits the form on plain Enter and lets Shift+Enter keep the textarea's default newline behavior. Invert it: plain Enter keeps the default newline (never sends); Shift+Enter keeps the default newline; Ctrl+Enter or Cmd+Enter submits the form through the same `form.requestSubmit()` path the current handler uses.\n\n**Acceptance condition:** the frozen tests `test_message_input_plain_enter_inserts_newline_without_sending`, `test_message_input_ctrl_enter_sends`, `test_message_input_cmd_enter_sends`, `test_message_input_ctrl_enter_empty_sends_nothing`, and `test_no_loaded_model_shows_placeholder_and_send_guides` (all in tests/test_ui.py) pass. The rename-input Enter-commit behaviors (AC-114, `thread-rename-input` / `current-thread-title-input`) are untouched.",
+      "contracts": [],
       "depends_on": [],
-      "file": "src/services/models.py",
+      "file": "src/static/app.js",
       "id": "T1",
-      "tests": [
-        "tests/test_models_service.py::test_registry_contains_expected_script_models",
-        "tests/test_models_service.py::test_list_models_includes_lmstudio_loaded_instances",
-        "tests/test_models_service.py::test_list_models_returns_empty_on_exception",
-        "tests/test_models_service.py::test_list_models_returns_empty_on_non_2xx",
-        "tests/test_models_service.py::test_list_models_omits_nemotron_when_not_loaded",
-        "tests/test_models_service.py::test_list_models_includes_nemotron_when_loaded",
-        "tests/test_models_service.py::test_list_models_includes_deepseek_when_loaded",
-        "tests/test_models_service.py::test_load_nemotron_expands_script_path",
-        "tests/test_models_service.py::test_load_then_unload_leaves_the_server_unreachable",
-        "tests/test_models_service.py::test_unload_stops_a_running_server_with_no_tracked_handle",
-        "tests/test_models_service.py::test_unload_is_a_noop_when_the_model_is_not_running",
-        "tests/test_models_service.py::test_unload_reports_error_when_the_model_stays_reachable",
-        "tests/test_models_service.py::test_unload_nemotron_alias_leaves_it_unreachable",
-        "tests/test_models_service.py::test_load_evicts_a_running_untracked_other_model",
-        "tests/test_models_service.py::test_load_refuses_when_the_other_model_cannot_be_evicted",
-        "tests/test_models_service.py::test_load_is_idempotent_when_already_running",
-        "tests/test_models_service.py::test_load_reports_child_exit_distinctly_from_the_deadline",
-        "tests/test_models_service.py::test_load_deadline_leaves_the_spawned_server_unreachable"
-      ]
+      "tests": []
     },
     {
-      "brief": "Widen the `source` Literal unions in `src/api/models.py` to accept `\"deepseek-v4-flash-0731\"`. \n\n(1) Implementation constraints: Static type/schema edits only. `Literal` is already imported from `typing`. Do not reorder existing members in the Literal sets. Do not modify any routes, other classes, or imports.\n\n(2) Behavioral specification: \n- In `class ModelInfo(BaseModel)`, append `\"deepseek-v4-flash-0731\"` to the `source` Literal:\n  ```python\n  source: Literal[\"lmstudio\", \"nemotron\", \"deepseek-v4-flash\", \"deepseek-v4-flash-0731\"]\n  ```\n- In `class CatalogEntry(BaseModel)`, append `\"deepseek-v4-flash-0731\"` to the `source` Literal:\n  ```python\n  source: Literal['nemotron', 'deepseek-v4-flash', 'deepseek-v4-flash-0731']\n  ```\n\n(3) Acceptance condition: `tests/test_models_service.py::test_registry_0731_source_string_is_accepted_by_response_schema` passes, constructing both `ModelInfo` and `CatalogEntry` with `source=\"deepseek-v4-flash-0731\"` without raising `pydantic.ValidationError`.",
-      "contracts": [
-        "src.api.models:ModelInfo",
-        "src.api.models:CatalogEntry",
-        "schema:ModelInfo"
-      ],
+      "brief": "**Implementation constraints (FIRST):** HTML in the existing file; anchored edit of the message-input element's placeholder attribute only; no other markup changes; no script changes.\n\n**Behavioral specification:** update the message-input element's placeholder text to \"Type a message... (Ctrl+Enter to send, Enter for newline)\". Nothing else changes.\n\n**Acceptance condition:** the frozen test `test_message_input_placeholder_states_shortcuts` (tests/test_ui.py) passes.",
+      "contracts": [],
       "depends_on": [
         "T1"
       ],
-      "file": "src/api/models.py",
+      "file": "src/static/index.html",
       "id": "T2",
       "tests": [
-        "tests/test_models_service.py::test_registry_0731_source_string_is_accepted_by_response_schema",
-        "tests/test_models_api.py::test_list_models_includes_lmstudio_loaded_instances",
-        "tests/test_models_api.py::test_list_models_degrades_when_lmstudio_unreachable",
-        "tests/test_models_api.py::test_list_models_omits_nemotron_when_not_loaded",
-        "tests/test_models_api.py::test_load_nemotron_spawns_and_confirms_ready",
-        "tests/test_models_api.py::test_load_nemotron_idempotent_when_already_loaded",
-        "tests/test_models_api.py::test_load_deepseek_via_generic_endpoint",
-        "tests/test_models_api.py::test_nemotron_load_alias_matches_generic_endpoint",
-        "tests/test_models_api.py::test_load_unknown_script_model_is_404",
-        "tests/test_models_api.py::test_unload_unknown_script_model_is_404",
-        "tests/test_models_api.py::test_load_deadline_returns_503_and_leaves_nothing_running",
-        "tests/test_models_api.py::test_load_reports_child_exit_distinctly_from_deadline",
-        "tests/test_models_api.py::test_unload_route_leaves_the_server_unreachable",
-        "tests/test_models_api.py::test_unload_route_stops_a_server_with_no_tracked_handle",
-        "tests/test_models_api.py::test_unload_route_reports_error_when_the_model_stays_reachable",
-        "tests/test_models_api.py::test_unload_route_is_a_noop_when_not_loaded",
-        "tests/test_models_api.py::test_unload_nemotron_alias_leaves_it_unreachable",
-        "tests/test_models_api.py::test_unload_nemotron_idempotent_when_not_loaded",
-        "tests/test_models_api.py::test_load_route_evicts_a_running_untracked_other_model",
-        "tests/test_chat_model_routing.py::test_chat_routes_to_nemotron_and_passes_model",
-        "tests/test_chat_model_routing.py::test_chat_routes_to_lmstudio_and_passes_model",
-        "tests/test_chat_model_routing.py::test_chat_invalid_model_type_is_422",
-        "tests/test_chat_model_routing.py::test_chat_nemotron_selected_but_not_loaded_is_422",
-        "tests/test_chat_model_routing.py::test_chat_routes_to_deepseek_and_passes_model",
-        "tests/test_chat_model_routing.py::test_chat_deepseek_selected_but_not_loaded_is_422"
+        "tests/test_ui.py::test_message_input_cmd_enter_sends[chromium]",
+        "tests/test_ui.py::test_message_input_ctrl_enter_empty_sends_nothing[chromium]",
+        "tests/test_ui.py::test_message_input_ctrl_enter_sends[chromium]",
+        "tests/test_ui.py::test_message_input_placeholder_states_shortcuts[chromium]",
+        "tests/test_ui.py::test_message_input_plain_enter_inserts_newline_without_sending[chromium]",
+        "tests/test_ui.py::test_no_loaded_model_shows_placeholder_and_send_guides[chromium]"
       ]
     }
   ],
-  "version": 2
+  "version": 1
 }
