@@ -60,4 +60,4 @@ See `BLUEPRINT.md` for the full pipeline. Short version:
 1. TPM (frontier LLM) writes the spec and tests
 2. CEO approves the freeze
 3. `orchestrate.sh` drives EM (planner) and coder (local LLM) to build it
-4. Frozen tests are ground truth — feature is done when the full suite is green
+4. Frozen tests are ground truth — feature is done when the delta's mapped tests are green (D-112; full suite = on-demand `--full-suite` regression check)

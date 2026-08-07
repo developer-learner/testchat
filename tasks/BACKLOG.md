@@ -159,7 +159,11 @@ unrelated subsystems.
 tests at v65) and grows with every milestone. Post-D-86/D-87, freeze
 discipline runs the staged suite before every refreeze, so suite runtime is
 now the floor on every spec change — v65's staging spent ~9 of its ~30
-minutes inside two full runs.
+minutes inside two full runs. **Updated 2026-08-06 (D-112):** the milestone
+verdict is now the delta-mapped set only, so the full suite no longer runs
+every milestone — but it remains the floor for refreeze staging (above) and
+for on-demand `--full-suite` regression checks, so the wall-clock problem
+still stands wherever the suite runs.
 **What:** (a) `pytest-xdist` sharding — **BLOCKED as a cheap win (corrected
 2026-08-04).** The browser tests share a `scope="session"` app server on fixed
 ports (`STUB_PORT=8971`/`APP_PORT=8972`) + a single `TESTCHAT_DATA` file, and

@@ -65,9 +65,11 @@ Sandbox container (unchanged contract: repo RO, lanes RW, --network none)
 ```
 
 - UI tests are plain pytest node-ids. Refreeze collection, `test-nodeids`,
-  `validate-plan.py` mapping, the D-57 regression split, and the final
-  full-suite verdict all apply **unchanged**. No second test framework, no
-  second runner, no new gate scripts in the run loop.
+  `validate-plan.py` mapping, the D-57 regression split, and the
+  delta-scoped verdict (D-112: milestone done = the mapped dependent set;
+  the full suite is an on-demand `--full-suite` regression check) all apply
+  **unchanged**. No second test framework, no second runner, no new gate
+  scripts in the run loop.
 - `--network none` holds: app and browser share the container; the fixture
   binds loopback. Nothing reaches out; generated code still has no
   exfiltration path.

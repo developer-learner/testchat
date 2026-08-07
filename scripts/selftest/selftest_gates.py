@@ -3598,6 +3598,104 @@ def test_flake_failing_and_detail_untouched_when_isolation_never_ran(tmp_path):
     assert _kv(r.stdout, "FINAL_FAIL_DETAIL") == "original detail"
 
 
+# --- D-112: verdict scope — milestone done = the delta's mapped tests --------
+# The final verdict re-runs ONLY the union of plan-mapped node-ids (the
+# dependent set); the full frozen suite is an on-demand regression check via
+# --full-suite. Pinned here because this is what makes "a feature is judged
+# by what it can touch" mechanical (CEO ruling 2026-08-06, DECISIONS D-112).
+
+DRIVE_VERDICT = SCRIPTS / "selftest" / "drive-verdict.sh"
+
+VERDICT_PLAN = {
+    "version": 1,
+    "erd_version": 1,
+    "tasks": [
+        {"id": "T1", "file": "src/a.py", "brief": "a", "depends_on": [],
+         "contracts": [],
+         "tests": ["tests/test_delta.py::test_a",
+                   "tests/test_delta.py::test_shared"]},
+        {"id": "T2", "file": "src/b.py", "brief": "b", "depends_on": ["T1"],
+         "contracts": [],
+         "tests": ["tests/test_delta.py::test_shared",
+                   "tests/test_delta.py::test_b"]},
+    ],
+}
+
+
+def run_drive_verdict(tmp_path, *, full_suite=0, rt_outcomes="0", plan=None):
+    (tmp_path / "tasks").mkdir(exist_ok=True)
+    (tmp_path / "tasks" / "plan.json").write_text(
+        json.dumps(plan if plan is not None else VERDICT_PLAN))
+    env = {**os.environ,
+           "FULL_SUITE_CHECK": str(full_suite),
+           "RT_OUTCOMES": rt_outcomes}
+    return subprocess.run(
+        ["bash", str(DRIVE_VERDICT), str(tmp_path)],
+        capture_output=True, text=True, env=env,
+    )
+
+
+def test_verdict_default_runs_only_mapped_union(tmp_path):
+    """Milestone verdict = the delta's dependent set: the plan-mapped union,
+    deduplicated, in task order — never the whole suite."""
+    r = run_drive_verdict(tmp_path)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert _kv(r.stdout, "RT_CALLS") == "1"
+    assert _kv(r.stdout, "RT_ARGS") == (
+        "tests/test_delta.py::test_a tests/test_delta.py::test_shared "
+        "tests/test_delta.py::test_b")
+    assert _kv(r.stdout, "FINAL_TESTS_RC") == "0"
+
+
+def test_verdict_full_suite_check_runs_whole_suite(tmp_path):
+    """--full-suite keeps the pre-D-112 scope as an on-demand regression
+    check: run_tests is invoked with no args (the whole tests/ tree)."""
+    r = run_drive_verdict(tmp_path, full_suite=1)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert _kv(r.stdout, "RT_CALLS") == "1"
+    assert _kv(r.stdout, "RT_ARGS") == ""
+    assert _kv(r.stdout, "FINAL_TESTS_RC") == "0"
+
+
+def test_verdict_no_mapped_tests_runs_nothing_and_greens(tmp_path):
+    """A milestone whose plan maps zero tests (smoke-only tasks) skips the
+    verdict run: per-task acceptance is the verdict — never a vacuous full
+    suite run, never a false red from an unset TESTS_RC."""
+    r = run_drive_verdict(tmp_path, plan={
+        "version": 1, "erd_version": 1,
+        "tasks": [{"id": "T1", "file": "src/a.py", "brief": "a",
+                   "depends_on": [], "contracts": [], "tests": []}]})
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert _kv(r.stdout, "RT_CALLS") == "0"
+    assert _kv(r.stdout, "FINAL_TESTS_RC") == "0"
+
+
+def test_verdict_mapped_failure_stays_red_without_flake_triage(tmp_path):
+    """A red verdict in mapped scope is drift by definition (every node was
+    accepted per-task): exactly one run, no D-77 isolation retries, and
+    TESTS_RC stays 1 for the downstream DRIFT path."""
+    r = run_drive_verdict(tmp_path, rt_outcomes="1")
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert _kv(r.stdout, "RT_CALLS") == "1"
+    assert _kv(r.stdout, "FINAL_TESTS_RC") == "1"
+
+
+def test_verdict_banners_are_scope_aware():
+    """The success and drift banners must not claim the 'full frozen suite'
+    in mapped scope — the milestone verdict is the mapped set (D-112), and
+    only the on-demand --full-suite mode keeps the old claim."""
+    source = (SCRIPTS / "orchestrate.sh").read_text()
+    banner_start = source.rindex('if [ "$TESTS_RC" -eq 0 ]; then')
+    banner = source[banner_start:source.index('rm -rf "$STATE_DIR"')]
+    assert '"  ALL FROZEN TESTS PASS — feature done"' in banner
+    assert '"  ALL DELTA-MAPPED TESTS PASS — feature done"' in banner
+    assert '"  PER-TASK ACCEPTANCE PASSED — feature done"' in banner
+    drift = source[source.index("# tasks green but the verdict red"):
+                   source.index('consult_em "DRIFT"')]
+    assert "delta-mapped verdict run is red" in drift
+    assert "full-suite regression check is red" in drift
+
+
 # --- check_ci_health: D-85, the external verdict -----------------------------
 # CI is the only check running outside this pipeline's own gates, so it is the
 # only thing that catches what the gates structurally cannot (types, lint,

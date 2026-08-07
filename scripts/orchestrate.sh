@@ -23,8 +23,13 @@
 # copy-pasteable bundles under .pipeline-state/escalations/ (D-29), and its
 # answers come back as a delta applied by scripts/refreeze.sh (D-31).
 #
-# Exit codes: 0 feature done (full frozen suite green) · 1 hard failure or
+# Exit codes: 0 feature done (delta-mapped tests green) · 1 hard failure or
 # gate violation · 2 halted awaiting TPM (escalation batch written).
+#
+# Verdict scope (D-112): milestone completion is judged by the delta's
+# dependent set — the union of every test node-id the plan mapped — never by
+# the carried-forward suite. The FULL frozen suite is an on-demand regression
+# check: scripts/orchestrate.sh --full-suite.
 set -euo pipefail
 
 MAX_TASK_STRIKES="${MAX_TASK_STRIKES:-2}"      # coder attempts per brief (D-70: 2 arms the escalation ladder — consult/verdicts were dead code for ~23 milestones under 1; D-69's run budget bounds the thrash fail-fast guarded against)
@@ -137,6 +142,18 @@ mkdir -p "$MEAS_DIR" 2>/dev/null || true
 meas() { printf '%s\t%s\n' "$(date -u +%FT%TZ)" "$1" >> "$MEAS_DIR/counters" 2>/dev/null || true; }
 
 die() { echo "FAIL: $*" >&2; exit 1; }
+
+# D-112: verdict scope. Default: milestone done = the delta's mapped
+# (dependent) tests green. --full-suite opts the verdict run into the whole
+# frozen suite as an on-demand/periodic regression check, where the D-77
+# flake triage and the DRIFT halt below apply unchanged.
+FULL_SUITE_CHECK=0
+for _arg in "$@"; do
+  case "$_arg" in
+    --full-suite) FULL_SUITE_CHECK=1 ;;
+    *) die "unknown argument: $_arg (supported: --full-suite)" ;;
+  esac
+done
 
 # Single-writer lock on the state dir. Every counter in .pipeline-state/
 # (strikes, plan_revisions, phase, task_target, spec_version) is a plain
@@ -1589,10 +1606,46 @@ done
 # --- batch halt if anything escalated (batching goal: one operator round-trip) ---
 finalize_batch
 
-# --- all tasks done -> feature verdict is the FULL frozen suite (D-28) -------
-check_budget "full frozen suite"
-echo "=== Full frozen suite ==="
-run_tests
+# --- all tasks done -> feature verdict is the DELTA's mapped set (D-112) ---
+# A feature is judged by what it can touch: the verdict run re-executes the
+# union of every node-id the plan mapped (the per-task projections, re-run
+# together once as the final signal). Carried-forward tests are NOT part of
+# milestone completion (CEO ruling 2026-08-06; see DECISIONS.md D-112); the
+# full frozen suite is an on-demand regression check via --full-suite, where
+# the D-77 triage and the DRIFT halt below apply unchanged. A failure here in
+# mapped scope is real drift by definition — every node was accepted
+# per-task, so a red verdict is an inter-task coupling break.
+#
+# The block between the BEGIN/END markers below is extracted verbatim by
+# scripts/selftest/drive-verdict.sh — keep the markers on their own lines.
+# BEGIN D-112 verdict scope (drive-verdict.sh extracts this block)
+check_budget "feature verdict"
+VERDICT_IDS=()
+if [ "$FULL_SUITE_CHECK" = "1" ]; then
+  echo "=== Full frozen suite (on-demand regression check, D-112) ==="
+  run_tests
+else
+  VERDICT_IDS=()
+  while IFS= read -r _vid; do
+    [ -n "$_vid" ] && VERDICT_IDS+=("$_vid")
+  done < <(python3 -c "
+import json, sys
+p = json.load(open('tasks/plan.json'))
+ids = []
+for t in p.get('tasks', []):
+    for n in t.get('tests', []):
+        if n not in ids:
+            ids.append(n)
+print('\n'.join(ids))")
+  if [ "${#VERDICT_IDS[@]}" -gt 0 ]; then
+    echo "=== Verdict: ${#VERDICT_IDS[@]} delta-mapped test(s) (D-112) ==="
+    run_tests "${VERDICT_IDS[@]}"
+  else
+    echo "=== Verdict: no mapped tests — per-task acceptance is the verdict (D-112) ==="
+    TESTS_RC=0
+  fi
+fi
+# END D-112 verdict scope
 
 # --- D-77: flake triage before declaring drift -------------------------------
 # A failing node that is unmapped in the plan is carried-forward (D-57), but
@@ -1600,9 +1653,11 @@ run_tests
 # behavior. Every failing carried node is therefore re-run twice in isolation.
 # Auto-green requires at least one isolated pass PER node. A node that
 # reproduces 0/2, or whose isolation runs cannot execute within budget, keeps
-# the original full-suite failure red. Any mapped node or collection error also
+# the original verdict failure red. Any mapped node or collection error also
 # keeps the DRIFT path exactly as before. Accepted occurrences persist by spec;
 # the recurring threshold closes the bypass and routes a TPM bundle (D-111).
+# In mapped verdict scope (D-112) every failing node is mapped, so this block
+# is inert: all_carried drops to 0 on the first id and the DRIFT path stands.
 #
 # The block between the BEGIN/END markers below is extracted verbatim by
 # scripts/selftest/drive-drift.sh — keep the markers on their own lines.
@@ -1686,7 +1741,13 @@ fi
 if [ "$TESTS_RC" -eq 0 ]; then
   echo ""
   echo "=========================================="
-  echo "  ALL FROZEN TESTS PASS — feature done"
+  if [ "$FULL_SUITE_CHECK" = "1" ]; then
+    echo "  ALL FROZEN TESTS PASS — feature done"
+  elif [ "${#VERDICT_IDS[@]}" -gt 0 ]; then
+    echo "  ALL DELTA-MAPPED TESTS PASS — feature done"
+  else
+    echo "  PER-TASK ACCEPTANCE PASSED — feature done"
+  fi
   echo "  total run time: $(run_elapsed)s (timings were in $LOG_DIR/timings.tsv)"
   echo "=========================================="
   if [ -n "$FLAKE_RECORDS" ]; then
@@ -1704,11 +1765,18 @@ if [ "$TESTS_RC" -eq 0 ]; then
     --ledger "$COMPLETION_LEDGER" \
     --task-state "$TASK_STATE" \
     || die "full suite passed, but durable completion history could not be recorded"
+  if [ "$FULL_SUITE_CHECK" = "1" ]; then
+    _verdict_note="Full frozen TPM suite green against spec v$FROZEN_V (on-demand regression check, D-112)"
+  elif [ "${#VERDICT_IDS[@]}" -gt 0 ]; then
+    _verdict_note="Delta-mapped frozen tests green against spec v$FROZEN_V — feature done (verdict scope: mapped tests only, D-112)"
+  else
+    _verdict_note="Per-task acceptance green against spec v$FROZEN_V — feature done (no mapped tests; verdict scope, D-112)"
+  fi
   cat >> tasks/CURRENT.md <<EOF
 
 ## Results
 
-  Full frozen TPM suite green against spec v$FROZEN_V. Feature built and validated.${FLAKE_NOTE}
+  $_verdict_note. Feature built and validated.${FLAKE_NOTE}
 EOF
   rm -rf "$STATE_DIR"
   git add tasks/CURRENT.md "$COMPLETION_LEDGER"
@@ -1718,9 +1786,14 @@ EOF
   exit 0
 fi
 
-# tasks green but suite red = SPEC DRIFT: routes EM -> TPM, never coder retries (D-28)
-echo "=== SPEC DRIFT: every task passed its projection but the full suite is red ==="
-drift_evidence="all tasks done and individually green; full suite failing: ${FAILING:-no verdict (rc=$TESTS_RC)}${FAIL_DETAIL:+ — $FAIL_DETAIL}"
+# tasks green but the verdict red = SPEC DRIFT: routes EM -> TPM, never coder retries (D-28/D-112)
+if [ "$FULL_SUITE_CHECK" = "1" ]; then
+  echo "=== SPEC DRIFT: every task passed its projection but the full-suite regression check is red ==="
+  drift_evidence="all tasks done and individually green; full-suite regression check failing: ${FAILING:-no verdict (rc=$TESTS_RC)}${FAIL_DETAIL:+ — $FAIL_DETAIL}"
+else
+  echo "=== SPEC DRIFT: every task passed its projection but the delta-mapped verdict run is red ==="
+  drift_evidence="all tasks done and individually green; delta-mapped verdict run failing: ${FAILING:-no verdict (rc=$TESTS_RC)}${FAIL_DETAIL:+ — $FAIL_DETAIL}"
+fi
 
 # D-111: a carried node that has repeatedly produced isolated-pass flake
 # evidence is now a known frozen-test defect, not an implementation puzzle.
@@ -1734,7 +1807,7 @@ fi
 if [ "$MAX_TASK_STRIKES" -le 1 ]; then
   echo ""
   echo "=========================================="
-  echo "  HALT: spec drift — full suite red"
+  echo "  HALT: spec drift — verdict run red"
   echo "=========================================="
   echo "  $drift_evidence"
   die "spec drift detected — review failing tests, fix the plan or spec, and re-run"
