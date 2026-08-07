@@ -1246,6 +1246,7 @@ cd {tmp_path}
 STATE_DIR=.pipeline-state
 ESC_DIR=$STATE_DIR/escalations
 FROZEN_V=76
+APPROVED=scripts/.approved
 mkdir -p "$ESC_DIR"
 
 {fn_body}
@@ -1267,6 +1268,67 @@ evidence="two failed coder attempts on src/x.py; token cap + mixed-mode reply"
     text = bundle.read_text()
     assert "caps-exhausted" in text
     assert "T1" in text
+
+
+def test_escalation_bundle_carries_milestone_slice(tmp_path):
+    """D-118: a TPM-bound escalation bundle must carry the milestone slice
+    it revises against — the standing summary (D-116) and the frozen
+    ERD-DELTA.md (D-107). The D-117 audit found the bundle shipped the task
+    entry and evidence but not the delta; a contract_or_test_wrong verdict
+    was handed to the TPM without the spec text it must correct."""
+    source = (SCRIPTS / "orchestrate.sh").read_text()
+    fn = re.search(r"^package_escalation\(\) \{.*?^\}$", source, re.M | re.S)
+    assert fn, "package_escalation not found — extractor drift"
+    fn_body = fn.group(0)
+    branch = re.search(
+        r'if \[ "\$revs" -ge "\$MAX_BRIEF_REVISIONS" \]; then'
+        r".*?"
+        r'package_escalation "caps-exhausted"[^\n]*',
+        source, re.S,
+    )
+    assert branch, "exhausted-allowance branch not found — extractor drift"
+    call_line = re.search(
+        r'package_escalation "caps-exhausted"[^\n]*', branch.group(0)
+    ).group(0)
+
+    (tmp_path / "tasks").mkdir()
+    (tmp_path / "tasks" / "plan.json").write_text(json.dumps({
+        "tasks": [{"id": "T1", "file": "src/x.py", "contracts": [], "tests": []}]
+    }))
+    (tmp_path / "scripts" / ".approved").mkdir(parents=True)
+    (tmp_path / "scripts" / ".approved" / "contracts.json").write_text(
+        json.dumps({"entry_points": [], "routes": [], "schemas": [], "errors": []})
+    )
+    (tmp_path / "scripts" / ".approved" / "ERD.md").write_text(
+        "## Model-selector invariant\n\nstanding-marker-line\n")
+    (tmp_path / "scripts" / ".approved" / "ERD-DELTA.md").write_text(
+        "# ERD-DELTA\n\ndelta-marker-line\n")
+
+    runner = f"""#!/usr/bin/env bash
+set -euo pipefail
+cd {tmp_path}
+STATE_DIR=.pipeline-state
+ESC_DIR=$STATE_DIR/escalations
+FROZEN_V=82
+APPROVED=scripts/.approved
+mkdir -p "$ESC_DIR"
+
+{fn_body}
+
+id=T1
+evidence="two failed coder attempts on src/x.py"
+{call_line}
+"""
+    r = subprocess.run(["bash", "-c", runner], capture_output=True, text=True)
+    assert r.returncode == 0, f"stderr:\n{r.stderr}\nstdout:\n{r.stdout}"
+    text = (tmp_path / ".pipeline-state" / "escalations" / "T1" /
+            "bundle.md").read_text()
+    assert "### Milestone slice — standing summary + ERD-DELTA (D-118)" in text
+    assert "standing-marker-line" in text
+    assert "### ERD-DELTA.md (spec v82) — the authoritative current-change slice" in text
+    assert "delta-marker-line" in text
+    # the delta must come before the frozen artifacts section
+    assert text.index("delta-marker-line") < text.index("### Frozen artifacts involved")
 
 
 def stage_consult_full_fixtures(tmp_path):

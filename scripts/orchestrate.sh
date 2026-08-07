@@ -1280,6 +1280,25 @@ print(json.dumps(t, indent=2))"
       echo '```'
     fi
     echo
+    echo "### Milestone slice — standing summary + ERD-DELTA (D-118)"
+    echo
+    echo '```markdown'
+    if [ -f "${STANDING_SUMMARY:-$APPROVED/ERD.md}" ]; then
+      cat "${STANDING_SUMMARY:-$APPROVED/ERD.md}"
+    else
+      echo "(standing summary unavailable)"
+    fi
+    echo '```'
+    echo
+    echo "### ERD-DELTA.md (spec v$FROZEN_V) — the authoritative current-change slice"
+    echo '```markdown'
+    if [ -f "$APPROVED/ERD-DELTA.md" ]; then
+      cat "$APPROVED/ERD-DELTA.md"
+    else
+      echo "(no ERD-DELTA.md — consolidation freeze; the standing ERD is the current reference)"
+    fi
+    echo '```'
+    echo
     echo "### Frozen artifacts involved"
     python3 - "$id" "$evidence" <<'PYEOF'
 import json, sys

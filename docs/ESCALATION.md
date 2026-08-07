@@ -45,7 +45,11 @@ Each bundle contains, self-contained (the TPM has no repo access):
 3. **Evidence** — failing test node-ids / smoke command, plus the pytest JSON
    report copied alongside the bundle.
 4. **EM diagnosis** — the schema-validated verdict and reason, verbatim.
-5. **Frozen artifacts involved** — the referenced `contracts.json` entries and
+5. **Milestone slice** — the generated standing summary (D-116) and the
+   frozen `ERD-DELTA.md` (D-107, D-118) — the spec text the TPM must revise
+   against; a `contract_or_test_wrong` verdict is meaningless without the
+   delta it corrects.
+6. **Frozen artifacts involved** — the referenced `contracts.json` entries and
    the full source of each failing frozen test file (capped at 200 lines).
 
 The operator pastes `BATCH.md` into the TPM chat **in one message**.

@@ -21,6 +21,16 @@
 
 ## Decisions
 
+## D-118 — 2026-08-06 — Escalation bundles carry the milestone slice: the standing summary + ERD-DELTA the TPM must revise against
+
+**Decision:** `package_escalation` now appends the milestone slice to every TPM-bound bundle: the generated standing summary (the same `standing-summary.md` the EM receives, D-116) and the frozen `ERD-DELTA.md` (D-107), labeled with the spec version, in a dedicated section between the EM diagnosis and the referenced-contract/test-source section. A consolidation freeze with no delta emits a one-line note that the standing ERD is the current reference. The summary-generation fallback of the D-116 pre-flight is inherited via `STANDING_SUMMARY`.
+
+**Reason:** The 2026-08-06 context audit found the inverse of full-load: `contract_or_test_wrong` and caps-exhausted bundles handed the TPM the task entry, the referenced contract entries, and the failing test sources — but not the delta those artifacts must be revised against. The TPM has no repo access; the bundle is its only spec window, and a verdict that says "the frozen spec is wrong" without the current-change slice forces the TPM to reconstruct the milestone from memory. The delta is the authoritative current-change slice (D-107) and the standing rules are the same minimal summary the EM consumes — adding both is a pure relevance win with no schema change.
+
+**Alternatives considered:** (a) Point the TPM at the repo in agent mode (already available via `tpm-agent.sh`, D-39 — but the primary lane is the air-gapped web chat, D-38). (b) Bundle the full standing ERD instead of the summary (rejected — exactly the accumulative crud D-116/D-117 exist to avoid). (c) Attach the delta only when the verdict is `contract_or_test_wrong` (rejected — a caps-exhausted bundle also lands in TPM hands and may need the same slice; unconditional is simpler and the cost is one file).
+
+**Do not suggest:** Dropping the milestone slice from bundles to save tokens (it is the single most load-bearing file the TPM receives); shipping the full standing ERD in bundles (the summary + delta is the correct pair); reverting to `APPROVED`-free extraction harnesses in the selftests (the bundle code reads `APPROVED` like every other orchestrator function).
+
 ## D-117 — 2026-08-06 — The TPM bundle ships the milestone slice: generated standing summary + ERD-DELTA, not the accumulated standing ERD
 
 **Decision:** `tpm-pack.sh` no longer packs the full standing `ERD.md` when a delta exists. When `ERD-DELTA.md` is present, the bundle carries the TPM role doc, the contracts schema, the PRD (standing — the product definition is reference, not crud), the same generated standing summary the EM receives (D-116), `ERD-DELTA.md` (the authoritative milestone slice, D-107), and `contracts.json`. Without a delta (initial freeze, pure consolidation), the full standing ERD ships as before. Summary-generation failure falls back to the full standing ERD with a stderr warning — the bundle is a verbatim relay (D-49), so the warning stays out of it.
