@@ -108,4 +108,5 @@ usual. Same trust model — you copy text between two chats, nothing more.
 - **Don't negotiate with the pipeline.** If a run fails, the answer is
   never to hand-edit tests or gates — that's the "advisory safety" failure
   this system exists to prevent. Failures have one exit: the escalation
-  bundle, through the TPM, through your y/N.
+  bundle, through the TPM (refreeze auto-applies on green preflights;
+  there is no approval check — D-121).
