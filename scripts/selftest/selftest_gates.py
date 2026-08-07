@@ -1744,13 +1744,18 @@ plan_mapped_ids"""
 
 
 def test_replan_contexts_scope_nodeids_not_full_file():
-    """D-119: decomp-wrong and drift re-plan calls print the scoped
+    """D-119 + D-124: decomp-wrong and drift re-plan calls print the scoped
     plan-mapped list and no longer ship the full test-nodeids file; the
-    greenfield plan emission keeps the full file (no prior plan to anchor
-    the scope on)."""
+    greenfield plan emission ships the delta-scoped set (union of the active
+    deltas' changed_tests), falling back to the full file only when no
+    active delta range exists."""
     src = (SCRIPTS / "orchestrate.sh").read_text()
-    assert src.count('"test-nodeids:$APPROVED/test-nodeids"') == 1, (
-        "full test-nodeids must ship only at the greenfield plan emission"
+    assert src.count("test-nodeids:${NODEIDS_SCOPE:-$APPROVED/test-nodeids}") == 1, (
+        "greenfield emission must scope test-nodeids with the D-124 delta "
+        "fallback"
+    )
+    assert src.count("test-nodeids:$APPROVED/test-nodeids") == 0, (
+        "no site may ship the full test-nodeids file unconditionally"
     )
     assert src.count("$(plan_mapped_ids)") == 2, (
         "expected the scoped list at decomp-wrong AND drift re-plan"
@@ -2699,6 +2704,49 @@ def test_plan_valid_first_emit_needs_no_rung(tmp_path):
     assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
     assert "CALLS=1 PLAN=ok" in r.stdout, r.stdout
     assert "SPEC DEFECT" not in r.stdout, r.stdout
+
+
+def test_plan_full_emit_scopes_nodeids_to_active_delta(tmp_path):
+    """D-124: the full-emission EM call ships the delta-scoped node-id set
+    (union of changed_tests across the active range, the D-119 map-nodeids
+    scope), not the accumulated suite; with no active delta it falls back to
+    the whole test-nodeids file. Here the suite holds 4 node-ids and the
+    delta names 2: the prompt must carry exactly those 2, the plan maps
+    them, and validation passes."""
+    plan = good_plan()
+    plan["erd_version"] = 2
+    work = plan_workdir(tmp_path, dict(CONTRACTS, erd_version=2),
+                        [json.dumps(plan)])
+    (work / "scripts" / ".approved" / "test-nodeids").write_text(
+        "tests/test_a.py::test_one\n"
+        "tests/test_b.py::test_two\n"
+        "tests/test_a.py::test_extra1\n"
+        "tests/test_b.py::test_extra2\n")
+    (work / "scripts" / ".approved" / "DELTA-v2.json").write_text(json.dumps({
+        "changed_tests": ["tests/test_a.py::test_one",
+                          "tests/test_b.py::test_two"],
+        "changed_files": ["src/a.py", "src/b.py"],
+        "changed_contract_ids": [],
+    }))
+    r = run_drive_plan(work)
+    assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+    assert "CALLS=1 PLAN=ok" in r.stdout, r.stdout
+    prompt = (work / "prompts" / "1").read_text()
+    header, section = prompt.split("### test-nodeids", 1)[1].split("```", 1)
+    assert "nodeids-scope.txt" in header, prompt
+    assert "tests/test_a.py::test_one" in section, prompt
+    assert "tests/test_b.py::test_two" in section, prompt
+    assert "test_extra1" not in section and "test_extra2" not in section, prompt
+    # Contract ids are scoped by owner-file too: the route ids have no owner
+    # file and no frontend, so the flat dump must not ship them (the raw
+    # contracts.json context block may still name them — that file is whole).
+    flat = prompt.split("copy verbatim): ", 1)[1].split(" ERD-DELTA", 1)[0]
+    assert "route-items" not in flat, prompt
+    assert "src.b:handler" in flat, prompt
+    # The scope file itself must exist (the build block ran), while the
+    # no-delta fallback stays covered by test_plan_valid_first_emit_needs_no_rung.
+    assert (work / ".pipeline-state" / "nodeids-scope.txt").is_file(), (
+        r.stdout)
 
 
 # --- Phase 3: verbatim contract-id rule (bash prompt text, static guard) ------

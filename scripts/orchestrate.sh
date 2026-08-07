@@ -51,18 +51,39 @@ EM_TASK_KEYS='SCHEMA — name these keys verbatim; the validator rejects any oth
 # the validator accepts. Copying beats deriving.
 EM_CONTRACT_ID_RULE='CONTRACT IDS — the task "contracts" array holds ONLY exact strings from the valid-id list the shell prints after this rule (or is empty). Copy ids VERBATIM: a registered id is its exact string — never convert a file path to dotted form (src/api/models.py is a path; "src.api.models" is not a registered id), never add or drop a file extension, never invent a prefix. The validator rejects any contracts entry not on the list.'
 contract_ids() {
-  python3 - "$APPROVED/contracts.json" <<'PY'
+  # D-124: the verbatim id list is scoped to this milestone, not the
+  # accumulated all-milestone dump. Entries whose owner file is in the plan
+  # inventory are kept; unattributable ids (ui/external) are kept only when
+  # the inventory is frontend or ERD-DELTA names them; entry_points are kept
+  # by module match. The validator + contract-repair still reject/drop
+  # anything the scope misses, and an empty contracts array is always legal.
+  python3 - "$APPROVED/contracts.json" "$APPROVED/ERD-DELTA.md" <<'PY'
 import json, sys
 c = json.load(open(sys.argv[1]))
+try:
+    erd = open(sys.argv[2]).read()
+except OSError:
+    erd = ""
+files = set(c.get("files", []))
+mods = {f[:-3].replace("/", ".") if f.endswith(".py") else f for f in files}
+frontend = any(f.startswith("src/static/") for f in files)
 ids = []
 def add(x):
     if isinstance(x, str):
         ids.append(x)
     elif isinstance(x, dict) and "id" in x:
-        ids.append(x["id"])
+        if x.get("file") in files:
+            ids.append(x["id"])
+        elif not x.get("file") and (frontend or x["id"] in erd):
+            ids.append(x["id"])
 for key in ("files", "entry_points", "routes", "schemas", "errors", "externals", "ui", "smoke_checks"):
-    for x in c.get(key, []):
-        add(x)
+    for x in (c.get(key) or []):
+        if isinstance(x, str) and key == "entry_points":
+            base = x.split(":", 1)[0]
+            if any(base == m or base.startswith(m + ":") for m in mods):
+                ids.append(x)
+        else:
+            add(x)
 print(", ".join(dict.fromkeys(ids)))
 PY
 }
@@ -1028,6 +1049,29 @@ print(f\"{len(s['reemit'])} re-plan + {len(s['new_files'])} new file(s), {len(s[
 ensure_plan() {
   local verrs revs subtree_feedback=""
   plan_subtree_prepare
+  # D-124: the full-emission EM call ships the delta-scoped node-id set, not
+  # the accumulated suite — the union of the active deltas' changed_tests,
+  # the same scope the subtree path prints as map_ids. Greenfield/full runs
+  # with no active delta range fall back to the whole test-nodeids file; the
+  # EM keeps its safe-omit rule either way. Pinned node-ids ride changed_tests
+  # for a pinned freeze, so nothing mapped can be missing from the shipped set.
+  NODEIDS_SCOPE=""
+  if [ "${ACTIVE_DELTA_FILES+set}" = "set" ] && [ "${#ACTIVE_DELTA_FILES[@]}" -gt 0 ]; then
+    NODEIDS_SCOPE="$STATE_DIR/nodeids-scope.txt"
+    python3 - "$NODEIDS_SCOPE" "${ACTIVE_DELTA_FILES[@]}" <<'PY'
+import json, sys
+out, ids = sys.argv[1], []
+for f in sys.argv[2:]:
+    try:
+        d = json.load(open(f))
+    except OSError:
+        continue
+    for n in d.get("changed_tests", []):
+        if n not in ids:
+            ids.append(n)
+open(out, "w").write("\n".join(ids) + "\n")
+PY
+  fi
   while :; do
     # Closure auto-repair (D-64/import/route): a best-effort PRE-PASS that adds
     # the depends_on edges the closure checks would otherwise reject on (only
@@ -1176,7 +1220,7 @@ print('; '.join(parts))")
       echo "=== EM: emit/revise plan (revision $((revs + 1))/$MAX_PLAN_REVISIONS) ==="
       em_call tasks/plan.json scripts/schemas/plan.schema.json \
         "Decompose the frozen ERD into atomic ONE-FILE tasks and reply with ONLY the plan as JSON matching the schema you were given — no prose, no markdown fence. $EM_TASK_KEYS $EM_CONTRACT_ID_RULE Valid contract ids (copy verbatim): $(contract_ids) ERD-DELTA is the authoritative current-change slice when present; follow its explicit supersessions over standing ERD prose. Requirements: exactly one task per file in contracts.json's files array; every test node-id in test-nodeids that exercises a file in contracts.json's files array mapped to exactly one task (the task after which it should pass, given its depends_on) — node-ids testing only carried-forward files are handled by the shell: do NOT map them and do NOT emit a 'regression' key (the validator rejects it); when unsure, omit the node-id — the validator names any you must map. Placement is gate-owned, never yours: a node-id pinned by contracts.json's test_mapping is auto-placed by the gate at the task owning its pinned file; a node-id from a Playwright-importing test file with no mapping entry is auto-placed at the DAG's final task (D-64) — map every node-id where natural and add NO depends_on edges for this. Every task's contracts list uses ids that exist in contracts.json; when no registered id covers a file, use an empty contracts array and never invent one. Every brief self-contained per BLUEPRINT.md Rule 8 (exact path, signatures, inputs/outputs, acceptance) — the coder sees only the brief. For an EXISTING file (D-59 edit mode: the coder gets the file content and emits anchored SEARCH/REPLACE blocks; carried behavior is structurally untouched) the brief describes ONLY the change from current behavior — do NOT restate what the file already does; for a NEW file the brief describes the whole file (target under 150 lines). Do NOT include a smoke_check field — smoke checks are TPM-authored and live in contracts.json. Set erd_version to $FROZEN_V. Set the top-level version key to an integer >= 1 (1 for a fresh plan; bump it on every re-emit). NO status fields.${verrs:+ The previous plan failed validation with these errors — fix all of them: $verrs}" \
-        "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:${CONTRACTS_DELTA:-$APPROVED/contracts.json}" "test-nodeids:$APPROVED/test-nodeids" "plan-being-revised:tasks/plan.json"
+        "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:${CONTRACTS_DELTA:-$APPROVED/contracts.json}" "test-nodeids:${NODEIDS_SCOPE:-$APPROVED/test-nodeids}" "plan-being-revised:tasks/plan.json"
     fi
   done
 }

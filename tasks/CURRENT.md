@@ -640,3 +640,22 @@ Full frozen TPM suite green against spec v71. Feature built and validated.
 ## Results
 
   Delta-mapped frozen tests green against spec v84 — feature done (verdict scope: mapped tests only, D-112). Feature built and validated.
+
+## Results (D-124 — EM prompt context trim, control-plane)
+
+  Both remaining full-file context loads are gone from the EM plan prompts:
+  - **Contract ids now scoped** (`contract_ids()`): ids owned by a
+    delta-named file, module-matching entry_points, or the ERD-DELTA / a
+    frontend UI file ship; unattributed `ui:*`/`external:*` route ids and
+    entries with no owner file are dropped. Empty array is always legal and
+    contract-repair + the validator still catch bad ids.
+  - **Full-emission node-ids now scoped** (`NODEIDS_SCOPE`): the greenfield
+    plan call ships the union of the active deltas' `changed_tests`
+    (`.pipeline-state/nodeids-scope.txt`, D-119-aligned), falling back to
+    the full `test-nodeids` file only when no active delta range exists.
+    This was the last site still shipping the accumulated 198-id suite.
+  - Selftests: 289/289 green — `test_plan_full_emit_scopes_nodeids_to_active_delta`
+    (drive-level, exercises the D-113 mirror extracted into drive-plan.sh),
+    updated D-119 guard (full file ships at no site unconditionally),
+    existing contract-id/rule guards intact. `.manifest-template` regenerated.
+  - No spec change, no state mutation — control-plane only.

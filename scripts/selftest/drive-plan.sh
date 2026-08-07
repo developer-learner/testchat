@@ -87,6 +87,17 @@ read_state()  { [ -f "$STATE_DIR/$1" ] && cat "$STATE_DIR/$1" || true; }
 write_state() { printf '%s\n' "$2" > "$STATE_DIR/$1"; }
 mark() { :; }
 
+# D-124: ensure_plan now scopes the full-emission test-nodeids context to the
+# active delta range (union of changed_tests). Production computes
+# ACTIVE_DELTA_FILES at top level; mirror that block by extraction so drive
+# tests exercise the scope, not just the because-net fallback. Fail loudly on
+# marker/block drift (same anti-drift rule as the function extract()).
+_D113_BLOCK=$(sed -n '/^# BEGIN D-113 active-delta range/,/^# END D-113 active-delta range/p' "$REPO/scripts/orchestrate.sh")
+[ -n "$_D113_BLOCK" ] || { echo "drive-plan: could not extract the D-113 active-delta block from orchestrate.sh" >&2; exit 65; }
+DELTA_BASELINE_V=${DELTA_BASELINE_V:-$(read_state delta_baseline_spec)}
+DELTA_BASELINE_V=${DELTA_BASELINE_V:-$FROZEN_V}
+eval "$_D113_BLOCK"
+
 # Extract the real functions — repo style is `name() {` and closing `}` both
 # at column 0, so the sed range is exact (one-liners like plan_revisions_used
 # close on the definition line instead). Fail loudly if the shape changes.
