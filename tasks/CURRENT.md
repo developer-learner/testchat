@@ -5,6 +5,43 @@
 
 ---
 
+## State at 2026-08-06 (late) — M35 v84 run root-caused: not the EM, not the ordering — D-64 swept pinned node-ids
+
+Verified against the tree, the run log, and `.em-archive/2026-08-06_192053_plan-subtree/`.
+
+**The v84 run failed at plan phase** (HEAD then: `6478277 [refreeze v84]` +
+`ef13dc8 [plan]`, ORCH_EXIT=1): "PLAN GATE FAIL: task T1: no mapped tests and
+no smoke_check in contracts for 'src/static/app.js'" in `--affected`, after
+"plan ok (v3)" had committed ef13dc8.
+
+**The other LLM's diagnosis was wrong on both counts:** it claimed the EM
+mapped everything onto T2 and that the root cause was the acceptance check
+running before the placement block (its fix: reorder + rerun). Evidence:
+- The EM's reply was CORRECT — archived `reply.json` has T1 = the 5
+  app.js-pinned node-ids, T2 = the 1 index.html-pinned node-id.
+- The committed plan was NOT the reply: ef13dc8's tasks are byte-identical
+  to the prior v82 plan (3+/3- diff = version fields only).
+- The loss site: `validate-plan.py`'s D-64 browser block moved T1's PINNED
+  browser tests to the final task (it never consulted `contracts.test_mapping`),
+  the `AUTO_PLACED` write-back persisted the emptied plan, and the second
+  validate (`--affected`) judged the persisted plan — empty T1 + no
+  smoke_check (v84 retired the vacuous one) = gate fail. The reorder fix
+  would not have helped — it would have failed plan-ok and burned the EM
+  budget.
+
+**Fix (landed in this commit):** D-64 now exempts test_mapping-pinned
+node-ids — pinned behavioral ownership is the authority; D-64 is only the
+fallback for unpinned browser node-ids. Selftest
+`test_d64_leaves_mapping_pinned_nodeid_at_owner` pins the regression.
+Verified end-to-end with the archived v84 inputs: merge → plan ok → plan
+keeps T1:5/T2:1 → `--affected` over DELTA-v83/v84 exits 0. 288 selftests
+green. Manifest regenned.
+
+**Status:** v84 M35 run may be re-run exactly once now that the gate defect
+is fixed. The other LLM's reorder theory should be discarded.
+
+---
+
 ## State at 2026-08-06 — control-plane session: D-121 + v83 pin backfill + D-122 landed; M35 (v84) in-flight in the other LLM's lane
 
 Verified against the tree, not from memory or a prior handoff.

@@ -481,6 +481,42 @@ def test_browser_test_already_on_final_task_untouched(repo):
     assert "tests/test_browser.py::test_sees_page" in by_id["T2"]["tests"]
 
 
+def test_d64_leaves_mapping_pinned_nodeid_at_owner(repo):
+    """M35b regression: a node-id PINNED by contracts.test_mapping to a
+    NON-final task stays at its pinned owner — D-64 is the fallback for
+    unpinned browser node-ids only, and must not sweep a pinned one off
+    its owner. (The v84 run died here: T1's pinned tests were moved to
+    the final task, the emptied plan was persisted after "plan ok", and
+    the re-validation on the committed plan failed the acceptance gate.)"""
+    (repo / "tests").mkdir()
+    (repo / "tests" / "test_browser.py").write_text(
+        "from playwright.sync_api import sync_playwright\n"
+        "def test_sees_page():\n"
+        "    assert True\n"
+    )
+    (repo / "scripts" / ".approved" / "test-nodeids").write_text(
+        "tests/test_a.py::test_one\n"
+        "tests/test_b.py::test_two\n"
+        "tests/test_browser.py::test_sees_page\n"
+    )
+    contracts = dict(CONTRACTS)
+    contracts["test_mapping"] = {
+        "tests/test_a.py::test_one": "src/a.py",
+        "tests/test_b.py::test_two": "src/b.py",
+        "tests/test_browser.py::test_sees_page": "src/a.py",
+    }
+    (repo / "scripts" / ".approved" / "contracts.json").write_text(
+        json.dumps(contracts))
+    plan = good_plan()
+    plan["tasks"][0]["tests"] = ["tests/test_browser.py::test_sees_page"]
+    r = run_validate(repo, plan)
+    assert r.returncode == 0, r.stderr
+    on_disk = json.loads((repo / "tasks" / "plan.json").read_text())
+    by_id = {t["id"]: t for t in on_disk["tasks"]}
+    assert "tests/test_browser.py::test_sees_page" in by_id["T1"]["tests"]
+    assert "tests/test_browser.py::test_sees_page" not in by_id["T2"]["tests"]
+
+
 def test_mapping_pins_nodeid_to_owner_task(repo):
     """M35 correction: a node-id pinned by contracts.test_mapping is
     accepted at the task owning its pinned file, wherever the EM mapped

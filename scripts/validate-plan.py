@@ -641,6 +641,9 @@ def validate():
     # deterministic rule, so it is gate-owned: any browser node-id mapped to
     # a task with an incomplete closure is MOVED to the final task, not
     # rejected. The EM prompt no longer states the rule (M35 correction).
+    # M35b: a node-id pinned by contracts.test_mapping is exempt — pinned
+    # behavioral ownership is the authority, and this rule is only the
+    # fallback for UNPINNED browser node-ids.
     def is_browser_test_file(path):
         if path not in ast_cache:
             try:
@@ -682,7 +685,15 @@ def validate():
                 f"contains the entire inventory."
             )
             continue
-        moved = [n for n in t["tests"] if n.split("::")[0] in browser_files]
+        # A node-id pinned by contracts.test_mapping is exempt: its pinned
+        # owner IS its acceptance point (the M35 authority), so the fallback
+        # must never sweep it off that owner — otherwise the persisted plan
+        # empties a task the acceptance gate then rejects on re-validation
+        # (M35b: the v84 run committed exactly that emptied plan as "plan ok").
+        moved = [n for n in t["tests"]
+                 if n.split("::")[0] in browser_files and mapping.get(n) is None]
+        if not moved:
+            continue
         t["tests"] = [n for n in t["tests"] if n not in moved]
         final_task["tests"] = sorted(final_task["tests"] + moved)
         AUTO_PLACED.append(
