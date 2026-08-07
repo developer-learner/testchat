@@ -1,7 +1,0 @@
-{
-  "changed_contract_ids": [
-    "route:GET /static/{path}"
-  ],
-  "changed_tests": [],
-  "changed_files": []
-}
