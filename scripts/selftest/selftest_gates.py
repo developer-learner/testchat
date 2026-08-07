@@ -686,8 +686,8 @@ def test_contracts_delta_no_pins_emits_full_file(tmp_path):
 
 def test_contracts_delta_slices_out_of_scope_pins(tmp_path):
     """With pins present, the slice keeps in-inventory pinned entries and
-    every unpinned entry, drops out-of-inventory pins, and derives
-    entry_points to their owning module (D-120)."""
+    every unpinned entry in full, reduces out-of-inventory pins to a
+    one-line index, and derives entry_points to their owning module (D-120)."""
     source = tmp_path / "contracts.json"
     source.write_text(json.dumps({
         "files": ["src/a.py"],
@@ -699,8 +699,14 @@ def test_contracts_delta_slices_out_of_scope_pins(tmp_path):
              "file": "src/b.py"},
             {"id": "route:GET /old", "path": "/old", "method": "GET"},
         ],
-        "schemas": [{"id": "schema:A", "file": "src/a.py"}],
-        "errors": [{"id": "err:A", "file": "src/a.py"}],
+        "schemas": [
+            {"id": "schema:A", "file": "src/a.py"},
+            {"id": "schema:B", "file": "src/b.py"},
+        ],
+        "errors": [
+            {"id": "err:A", "file": "src/a.py"},
+            {"id": "err:B", "file": "src/b.py", "shape": "plain text"},
+        ],
         "entry_points": [
             "src.a:app",
             "src.b:handler",
@@ -713,7 +719,15 @@ def test_contracts_delta_slices_out_of_scope_pins(tmp_path):
     assert kept["files"] == ["src/a.py"]
     assert [e["id"] for e in kept["routes"]] == [
         "route:GET /a", "route:GET /old"]
+    assert [e["id"] for e in kept["schemas"]] == ["schema:A"]
+    assert [e["id"] for e in kept["errors"]] == ["err:A"]
     assert kept["entry_points"] == ["src.a:app", "not-a-module"]
+    assert kept["out_of_scope"] == [
+        "route:GET /b — GET /b; pinned src/b.py (outside this milestone)",
+        "schema:B; pinned src/b.py (outside this milestone)",
+        "err:B — plain text; pinned src/b.py (outside this milestone)",
+        "src.b:handler — module outside this milestone (import path exists)",
+    ]
 
 
 def test_contracts_delta_missing_input_fails(tmp_path):
