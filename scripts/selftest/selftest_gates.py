@@ -837,6 +837,11 @@ def test_contracts_delta_slices_out_of_scope_pins(tmp_path):
             {"id": "err:A", "file": "src/a.py"},
             {"id": "err:B", "file": "src/b.py", "shape": "plain text"},
         ],
+        "ui": [
+            {"id": "ui:keep", "testid": "keep", "file": "src/a.py"},
+            {"id": "ui:drop", "testid": "drop", "file": "src/b.py"},
+            {"id": "ui:carry", "testid": "carry"},
+        ],
         "entry_points": [
             "src.a:app",
             "src.b:handler",
@@ -851,11 +856,13 @@ def test_contracts_delta_slices_out_of_scope_pins(tmp_path):
         "route:GET /a", "route:GET /old"]
     assert [e["id"] for e in kept["schemas"]] == ["schema:A"]
     assert [e["id"] for e in kept["errors"]] == ["err:A"]
+    assert [e["id"] for e in kept["ui"]] == ["ui:keep", "ui:carry"]
     assert kept["entry_points"] == ["src.a:app", "not-a-module"]
     assert kept["out_of_scope"] == [
         "route:GET /b — GET /b; pinned src/b.py (outside this milestone)",
         "schema:B; pinned src/b.py (outside this milestone)",
         "err:B — plain text; pinned src/b.py (outside this milestone)",
+        "ui:drop — testid drop; pinned src/b.py (outside this milestone)",
         "src.b:handler — module outside this milestone (import path exists)",
     ]
 

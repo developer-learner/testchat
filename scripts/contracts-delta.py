@@ -37,7 +37,7 @@ except (OSError, json.JSONDecodeError):
 if not isinstance(contracts, dict):
     sys.exit(1)
 
-PINNED_KEYS = ("routes", "schemas", "errors")
+PINNED_KEYS = ("routes", "schemas", "errors", "ui")
 
 
 def entry_pin(entry):
@@ -59,6 +59,8 @@ def one_line(key, entry):
         fields = entry.get("fields") or []
         names = [f.get("id") if isinstance(f, dict) else str(f) for f in fields]
         shape = ("fields: " + ", ".join(names)) if names else ""
+    elif key == "ui":
+        shape = f"testid {entry.get('testid')}" if entry.get("testid") else ""
     else:
         shape = entry.get("shape") or ""
     pin = entry.get("file")
