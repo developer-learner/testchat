@@ -355,6 +355,17 @@ done incidentally.
 - Search across threads
 - Multi-model comparison (side-by-side responses)
 
+### Candidate: file-granular changed_tests refinement (review granularity only)
+**Priority:** P3 (process hygiene — audit follow-up 2026-08-06)
+**Why:** DELTA-v84 shipped 58 changed_tests vs 6 mapped to the milestone's
+files: whole-file subtree resets. By design via D-116 (file-scoped removal
+term), but the mapped set is the true affected set; broader resets re-run
+finished user tasks only when a milestone's files collide.
+**What:** No change now — record as review candidate. If a later milestone
+ships a wider byte-diff than its mapped tests warrant, revisit whether
+`changed_tests` should carry the mapped node-ids only (D-112 verdict scope
+already uses the mapped set).
+
 ---
 
 ## Icebox (someday/maybe)
