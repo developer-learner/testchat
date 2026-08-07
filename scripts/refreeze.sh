@@ -10,41 +10,30 @@
 #      D-87 static-asset reachability, D-88 smoke-check quotes, INV-4 test
 #      surface, staged-test parse+lint+determinism),
 #   2. shows the full diff and its DIFF-SHA,
-#   3. by default: proceeds automatically when every preflight is green
-#      (D-95 — the y/N approval was ceremonial once every material check
-#      already ran; a verdict nobody consumes is not a gate). Halts on any
-#      preflight failure with the specific finding.
-#      Explicit paths remain: --diff (print diff, apply nothing),
-#      --approve <sha> (D-42 hash-bound apply), --interactive (opt-in y/N
-#      for the rare "I want to eyeball this one" case).
+#   3. applies automatically when every preflight is green (D-95, then
+#      D-121): the y/N and hash-bound approvals were ceremonial once every
+#      material check already ran — a verdict nobody consumes is not a gate.
+#      The CEO ruling (2026-08-06): "remove ceo approval for refreeze run —
+#      the business ceo or human can't add any value there." There is NO
+#      human approval step in this lane; halts on any preflight failure
+#      with the specific finding. --diff remains as a read-only dry-run
+#      preview (prints the diff and DIFF-SHA, applies nothing).
 #   4. applies the files, re-collects test node-ids, records the delta,
 #   5. re-freezes: bumps VERSION, regenerates the hash manifest,
 #      commits [refreeze vN].
 #
 # Wrongness gets a protocol instead of a workaround: frozen artifacts can be
-# legitimately revised (bounded, versioned, human-approved) and can NEVER be
+# legitimately revised (bounded, versioned, gate-approved) and can NEVER be
 # silently mutated — every gate run verifies the frozen-manifest, fail-closed.
 #
 # Usage:
 #   refreeze.sh [<staging-dir>]             auto: preflight-green → apply
-#                                           (D-95 default; halts on any
+#                                           (D-95/D-121; halts on any
 #                                           preflight failure)
 #   refreeze.sh --diff [<staging-dir>]      validate + print full diff and its
-#                                           DIFF-SHA, apply nothing (agent flow
-#                                           step 1: conductor shows this to the CEO)
-#   refreeze.sh --approve <sha> [<staging-dir>]
-#                                           explicit-apply, D-42: the sha
-#                                           must match the recomputed diff hash;
-#                                           the conductor's "ask" permission
-#                                           prompt on this exact command is the
-#                                           human gate — the CEO approves a
-#                                           command carrying the hash of the
-#                                           diff they read.
-#   refreeze.sh --interactive [<staging-dir>]
-#                                           opt-in y/N (the pre-D-95 default).
-#                                           For the rare case where the CEO
-#                                           wants to eyeball this specific
-#                                           freeze before it applies.
+#                                           DIFF-SHA, apply nothing (read-only
+#                                           preview; the install is the same
+#                                           command without the flag)
 # Default staging dir: scripts/.approved/incoming
 # Staging layout — ONLY the changed files, full new content, paths preserved:
 #   PRD.md  ERD.md  ERD-DELTA.md  contracts.json
@@ -63,19 +52,19 @@ cd "$(cd "$(dirname "$0")/.." && pwd -P)"
 APPROVED="scripts/.approved"
 
 MODE="auto"
-APPROVE_SHA=""
 case "${1:-}" in
   --diff)        MODE="diff"; shift ;;
-  --approve)     MODE="approve"; APPROVE_SHA="${2:?usage: refreeze.sh --approve <sha> [staging-dir]}"; shift 2 ;;
-  --interactive) MODE="interactive"; shift ;;
 esac
 IN="${1:-$APPROVED/incoming}"
 
 die() { echo "REFREEZE FAIL: $*" >&2; exit 1; }
 
+case "${1:-}" in
+  --approve|--interactive)
+    die "the ${1} approval path was removed (D-121) — refreeze installs by gate verdict once every preflight is green; use --diff for a read-only preview" ;;
+esac
+
 [ -d "$IN" ] || die "staging dir not found: $IN (see docs/ESCALATION.md for the layout)"
-[ "$MODE" != "interactive" ] || [ -t 0 ] \
-  || die "--interactive requires a terminal — drop the flag (D-95 auto mode) or use --diff / --approve <sha> (D-42)"
 
 V=$(cat "$APPROVED/VERSION" 2>/dev/null || echo 0)
 NEW=$((V + 1))
@@ -481,8 +470,9 @@ done
 if [ "$MODE" = "diff" ]; then
   echo ""
   echo "DIFF-SHA: $DIFF_SHA"
-  echo "(nothing applied — to install, the CEO approves:"
-  echo "  scripts/refreeze.sh --approve $DIFF_SHA $IN)"
+  echo "(nothing applied — dry-run preview. Install by re-running without flags:"
+  echo "  scripts/refreeze.sh $IN)"
+  echo "  The mechanical preflights above ARE the verdict (D-121)."
   exit 0
 fi
 
@@ -525,43 +515,19 @@ fi
 mkdir -p .pipeline-state
 cp "$APPROVED/contracts.json" .pipeline-state/refreeze-old-contracts.json 2>/dev/null || true
 
-# --- Approval gate ---
-# D-95 auto (default): every mechanical preflight above already died on hard
-# failure — reaching this line means the artifact IS approved by the gates
-# the pipeline actually enforces. The old interactive y/N prompted the CEO
-# after that point, on artifacts the gates had already cleared, on a diff
-# the CEO could not judge (~62KB re-touched ERDs turned it into a
-# rubber-stamp for five straight testchat refreezes v60–v64; CEO delegated
-# the approval to the model 2026-07-27 as an interim). Auto proceeds; the
-# DIFF-SHA above is the audit trail; the escalation paths that DO summon
-# the CEO stay untouched (--diff for pre-review, --approve <sha> for
-# D-42 explicit apply, --interactive for opt-in eyeball).
-case "$MODE" in
-  approve)
-    # D-42: hash-bound explicit apply. The human gate is the conductor's
-    # "ask" permission prompt on this exact command — approving it means
-    # approving THIS diff, because the sha on the command line must equal
-    # the hash of the recomputed diff.
-    [ "$APPROVE_SHA" = "$DIFF_SHA" ] \
-      || die "diff hash mismatch — staging changed since the CEO reviewed it (expected $DIFF_SHA, got $APPROVE_SHA). Re-run --diff and re-approve."
-    echo ""
-    echo "approved via diff-hash $DIFF_SHA (D-42)"
-    ;;
-  interactive)
-    # Opt-in eyeball path — rare, for freezes the CEO chose to inspect.
-    echo ""
-    printf 'Approve this delta and re-freeze as v%s? [y/N] ' "$NEW"
-    read -r ANSWER
-    case "$ANSWER" in
-      y|Y|yes|YES) ;;
-      *) echo "aborted — nothing changed"; exit 1 ;;
-    esac
-    ;;
-  auto)
-    echo ""
-    echo "auto-approved (D-95): all mechanical preflights green; DIFF-SHA $DIFF_SHA"
-    ;;
-esac
+# --- Apply decision ---
+# D-95 (auto default) then D-121 (2026-08-06): every mechanical preflight
+# above already died on hard failure — reaching this line means the artifact
+# IS approved by the gates the pipeline actually enforces. The old y/N
+# prompted the CEO after that point, on artifacts the gates had already
+# cleared, on a diff the CEO could not judge (~62KB re-touched ERDs turned
+# it into a rubber-stamp for five straight testchat refreezes v60–v64).
+# D-121 removes the remaining approval paths (--approve hash-bound apply,
+# --interactive y/N) entirely, per the CEO ruling that a human verdict adds
+# no value on a machine-authored diff whose gates already ran. The DIFF-SHA
+# above is the audit trail.
+echo ""
+echo "auto-approved (D-121): all mechanical preflights green; DIFF-SHA $DIFF_SHA"
 
 # --- Apply ---
 for f in $CHANGED_DOCS; do

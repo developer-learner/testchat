@@ -4362,19 +4362,13 @@ def freezable_repo(tmp_path):
     return tmp_path
 
 
-def _run_refreeze_approve(repo):
-    """--diff to get the hash, then --approve <hash>: the D-42 agent flow,
-    which is the only non-interactive way through the apply path."""
-    d = subprocess.run(
-        ["bash", "scripts/refreeze.sh", "--diff", "scripts/.approved/incoming"],
-        cwd=repo, capture_output=True, text=True,
-    )
-    assert d.returncode == 0, (d.stdout, d.stderr)
-    m = re.search(r"DIFF-SHA: ([0-9a-f]{64})", d.stdout)
-    assert m, d.stdout
+def _run_refreeze_install(repo):
+    """Auto install: every mechanical preflight green → the freeze applies
+    (D-95). D-121 removed the --approve (D-42 hash-bound) and --interactive
+    human-approval paths entirely, so the plain invocation is the only
+    non-interactive way through the apply path."""
     return subprocess.run(
-        ["bash", "scripts/refreeze.sh", "--approve", m.group(1),
-         "scripts/.approved/incoming"],
+        ["bash", "scripts/refreeze.sh", "scripts/.approved/incoming"],
         cwd=repo, capture_output=True, text=True,
     )
 
@@ -4386,7 +4380,7 @@ def test_refreeze_collection_is_sandboxed_and_confined(freezable_repo):
     decoy.mkdir(parents=True)
     (decoy / "test_decoy.py").write_text(
         "def test_must_not_be_collected():\n    assert True\n")
-    r = _run_refreeze_approve(freezable_repo)
+    r = _run_refreeze_install(freezable_repo)
     assert r.returncode == 0, (r.stdout, r.stderr)
     assert "via sandbox" in r.stdout, r.stdout
     frozen = (freezable_repo / "scripts" / ".approved" / "test-nodeids").read_text()
@@ -4397,7 +4391,7 @@ def test_refreeze_collection_is_sandboxed_and_confined(freezable_repo):
 
 def test_refreeze_redcheck_runs_only_in_sandbox(freezable_repo):
     """The red check is conclusive through the sandbox and has no host arm."""
-    r = _run_refreeze_approve(freezable_repo)
+    r = _run_refreeze_install(freezable_repo)
     assert r.returncode == 0, (r.stdout, r.stderr)
     assert "red-check ran via: sandbox" in r.stdout, r.stdout
     assert "INCONCLUSIVE" not in r.stdout, r.stdout
@@ -4420,7 +4414,7 @@ def _stage_contracts_smoke(repo, cmd):
     contracts["changed_files"] = []
     (approved / "incoming" / "contracts.json").write_text(
         json.dumps(contracts))
-    return _run_refreeze_approve(repo)
+    return _run_refreeze_install(repo)
 
 
 def test_refreeze_smoke_check_must_be_red_on_unchanged_tree(freezable_repo):
@@ -4455,7 +4449,7 @@ def test_refreeze_identical_staged_test_does_not_widen_delta(freezable_repo):
     incoming = freezable_repo / "scripts" / ".approved" / "incoming" / "tests"
     (incoming / "test_carried.py").write_bytes(
         (freezable_repo / "tests" / "test_carried.py").read_bytes())
-    r = _run_refreeze_approve(freezable_repo)
+    r = _run_refreeze_install(freezable_repo)
     assert r.returncode == 0, (r.stdout, r.stderr)
     delta = json.loads((freezable_repo / "scripts" / ".approved"
                         / "DELTA-v2.json").read_text())
@@ -4480,7 +4474,7 @@ def test_refreeze_ui_change_reaches_delta(freezable_repo):
         "ui": [{"id": "ui:new-badge", "testid": "new-badge",
                 "description": "status badge"}],
     }))
-    r = _run_refreeze_approve(freezable_repo)
+    r = _run_refreeze_install(freezable_repo)
     assert r.returncode == 0, (r.stdout, r.stderr)
     delta = json.loads((freezable_repo / "scripts" / ".approved"
                         / "DELTA-v2.json").read_text())
@@ -4494,7 +4488,10 @@ def test_refreeze_ui_change_reaches_delta(freezable_repo):
 # refreezes (v60–v64). D-95 makes auto the default: on preflight-green
 # the freeze applies, printing an audit line with the DIFF-SHA; on ANY
 # preflight failure the script still `die`s with the specific finding.
-# The interactive path is preserved as an opt-in flag.
+# D-121 (2026-08-06) removes the remaining human paths (--approve,
+# --interactive) entirely — the CEO ruling: the human verdict adds no
+# value on a machine-authored diff whose gates already ran. --diff stays
+# as a read-only preview that applies nothing.
 
 
 def test_refreeze_auto_proceeds_without_terminal(freezable_repo):
@@ -4506,7 +4503,7 @@ def test_refreeze_auto_proceeds_without_terminal(freezable_repo):
         cwd=freezable_repo, capture_output=True, text=True,
     )
     assert r.returncode == 0, (r.stdout, r.stderr)
-    assert "auto-approved (D-95)" in r.stdout, r.stdout
+    assert "auto-approved (D-121)" in r.stdout, r.stdout
     assert "DIFF-SHA" in r.stdout, r.stdout
     # No y/N prompt reached the user (the string the old interactive path printed).
     assert "Approve this delta" not in r.stdout, r.stdout
@@ -4540,20 +4537,21 @@ def test_refreeze_auto_halts_on_preflight_fail(stageable_repo):
     assert "auto-approved" not in combined, combined
 
 
-def test_refreeze_interactive_flag_requires_terminal(freezable_repo):
-    """--interactive is the opt-in eyeball path — under subprocess (no tty)
-    it must die with a message pointing back to the D-95 auto default and
-    the D-42 explicit flow. Preserves the escape hatch without silently
-    degrading to auto when the user asked for interactive."""
-    r = subprocess.run(
-        ["bash", "scripts/refreeze.sh", "--interactive",
-         "scripts/.approved/incoming"],
-        cwd=freezable_repo, capture_output=True, text=True,
-    )
-    assert r.returncode != 0, (r.stdout, r.stderr)
-    combined = r.stdout + r.stderr
-    assert "--interactive" in combined, combined
-    assert "D-95" in combined, combined
+def test_refreeze_approval_flags_removed(freezable_repo):
+    """D-121: the CEO approval step is gone from the refreeze lane — both
+    --approve (D-42 hash-bound) and --interactive (y/N eyeball) die on use
+    with a pointer to the auto install, so the human gate can never be
+    reintroduced silently; the auto path itself is covered by
+    test_refreeze_auto_proceeds_without_terminal."""
+    for args in (["--approve", "x" * 64], ["--interactive"]):
+        r = subprocess.run(
+            ["bash", "scripts/refreeze.sh", *args, "scripts/.approved/incoming"],
+            cwd=freezable_repo, capture_output=True, text=True,
+        )
+        assert r.returncode != 0, r.stdout
+        combined = r.stdout + r.stderr
+        assert "--approve" in combined or "--interactive" in combined, combined
+        assert "D-121" in combined, combined
 
 
 # --- subtree re-plan: --subtree-scope / --merge-subtree (Fix A) --------------
@@ -5060,7 +5058,7 @@ def test_refreeze_accepts_and_pins_erd_delta(freezable_repo):
     (freezable_repo / "scripts" / ".approved" / "incoming"
      / "ERD-DELTA.md").write_text(
         VALID_ERD_DELTA.replace("None.\n\n## Superseded", "AC-1\n\n## Superseded"))
-    r = _run_refreeze_approve(freezable_repo)
+    r = _run_refreeze_install(freezable_repo)
     assert r.returncode == 0, (r.stdout, r.stderr)
     approved = freezable_repo / "scripts" / ".approved"
     assert (approved / "ERD-DELTA.md").read_text().startswith("# Current milestone"), \
@@ -5125,7 +5123,7 @@ def test_refreeze_docs_only_retires_previous_erd_delta(freezable_repo):
     (approved / "incoming" / "tests" / "test_delta.py").unlink()
     (approved / "incoming" / "ERD-DELTA.md").unlink()
     (approved / "incoming" / "ERD.md").write_text("# Standing ERD wording\n")
-    r = _run_refreeze_approve(freezable_repo)
+    r = _run_refreeze_install(freezable_repo)
     assert r.returncode == 0, (r.stdout, r.stderr)
     assert not (approved / "ERD-DELTA.md").exists()
     assert "ERD-DELTA.md" not in (approved / "frozen-manifest").read_text()
