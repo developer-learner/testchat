@@ -14,7 +14,9 @@ required if and only if a frozen test pins it. This document narrates the
 product and states the acceptance criteria currently in force. Criteria from
 earlier milestones that remain live are pinned by their own frozen tests; the
 criteria written out below govern the current feature set — current-chat
-awareness, free model selection, conflict-safe history persistence, and the local model catalog.
+awareness, free model selection, the composer keyboard shortcuts (Enter for a
+newline, Ctrl+Enter / Cmd+Enter to send), conflict-safe history persistence,
+and the local model catalog.
 
 ## Acceptance criteria
 
@@ -372,3 +374,8 @@ awareness, free model selection, conflict-safe history persistence, and the loca
    model beside the others. With its local server running, selecting it loads
    it the same way — and loading it releases whichever other local model was
    resident, since the local models do not run at the same time.
+8. In the message box, press Enter: a newline appears at the cursor and
+   nothing is sent. Press Ctrl+Enter (Cmd+Enter on macOS): the message sends.
+   With the box empty or whitespace-only, Ctrl+Enter sends nothing and the
+   input is unchanged. The box's hint text reads "Ctrl+Enter to send, Enter
+   for newline".

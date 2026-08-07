@@ -55,7 +55,9 @@ never read to disable the selector. Frozen tests assert this
   strip (hover/active affordance, drag-time cursor and user-select suppression).
 * **`src/static/index.html`** — links both new stylesheets after `style.css`,
   hosts the header title span + rename input (between the model field and the
-  settings control), the `sidebar-resizer` divider element, and loads
+  settings control), the `sidebar-resizer` divider element, the message-input
+  element whose placeholder states the composer shortcuts — "Type a message...
+  (Ctrl+Enter to send, Enter for newline)" (AC-155) — and loads
   `current-chat.js` and `sidebar-resize.js` between `threads.js` and `app.js`
   (load order matters: `app.js` init calls `Threads.renderSidebar()`, which
   calls `CurrentChat.refresh()`).
@@ -79,8 +81,14 @@ never read to disable the selector. Frozen tests assert this
   load-confirm modal, then auto-resubmits on load success) before any request;
   SSE stream (`token` / `think` / `done` / `error` / `sources` frames), Stop
   button (`AbortController`), bubble helpers, per-message hover actions (copy,
-  delete pair), code-block copy, thinking toggle, new-thread button; `pollStatus`
-  (5s interval — coupled to `modelSelect` / `sendBtn.disabled` /
+  delete pair), code-block copy, thinking toggle, new-thread button; the
+  message-input composer (AC-152..AC-154): plain Enter and Shift+Enter keep
+  the textarea's default newline behavior and never send, while Ctrl+Enter /
+  Cmd+Enter submits through the same `form.requestSubmit()` path as the send
+  button — the submit handler's empty-input guard (trims, no-ops on
+  whitespace) and the IME `isComposing` guard are unchanged (the placeholder
+  stating the shortcuts lives in `index.html`, AC-155); `pollStatus` (5s
+  interval — coupled to `modelSelect` / `sendBtn.disabled` /
   `webToggle.disabled` from `/api/v1/status`); publishes
   `window.App = { appendBubble, pollStatus }` for chrome and catalog to call
   lazily. Load-confirm modal element handles are grabbed here because the
@@ -242,6 +250,12 @@ Front-end static: `index.html`, `app.js`, `threads.js`, `current-chat.js`,
   and `/api/v1/models/catalog`; if a future milestone renames either route,
   these tests fail loudly at the route mock, which is the correct signal to
   re-true the contracts.
+* **Composer IME guard.** The message-input keydown handler routes plain Enter
+  to a newline and Ctrl+Enter / Cmd+Enter to send; the `isComposing` guard
+  keeps an in-progress IME composition from firing the send path. The frozen
+  composer tests type without an IME, so a keyboard-layout or IME regression
+  would surface in real use before the suite notices — the tests protect the
+  mapped contract, not every input method.
 
 ## CEO acceptance (D-44)
 
