@@ -1,5 +1,5 @@
 {
-  "erd_version": 82,
+  "erd_version": 83,
   "files": [
     "src/static/app.js",
     "src/static/index.html"
@@ -44,77 +44,92 @@
     {
       "id": "route:GET /",
       "method": "GET",
-      "path": "/"
+      "path": "/",
+      "file": "src/main.py"
     },
     {
       "id": "route:POST /api/v1/chat",
       "method": "POST",
-      "path": "/api/v1/chat"
+      "path": "/api/v1/chat",
+      "file": "src/api/chat.py"
     },
     {
       "id": "route:GET /api/v1/models",
       "method": "GET",
-      "path": "/api/v1/models"
+      "path": "/api/v1/models",
+      "file": "src/api/models.py"
     },
     {
       "id": "route:GET /api/v1/models/catalog",
       "method": "GET",
-      "path": "/api/v1/models/catalog"
+      "path": "/api/v1/models/catalog",
+      "file": "src/api/models.py"
     },
     {
       "id": "route:POST /api/v1/nemotron/load",
       "method": "POST",
-      "path": "/api/v1/nemotron/load"
+      "path": "/api/v1/nemotron/load",
+      "file": "src/api/models.py"
     },
     {
       "id": "route:POST /api/v1/nemotron/unload",
       "method": "POST",
-      "path": "/api/v1/nemotron/unload"
+      "path": "/api/v1/nemotron/unload",
+      "file": "src/api/models.py"
     },
     {
       "id": "route:GET /static/{path}",
       "method": "GET",
-      "path": "/static/{path}"
+      "path": "/static/{path}",
+      "file": "src/main.py"
     },
     {
       "id": "route:GET /api/v1/threads",
       "method": "GET",
-      "path": "/api/v1/threads"
+      "path": "/api/v1/threads",
+      "file": "src/api/threads.py"
     },
     {
       "id": "route:PUT /api/v1/threads",
       "method": "PUT",
-      "path": "/api/v1/threads"
+      "path": "/api/v1/threads",
+      "file": "src/api/threads.py"
     },
     {
       "id": "route:DELETE /api/v1/threads",
       "method": "DELETE",
-      "path": "/api/v1/threads"
+      "path": "/api/v1/threads",
+      "file": "src/api/threads.py"
     },
     {
       "id": "route:GET /api/v1/settings",
       "method": "GET",
-      "path": "/api/v1/settings"
+      "path": "/api/v1/settings",
+      "file": "src/api/settings.py"
     },
     {
       "id": "route:PUT /api/v1/settings",
       "method": "PUT",
-      "path": "/api/v1/settings"
+      "path": "/api/v1/settings",
+      "file": "src/api/settings.py"
     },
     {
       "id": "route:GET /api/v1/status",
       "method": "GET",
-      "path": "/api/v1/status"
+      "path": "/api/v1/status",
+      "file": "src/api/status.py"
     },
     {
       "id": "route:POST /api/v1/script-models/{model_id}/load",
       "method": "POST",
-      "path": "/api/v1/script-models/{model_id}/load"
+      "path": "/api/v1/script-models/{model_id}/load",
+      "file": "src/api/models.py"
     },
     {
       "id": "route:POST /api/v1/script-models/{model_id}/unload",
       "method": "POST",
-      "path": "/api/v1/script-models/{model_id}/unload"
+      "path": "/api/v1/script-models/{model_id}/unload",
+      "file": "src/api/models.py"
     }
   ],
   "schemas": [
@@ -125,21 +140,24 @@
         "history": "array of HistoryEntry, optional, default []",
         "model": "string, optional, default null",
         "web": "boolean, optional, default false \u2014 when true the backend performs one Tavily search before the LLM call (AC-86)"
-      }
+      },
+      "file": "src/api/chat.py"
     },
     {
       "id": "schema:HistoryEntry",
       "fields": {
         "role": "string, literal 'user' or 'assistant'",
         "content": "string"
-      }
+      },
+      "file": "src/api/chat.py"
     },
     {
       "id": "schema:SourceLink",
       "fields": {
         "title": "string",
         "url": "string"
-      }
+      },
+      "file": "src/api/threads.py"
     },
     {
       "id": "schema:SSESources",
@@ -147,75 +165,86 @@
         "event": "literal 'sources' \u2014 emitted at most once, BEFORE any token event, only when the request had web=true",
         "sources": "array of {n: integer 1-based, title, url}; empty on search failure",
         "notice": "string, present only on search failure: 'web search unavailable' (AC-89)"
-      }
+      },
+      "file": "src/api/chat.py"
     },
     {
       "id": "schema:SSEToken",
       "fields": {
         "event": "literal 'token'",
         "content": "string"
-      }
+      },
+      "file": "src/api/chat.py"
     },
     {
       "id": "schema:SSEThink",
       "fields": {
         "event": "literal 'think'",
         "content": "string"
-      }
+      },
+      "file": "src/api/chat.py"
     },
     {
       "id": "schema:SSEDone",
       "fields": {
         "event": "literal 'done'"
-      }
+      },
+      "file": "src/api/chat.py"
     },
     {
       "id": "schema:SSEError",
       "fields": {
         "event": "literal 'error'",
         "message": "string"
-      }
+      },
+      "file": "src/api/chat.py"
     },
     {
       "id": "schema:ModelInfo",
       "fields": {
         "id": "string",
         "source": "string, literal 'lmstudio' or 'nemotron' or 'deepseek-v4-flash' or 'deepseek-v4-flash-0731'"
-      }
+      },
+      "file": "src/api/models.py"
     },
     {
       "id": "schema:ModelsListResponse",
       "fields": {
         "models": "array of ModelInfo"
-      }
+      },
+      "file": "src/api/models.py"
     },
     {
       "id": "schema:NemotronLoadResponse",
       "fields": {
         "status": "string, literal 'loaded' or 'error'",
         "message": "string, optional"
-      }
+      },
+      "file": "src/api/models.py"
     },
     {
       "id": "schema:ScriptModelLoadResponse",
       "fields": {
         "status": "string, literal 'loaded' or 'error'",
         "message": "string, optional \u2014 present on 'error'"
-      }
+      },
+      "file": "src/api/models.py"
     },
     {
       "id": "schema:NemotronUnloadResponse",
       "fields": {
         "status": "string, literal 'unloaded' or 'error'",
         "message": "string, optional"
-      }
+      },
+      "file": "src/api/models.py"
     },
     {
       "id": "schema:ScriptModelUnloadResponse",
       "fields": {
         "status": "string, literal 'unloaded' or 'error'",
         "message": "string, optional \u2014 present on 'error'"
-      }
+      },
+      "file": "src/api/models.py"
     },
     {
       "id": "schema:ThreadSnapshot",
@@ -225,20 +254,23 @@
         "messages": "array of HistoryEntry (role: \"user\"|\"assistant\", content, ts, model, optional sources: array of SourceLink \u2014 absent, never empty-list, when the message had no web sources)",
         "model": "string, may be empty",
         "locked": "boolean"
-      }
+      },
+      "file": "src/api/threads.py"
     },
     {
       "id": "schema:ThreadsPayload",
       "fields": {
         "revision": "integer >= 0, required expected current persisted generation",
         "threads": "array of ThreadSnapshot"
-      }
+      },
+      "file": "src/api/threads.py"
     },
     {
       "id": "schema:ThreadsRevisionPrecondition",
       "fields": {
         "revision": "integer >= 0, required expected current persisted generation"
-      }
+      },
+      "file": "src/api/threads.py"
     },
     {
       "id": "schema:ThreadsListResponse",
@@ -246,21 +278,24 @@
         "threads": "array of ThreadSnapshot",
         "revision": "integer >= 0, current persisted generation",
         "quarantined": "boolean \u2014 true while a quarantined (unreadable) snapshot file sits beside the data file"
-      }
+      },
+      "file": "src/api/threads.py"
     },
     {
       "id": "schema:ThreadsMutationResponse",
       "fields": {
         "status": "string, literal 'ok'",
         "revision": "integer >= 1, newly accepted persisted generation"
-      }
+      },
+      "file": "src/api/threads.py"
     },
     {
       "id": "schema:RevisionConflictResponse",
       "fields": {
         "error": "string, literal 'revision_conflict'",
         "current_revision": "integer >= 0, authoritative persisted generation"
-      }
+      },
+      "file": "src/api/threads.py"
     },
     {
       "id": "schema:StatusResponse",
@@ -271,25 +306,30 @@
         "ram_total_gb": "number",
         "loadable_gb": "number",
         "web_configured": "boolean \u2014 true iff TAVILY_API_KEY is set (AC-90)"
-      }
+      },
+      "file": "src/api/status.py"
     }
   ],
   "errors": [
     {
       "id": "error:422-validation",
-      "status": 422
+      "status": 422,
+      "file": "src/api/chat.py"
     },
     {
       "id": "error:409-revision-conflict",
-      "status": 409
+      "status": 409,
+      "file": "src/api/threads.py"
     },
     {
       "id": "error:503-nemotron-unavailable",
-      "status": 503
+      "status": 503,
+      "file": "src/api/models.py"
     },
     {
       "id": "error:503-script-model-unavailable",
-      "status": 503
+      "status": 503,
+      "file": "src/api/models.py"
     }
   ],
   "externals": [
@@ -548,8 +588,5 @@
     "src/static/app.js": "grep -q webToggle src/static/app.js && grep -q pollStatus src/static/app.js && grep -q queueRender src/static/app.js"
   },
   "no_edit_files": [],
-  "changed_files": [
-    "src/static/app.js",
-    "src/static/index.html"
-  ]
+  "changed_files": []
 }
