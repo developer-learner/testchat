@@ -7,6 +7,25 @@
 
 ## Up Next
 
+### Contracts entry→file pin (prerequisite to the EM contracts-trim)
+**Priority:** P1 (context minimalism, per CEO audit 2026-08-06)
+**Why:** The EM plan calls still ship the full `contracts.json` (74 entries)
+because the EM composes Rule-8 briefs whose signature material lives only in
+contract entry bodies — and nothing pins an entry to its owning file, so
+there is no mechanical slice. Verified: 0 of 40 object entries carry a
+`file` field; `entry_points` are self-pinning (dotted path → file path).
+Trimming before the pin risks briefs contradicting unseen contracts.
+**What:** TPM freeze shipping the pin per
+`project-trail/2026-08-06-contracts-file-pin-proposal.md`: optional `file`
+property on routes/schemas/errors items (schema edit is a conductor-lane
+control-plane change in the same session), one-time backfill of all 40
+entries, freeze-time check in check-spec-delta.py for new/changed entries.
+**After:** a `contracts-delta` generator beside `standing-summary.py` slices
+the EM's contracts context to entries whose file is in the milestone's
+`contracts.files`; then the trim itself (blocked today, D-119 decision).
+**Rough size:** TPM: 1 contracts.json delta (+40 pins). Conductor: schema
+edit + check + contracts-delta generator + selftests.
+
 ### Discover models from generic OpenAI-compatible endpoints
 **Priority:** P1
 **Why:** Live deployment against MTPLX on 2026-07-30 proved that chat
