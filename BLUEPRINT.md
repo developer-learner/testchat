@@ -32,7 +32,8 @@ the scope its capability class can carry, and the shell owns all procedure.
 
 Tests are **run by the shell** (`scripts/orchestrate.sh` → pytest) — there is
 no test agent. The TPM's spec enters the repo only through
-`scripts/refreeze.sh` (a human-approved diff), after which it is frozen and
+`scripts/refreeze.sh` (auto-applied once every mechanical preflight is green,
+D-95/D-121), after which it is frozen and
 hash-pinned. The orchestrator validates the EM's plan mechanically
 (`scripts/validate-plan.py`), walks the task DAG, runs the coder one file at a
 time inside a read-only-repo sandbox, and gates every step. A feature is done
@@ -299,11 +300,9 @@ If any check fails, STOP and report exactly which one. Do not proceed.
 CEO business intent ──► TPM (frontier LLM — web chat D-38 or scoped repo agent D-39)
                           │  writes PRD + ERD/contracts + the test suite
                           ▼
-            scripts/refreeze.sh  ← CEO approves the diff (THE approval gate:
-                          │        terminal y/N, or conductor-driven
-                          │        --diff / --approve <hash> via the
-                          │        conductor's own ask-prompt, D-42 — CEO
-                          │        reads, then approves)
+            scripts/refreeze.sh  ← mechanical preflights ARE the gate; D-95
+                          │        auto-applies on green. No approval step
+                          │        (D-121): `--diff` is a read-only preview.
                           │  spec frozen: scripts/.approved/ + tests/, hash-pinned
                           ▼
             scripts/orchestrate.sh (shell owns ALL procedure)
