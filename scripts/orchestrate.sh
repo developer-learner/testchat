@@ -1058,18 +1058,34 @@ ensure_plan() {
   NODEIDS_SCOPE=""
   if [ "${ACTIVE_DELTA_FILES+set}" = "set" ] && [ "${#ACTIVE_DELTA_FILES[@]}" -gt 0 ]; then
     NODEIDS_SCOPE="$STATE_DIR/nodeids-scope.txt"
-    python3 - "$NODEIDS_SCOPE" "${ACTIVE_DELTA_FILES[@]}" <<'PY'
+    # D-124 completeness (audit 2026-08-06): the scope union repairs itself
+    # from the frozen test_mapping — a testid pinned to a file any active
+    # delta staged (changed_files) rides the scope even if refreeze_delta's
+    # changed_tests dropped it (D-116 relabel-class regressions). The gate
+    # reads full truth, but the EM can only map what it sees; an id missing
+    # from the prompt would be mapped blind or rejected late. Unpinned
+    # sorted-unique at the end keeps the file deterministic.
+    python3 - "$NODEIDS_SCOPE" "$APPROVED/contracts.json" "${ACTIVE_DELTA_FILES[@]}" <<'PY'
 import json, sys
-out, ids = sys.argv[1], []
-for f in sys.argv[2:]:
+out, contracts_path, ids = sys.argv[1], sys.argv[2], []
+staged_files = set()
+for f in sys.argv[3:]:
     try:
         d = json.load(open(f))
     except OSError:
         continue
+    staged_files.update(d.get("changed_files", []))
     for n in d.get("changed_tests", []):
         if n not in ids:
             ids.append(n)
-open(out, "w").write("\n".join(ids) + "\n")
+try:
+    mapping = json.load(open(contracts_path)).get("test_mapping", {})
+    for node_id, owner in mapping.items():
+        if owner in staged_files and node_id not in ids:
+            ids.append(node_id)
+except (OSError, json.JSONDecodeError):
+    pass
+open(out, "w").write("\n".join(sorted(ids)) + "\n")
 PY
   fi
   while :; do

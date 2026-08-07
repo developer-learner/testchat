@@ -2756,6 +2756,40 @@ def test_plan_full_emit_scopes_nodeids_to_active_delta(tmp_path):
         r.stdout)
 
 
+def test_nodeids_scope_union_includes_pinned_mapping_entries(tmp_path):
+    """D-124 completeness half: the EM's delta-scoped node-id union must be
+    a superset of every node-id contracts.test_mapping pins to a file ANY
+    active delta staged, even when refreeze_delta's changed_tests omits it
+    (a relabel/drop regression in the D-116 computation). The gate reads
+    full truth and would reject an un-mapped pinned id — but an EM that
+    never sees the id cannot map it correctly, so the shipped scope must
+    repair the union from the frozen mapping, not just echo changed_tests.
+    Here test_b.py::test_two is mapped to src/b.py (in changed_files) yet
+    absent from that delta's changed_tests."""
+    plan = good_plan()
+    plan["erd_version"] = 2
+    contracts = dict(CONTRACTS, erd_version=2)
+    contracts["test_mapping"] = {
+        "tests/test_b.py::test_two": "src/b.py",
+        "tests/test_a.py::test_one": "src/a.py",
+    }
+    work = plan_workdir(tmp_path, contracts, [json.dumps(plan)])
+    (work / "scripts" / ".approved" / "test-nodeids").write_text(
+        "tests/test_a.py::test_one\n"
+        "tests/test_b.py::test_two\n")
+    (work / "scripts" / ".approved" / "DELTA-v2.json").write_text(json.dumps({
+        "changed_tests": ["tests/test_a.py::test_one"],
+        "changed_files": ["src/a.py", "src/b.py"],
+        "changed_contract_ids": [],
+    }))
+    r = run_drive_plan(work)
+    assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+    prompt = (work / "prompts" / "1").read_text()
+    header, section = prompt.split("### test-nodeids", 1)[1].split("```", 1)
+    assert "nodeids-scope.txt" in header, prompt
+    assert "tests/test_b.py::test_two" in section, prompt
+
+
 # --- Phase 3: verbatim contract-id rule (bash prompt text, static guard) ------
 # 5 of 32 archived plan-gate rejections were invented contract ids — dotted
 # path guesses like "src.api.models" for "src/api/models.py", all in subtree
@@ -2768,6 +2802,36 @@ def test_plan_full_emit_scopes_nodeids_to_active_delta(tmp_path):
 
 ORCHESTRATE = SCRIPTS / "orchestrate.sh"
 DRIVE_PLAN_SH = SCRIPTS / "selftest" / "drive-plan.sh"
+
+
+def test_orchestrate_em_context_fallbacks_are_loud(tmp_path):
+    """D-116/120: a generator failure at an EM context site must fall back
+    to the full artifact LOUDLY — a silent fallback would let a broken trim
+    masquerade as the trim working (the untriggered-safeguard trap). Pinned
+    as text because the block lives in orchestrate's main flow, outside the
+    drive-extracted functions: the success echo, the WARNING line, the
+    fallback assignment, and the input guard must all survive together."""
+    src = (SCRIPTS / "orchestrate.sh").read_text()
+    assert "generated summary (${wc -l < \"$STANDING_SUMMARY\" | tr -d ' '} lines" not in src
+    # success echo for standing summary
+    assert ("echo \"  standing context: generated summary" in src), src
+    assert ("STANDING_SUMMARY=\"$APPROVED/ERD.md\"" in src), src
+    assert ("WARNING: standing summary generation failed — EM context "
+            "falls back to the full standing ERD" in src), src
+    # success echo for contracts slice
+    assert ("echo \"  contracts context: generated milestone slice" in src), src
+    assert ("CONTRACTS_DELTA=\"$APPROVED/contracts.json\"" in src), src
+    assert ("WARNING: contracts slice generation failed — EM context falls "
+            "back to the full contracts.json" in src), src
+    # both guards: generation only attempted when the input exists, and the
+    # else branch (fallback) always emits the WARNING + full-file assignment
+    assert src.count("WARNING: standing summary generation failed") == 1
+    assert src.count("WARNING: contracts slice generation failed") == 1
+    gens = src[src.index("STANDING_SUMMARY=\"$STATE_DIR/standing-summary.md\""):
+               src.index("CONTRACTS_DELTA=\"$STATE_DIR/contracts-delta.json\"")]
+    assert 'if [ -f "$APPROVED/ERD.md" ]' in gens
+    assert "else" in gens
+    assert "python3 scripts/standing-summary.py" in gens
 
 
 def test_contract_id_rule_present_at_all_plan_sites():
