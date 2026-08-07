@@ -661,6 +661,100 @@ def test_spec_delta_carried_unchanged_entry_exempt_from_pin_gate(delta_repo):
     assert r.returncode == 0, r.stderr
 
 
+# --- D-122: DELTA-vN bookkeeping completeness -------------------------------
+# The DELTA-vN file is the orchestrator's ONLY scope source (subtree reset,
+# verdict scope, red-check). A freeze whose changes the bookkeeping cannot
+# see is lost to the run — the v82 class: ERD-DELTA.md claimed a test
+# UPDATED while the freeze staged no bytes for its file, so DELTA-v82
+# recorded changed_tests: [] and the milestone's stated work was invisible.
+# Ergo: a claimed update must ship its bytes, and a contracts change must
+# carry visible scope (declared changed_files, staged test bytes, or entry
+# deltas) or the freeze is a lie-green risk.
+
+def _stage_claim_delta(staging, marker="(UPDATED)"):
+    (staging / "contracts.json").write_text(json.dumps({
+        "files": ["src/a.py"],
+        "changed_files": ["src/a.py"],
+        "test_mapping": {"tests/test_a.py::test_one": "src/a.py"},
+    }))
+    (staging / "ERD-DELTA.md").write_text(
+        "## Changed acceptance criteria\nAC-1\n"
+        "## Superseded acceptance criteria\nNone\n"
+        "## Changed files\nsrc/a.py\n"
+        "## Test-to-file mapping\n"
+        f"- tests/test_a.py::test_one {marker} -> src/a.py\n"
+    )
+
+
+def test_spec_delta_updated_claim_without_staged_bytes_fails(delta_repo):
+    """The v82 shape: ERD-DELTA.md marks a frozen test UPDATED but the
+    freeze stages no bytes for its file — the DELTA-vN bookkeeping would
+    record no test change, and the milestone's claim vanishes from scope."""
+    _, approved, staging = delta_repo
+    _stage_claim_delta(staging)
+    r = run_spec_delta(staging, approved, staging.parents[2])
+    assert r.returncode == 1
+    assert "(D-122)" in r.stderr
+    assert "tests/test_a.py" in r.stderr
+
+
+def test_spec_delta_updated_claim_with_staged_bytes_passes(delta_repo):
+    """A claimed update that actually stages changed bytes for the test's
+    file is complete: the DELTA-vN walk will see it."""
+    _, approved, staging = delta_repo
+    repo = staging.parents[2]
+    (repo / "tests").mkdir()
+    (repo / "tests" / "test_a.py").write_text("def test_one():\n    assert True\n")
+    (staging / "tests").mkdir()
+    (staging / "tests" / "test_a.py").write_text("def test_one():\n    assert False\n")
+    _stage_claim_delta(staging)
+    r = run_spec_delta(staging, approved, staging.parents[2])
+    assert r.returncode == 0, r.stderr
+
+
+def test_spec_delta_invisible_contract_change_fails(delta_repo):
+    """A freeze touching only bookkeeping-invisible contract keys (e.g.
+    test_mapping) with no declared changed_files, no staged test bytes, and
+    no entry deltas would bookkeep as changed_contract_ids: [] — the
+    orchestrator could never scope the freeze at all."""
+    _, approved, staging = delta_repo
+    (staging / "contracts.json").write_text(json.dumps({
+        "files": ["src/a.py"],
+        "changed_files": [],
+        "test_mapping": {"tests/test_a.py::test_one": "src/a.py"},
+    }))
+    (staging / "ERD-DELTA.md").write_text(
+        "## Changed acceptance criteria\nnone\n"
+        "## Superseded acceptance criteria\nNone\n"
+        "## Changed files\nnone\n"
+        "## Test-to-file mapping\nunchanged\n"
+    )
+    r = run_spec_delta(staging, approved, staging.parents[2])
+    assert r.returncode == 1
+    assert "invisible to the DELTA-vN bookkeeping" in r.stderr
+    assert "(D-122)" in r.stderr
+
+
+def test_spec_delta_invisible_contract_change_with_visible_scope_passes(delta_repo):
+    """The same invisible-key change is complete once the freeze declares
+    the changed files the mapping pins — the bookkeeping sees the scope."""
+    _, approved, staging = delta_repo
+    (staging / "contracts.json").write_text(json.dumps({
+        "files": ["src/a.py"],
+        "changed_files": ["src/a.py"],
+        "test_mapping": {"tests/test_a.py::test_one": "src/a.py"},
+    }))
+    (staging / "ERD-DELTA.md").write_text(
+        "## Changed acceptance criteria\nnone\n"
+        "## Superseded acceptance criteria\nNone\n"
+        "## Changed files\nsrc/a.py\n"
+        "## Test-to-file mapping\n"
+        "- tests/test_a.py::test_one -> src/a.py\n"
+    )
+    r = run_spec_delta(staging, approved, staging.parents[2])
+    assert r.returncode == 0, r.stderr
+
+
 def run_contracts_delta(contracts_path, tmp_path):
     return subprocess.run(
         [sys.executable, str(SCRIPTS / "contracts-delta.py"), str(contracts_path)],
