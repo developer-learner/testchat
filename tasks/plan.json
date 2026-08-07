@@ -1,5 +1,4 @@
 {
-  "version": 3,
   "erd_version": 84,
   "tasks": [
     {
@@ -8,7 +7,13 @@
       "depends_on": [],
       "file": "src/static/app.js",
       "id": "T1",
-      "tests": []
+      "tests": [
+        "tests/test_ui.py::test_message_input_plain_enter_inserts_newline_without_sending[chromium]",
+        "tests/test_ui.py::test_message_input_ctrl_enter_sends[chromium]",
+        "tests/test_ui.py::test_message_input_cmd_enter_sends[chromium]",
+        "tests/test_ui.py::test_message_input_ctrl_enter_empty_sends_nothing[chromium]",
+        "tests/test_ui.py::test_no_loaded_model_shows_placeholder_and_send_guides[chromium]"
+      ]
     },
     {
       "brief": "**Implementation constraints (FIRST):** HTML in the existing file; anchored edit of the message-input element's placeholder attribute only; no other markup changes; no script changes.\n\n**Behavioral specification:** update the message-input element's placeholder text to \"Type a message... (Ctrl+Enter to send, Enter for newline)\". Nothing else changes.\n\n**Acceptance condition:** the frozen test `test_message_input_placeholder_states_shortcuts` (tests/test_ui.py) passes.",
@@ -19,13 +24,9 @@
       "file": "src/static/index.html",
       "id": "T2",
       "tests": [
-        "tests/test_ui.py::test_message_input_cmd_enter_sends[chromium]",
-        "tests/test_ui.py::test_message_input_ctrl_enter_empty_sends_nothing[chromium]",
-        "tests/test_ui.py::test_message_input_ctrl_enter_sends[chromium]",
-        "tests/test_ui.py::test_message_input_placeholder_states_shortcuts[chromium]",
-        "tests/test_ui.py::test_message_input_plain_enter_inserts_newline_without_sending[chromium]",
-        "tests/test_ui.py::test_no_loaded_model_shows_placeholder_and_send_guides[chromium]"
+        "tests/test_ui.py::test_message_input_placeholder_states_shortcuts[chromium]"
       ]
     }
-  ]
+  ],
+  "version": 4
 }
