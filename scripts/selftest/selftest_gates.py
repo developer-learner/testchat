@@ -1123,15 +1123,14 @@ DRIVE_CONSULT = SCRIPTS / "selftest" / "drive-consult.sh"
 VALID_DIAG = {"verdict": "decomposition_wrong", "reason": "T2 split is wrong"}
 
 
-def run_consult(tmp_path, replies, task_id="T7"):
+def run_consult(tmp_path, replies, task_id="T7", evidence="failed 2 attempts on src/x.py"):
     rdir = tmp_path / "replies"
     rdir.mkdir()
     for i, reply in enumerate(replies, 1):
         raw = reply if isinstance(reply, str) else json.dumps(reply)
         (rdir / str(i)).write_text(raw)
     return subprocess.run(
-        ["bash", str(DRIVE_CONSULT), str(tmp_path), task_id,
-         "failed 2 attempts on src/x.py"],
+        ["bash", str(DRIVE_CONSULT), str(tmp_path), task_id, evidence],
         capture_output=True, text=True,
     )
 
@@ -1267,6 +1266,141 @@ evidence="two failed coder attempts on src/x.py; token cap + mixed-mode reply"
     text = bundle.read_text()
     assert "caps-exhausted" in text
     assert "T1" in text
+
+
+def stage_consult_full_fixtures(tmp_path):
+    """plan.json + contracts.json + ERD.md so both the scoped and the full
+    consult context branches have real files to ship (D-116)."""
+    (tmp_path / "tasks").mkdir()
+    (tmp_path / "tasks" / "plan.json").write_text(json.dumps({
+        "spec_version": 116,
+        "milestone": "M116",
+        "tasks": [
+            {"id": "T7", "file": "src/x.py",
+             "brief": "consulted-task-brief-marker: change x to y",
+             "contracts": [], "tests": []},
+            {"id": "T8", "file": "src/z.py",
+             "brief": "other-task-brief-marker", "contracts": [], "tests": []},
+        ],
+    }))
+    (tmp_path / "scripts" / ".approved").mkdir(parents=True)
+    (tmp_path / "scripts" / ".approved" / "contracts.json").write_text(
+        json.dumps({"entry_points": [], "routes": [], "schemas": [],
+                    "errors": [], "test_mapping": {}}))
+    (tmp_path / "scripts" / ".approved" / "ERD.md").write_text(
+        "## Model-selector invariant\n\nkeep me\n")
+    (tmp_path / "scripts" / ".approved" / "ERD-DELTA.md").write_text(
+        "# ERD-DELTA M116\n\nchange x\n")
+
+
+def test_consult_scoped_context_ships_task_entry_not_full_plan(tmp_path):
+    """D-116: a task consult ships that task's plan entry (plus standing
+    summary + delta), never the full plan, standing ERD, or contracts."""
+    stage_consult_full_fixtures(tmp_path)
+    r = run_consult(tmp_path, [VALID_DIAG])
+    assert r.returncode == 0, r.stderr
+    prompt = (tmp_path / "prompts" / "1").read_text()
+    assert "### task-entry (" in prompt
+    assert "consulted-task-brief-marker" in prompt
+    assert "### plan (" not in prompt
+    assert "### contracts" not in prompt
+
+
+def test_consult_drift_keeps_full_plan_and_contracts(tmp_path):
+    """D-116: a DRIFT consult judges the whole decomposition, so it keeps
+    the full plan + contracts + delta context."""
+    stage_consult_full_fixtures(tmp_path)
+    r = run_consult(tmp_path, [VALID_DIAG], task_id="DRIFT", evidence="spec drift")
+    assert r.returncode == 0, r.stderr
+    prompt = (tmp_path / "prompts" / "1").read_text()
+    assert "### plan (" in prompt
+    assert "### contracts" in prompt
+
+
+def test_consult_failing_test_files_attached_to_context(tmp_path):
+    """D-116: evidence-grepped failing test files ship as labeled blocks."""
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_ui.py").write_text("def test_thing(): pass\n")
+    r = run_consult(
+        tmp_path, [VALID_DIAG],
+        evidence="2 attempts failed; tests/test_ui.py::test_thing red",
+    )
+    assert r.returncode == 0, r.stderr
+    prompt = (tmp_path / "prompts" / "1").read_text()
+    assert "### failing-test (tests/test_ui.py)" in prompt
+    assert "def test_thing" in prompt
+
+
+def test_coder_context_never_ships_contracts():
+    """D-116: the coder's brief is self-contained (Rule 8) — run_coder's
+    context is brief + existing file, never the frozen contracts."""
+    source = (SCRIPTS / "orchestrate.sh").read_text()
+    assert re.search(
+        r'\{ printf \'%s\\n\' "\$instr"; build_context "\$existing"; \} \\',
+        source,
+    ), "run_coder context must be brief + existing file only"
+    assert '"ERD:$APPROVED/ERD.md"' not in source
+    assert '"ERD:$APPROVED/ERD.md"' not in source.replace(
+        '"standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}"', "",
+    ), "a raw standing-ERD label survived the D-116 relabel"
+
+
+def test_em_context_sites_use_standing_summary():
+    """D-116: every EM call site ships the generated standing summary under
+    the `standing:` label; the full standing ERD is never the EM context."""
+    source = (SCRIPTS / "orchestrate.sh").read_text()
+    labels = re.findall(r'"standing:\$\{STANDING_SUMMARY:-\$APPROVED/ERD\.md\}"', source)
+    assert len(labels) == 6, f"expected 6 standing-label sites (4 plan/drift + 2 consult branches), got {len(labels)}"
+    assert "python3 scripts/standing-summary.py" in source
+    assert 'STANDING_SUMMARY="$STATE_DIR/standing-summary.md"' in source
+
+
+def test_standing_summary_keeps_invariants_collapses_architecture(tmp_path):
+    """D-116: the generator keeps standing rules verbatim and collapses the
+    accumulated as-built prose to a per-file map."""
+    erd = tmp_path / "ERD.md"
+    erd.write_text(
+        "## Model-selector invariant\n\n**MUST NEVER** be disabled.\n\n"
+        "## As-built architecture — front end\n\n"
+        "* **`src/static/chrome.js`** — themes, a very long description that "
+        "should be truncated because it repeats the accumulated milestone "
+        "detail the summary exists to drop, and it goes on and on past the "
+        "truncation threshold with no informational value left in it.\n"
+        "* **`src/static/catalog.js`** — dropdown lifecycle.\n\n"
+        "## File inventory\n\n| file | owner |\n|------|-------|\n"
+    )
+    out = subprocess.run(
+        [sys.executable, str(SCRIPTS / "standing-summary.py"), str(erd)],
+        capture_output=True, text=True,
+    )
+    assert out.returncode == 0, out.stderr
+    assert "**MUST NEVER** be disabled." in out.stdout
+    assert "## As-built architecture — front end (file map)" in out.stdout
+    assert "as-built prose is intentionally not shipped" not in out.stdout
+    assert "- `src/static/catalog.js` — dropdown lifecycle." in out.stdout
+    assert "## File inventory" in out.stdout
+
+
+def test_standing_summary_missing_erd_exits_nonzero(tmp_path):
+    """D-116: a missing ERD must fail the generator so the orchestrator's
+    fallback to the full standing ERD is the loud, explicit path."""
+    out = subprocess.run(
+        [sys.executable, str(SCRIPTS / "standing-summary.py"),
+         str(tmp_path / "nope.md")],
+        capture_output=True, text=True,
+    )
+    assert out.returncode == 1
+
+
+def test_prompt_files_match_d116_context_rules():
+    """D-116: coder.md no longer promises pasted contracts; em.md names the
+    standing summary + delta as the arriving context."""
+    coder = (SCRIPTS.parent / ".opencode" / "prompts" / "coder.md").read_text()
+    assert "The frozen contracts" not in coder
+    assert "Match interfaces exactly against the contracts pasted" not in coder
+    em = (SCRIPTS.parent / ".opencode" / "prompts" / "em.md").read_text()
+    assert "`standing` block plus `ERD-delta`" in em
+    assert "minimal summary of the standing architecture" in em
 
 
 def test_edit_mode_output_budget_has_no_hardcoded_call_site():

@@ -544,6 +544,19 @@ fi
 echo "OK (frozen spec v$FROZEN_V)"
 mark "pre-flight done (spec v$FROZEN_V)"
 
+# D-116: the EM's standing context is a generated minimal summary (standing
+# rules + per-file map), never the accumulated standing ERD — the milestone
+# slice is ERD-DELTA.md (D-107). A generation failure falls back to the full
+# standing ERD; it never silently shrinks the EM's context.
+STANDING_SUMMARY="$STATE_DIR/standing-summary.md"
+if [ -f "$APPROVED/ERD.md" ] \
+  && python3 scripts/standing-summary.py "$APPROVED/ERD.md" > "$STANDING_SUMMARY" 2>/dev/null; then
+  echo "  standing context: generated summary ($(wc -l < "$STANDING_SUMMARY" | tr -d ' ') lines, vs $(wc -l < "$APPROVED/ERD.md" | tr -d ' ') in ERD.md)"
+else
+  STANDING_SUMMARY="$APPROVED/ERD.md"
+  echo "  WARNING: standing summary generation failed — EM context falls back to the full standing ERD"
+fi
+
 # --- Parse .gate-paths for the build lane ---
 build_dir="src/"
 _raw=$(grep '^build=' .gate-paths | cut -d= -f2- || true)
@@ -730,7 +743,10 @@ brief; transcribe it into working code immediately."
   # wall-clock time (testchat M17). Create mode keeps the full default.
   local out_budget=""
   [ -n "$existing" ] && out_budget="$SWBP_CODER_EDIT_MAX_OUTPUT"
-  { printf '%s\n' "$instr"; build_context "contracts:$APPROVED/contracts.json" "$existing"; } \
+  # D-116: context minimalism — the coder's brief is self-contained (Rule 8:
+  # exact path, signatures, inputs/outputs, acceptance), so the frozen
+  # contracts are not pasted per call; the coder gets the brief + the file.
+  { printf '%s\n' "$instr"; build_context "$existing"; } \
     | SWBP_MAX_OUTPUT="$out_budget" timeout "$AGENT_TIMEOUT" scripts/llm-call.sh coder .opencode/prompts/coder.md \
         --max-time "$AGENT_TIMEOUT" \
     > "$LOG_DIR/$id-a$attempt.raw" 2> "$LOG_DIR/$id-a$attempt.log" \
@@ -1114,7 +1130,7 @@ print('; '.join(parts))")
       echo "=== EM: re-plan delta subtree (revision $((revs + 1))/$MAX_PLAN_REVISIONS, subtree attempt $SUBTREE_ATTEMPTS) ==="
       em_call tasks/plan-subtree.json scripts/schemas/plan.schema.json \
         "Delta re-plan. The validated plan for the previous spec version is carried forward by the shell; its tasks are immutable and keep their ids (see the carried-plan context: id, file, depends_on only — briefs omitted deliberately). ERD-DELTA is the authoritative current-change slice when present; follow its explicit supersessions over standing ERD prose. The spec has advanced; you re-plan ONLY the delta. $EM_TASK_KEYS $EM_CONTRACT_ID_RULE Valid contract ids (copy verbatim): $(contract_ids) Reply with ONLY a plan JSON matching the schema whose tasks array contains EXACTLY one task per file in this list and NO others: $scope_files. A task for a re-planned file MUST reuse the stated keep id; tasks for new files use fresh T-ids not present in the carried plan. depends_on may reference carried task ids. Map ONLY node-ids from this list, each to exactly one of your tasks: $map_ids. If a listed node-id is not exercised by any file you are planning, OMIT it — the shell routes carried coverage itself; do NOT emit a 'regression' key (the validator rejects it), NO status fields. Placement is gate-owned, never yours: a node-id pinned by contracts.json's test_mapping is auto-placed by the gate at the task owning its pinned file; a node-id from a Playwright-importing test file with no mapping entry is auto-placed at the DAG's final task (D-64) — map every node-id where natural and add NO depends_on edges for this. Every brief self-contained per BLUEPRINT.md Rule 8 (exact path, signatures, inputs/outputs, acceptance; constraints first) — the coder sees only the brief. For a re-planned EXISTING file the brief describes ONLY the change from current behavior (the coder gets the file content and emits anchored edits per D-59 — carried behavior is structurally untouched, so do NOT restate what the file already does); for a NEW file the brief describes the whole file (target under 150 lines). Every contract id must already exist in contracts.json; when no registered id covers a file, use an empty contracts array and never invent one. Do NOT include a smoke_check field. Set erd_version to $FROZEN_V and version to any integer >= 1 — the shell renumbers the merged plan.${verrs:+ The previous attempt failed validation with these errors — fix all of them: $verrs}" \
-        "ERD:$APPROVED/ERD.md" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:$APPROVED/contracts.json" "carried-plan:$STATE_DIR/carried-summary.json" "subtree-being-revised:tasks/plan-subtree.json"
+        "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:$APPROVED/contracts.json" "carried-plan:$STATE_DIR/carried-summary.json" "subtree-being-revised:tasks/plan-subtree.json"
       if ! subtree_feedback=$(python3 scripts/validate-plan.py --merge-subtree "$STATE_DIR/plan-prior.json" tasks/plan-subtree.json "$STATE_DIR/subtree-scope.json" 2>&1); then
         echo "$subtree_feedback"
         continue
@@ -1125,7 +1141,7 @@ print('; '.join(parts))")
       echo "=== EM: emit/revise plan (revision $((revs + 1))/$MAX_PLAN_REVISIONS) ==="
       em_call tasks/plan.json scripts/schemas/plan.schema.json \
         "Decompose the frozen ERD into atomic ONE-FILE tasks and reply with ONLY the plan as JSON matching the schema you were given — no prose, no markdown fence. $EM_TASK_KEYS $EM_CONTRACT_ID_RULE Valid contract ids (copy verbatim): $(contract_ids) ERD-DELTA is the authoritative current-change slice when present; follow its explicit supersessions over standing ERD prose. Requirements: exactly one task per file in contracts.json's files array; every test node-id in test-nodeids that exercises a file in contracts.json's files array mapped to exactly one task (the task after which it should pass, given its depends_on) — node-ids testing only carried-forward files are handled by the shell: do NOT map them and do NOT emit a 'regression' key (the validator rejects it); when unsure, omit the node-id — the validator names any you must map. Placement is gate-owned, never yours: a node-id pinned by contracts.json's test_mapping is auto-placed by the gate at the task owning its pinned file; a node-id from a Playwright-importing test file with no mapping entry is auto-placed at the DAG's final task (D-64) — map every node-id where natural and add NO depends_on edges for this. Every task's contracts list uses ids that exist in contracts.json; when no registered id covers a file, use an empty contracts array and never invent one. Every brief self-contained per BLUEPRINT.md Rule 8 (exact path, signatures, inputs/outputs, acceptance) — the coder sees only the brief. For an EXISTING file (D-59 edit mode: the coder gets the file content and emits anchored SEARCH/REPLACE blocks; carried behavior is structurally untouched) the brief describes ONLY the change from current behavior — do NOT restate what the file already does; for a NEW file the brief describes the whole file (target under 150 lines). Do NOT include a smoke_check field — smoke checks are TPM-authored and live in contracts.json. Set erd_version to $FROZEN_V. Set the top-level version key to an integer >= 1 (1 for a fresh plan; bump it on every re-emit). NO status fields.${verrs:+ The previous plan failed validation with these errors — fix all of them: $verrs}" \
-        "ERD:$APPROVED/ERD.md" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:$APPROVED/contracts.json" "test-nodeids:$APPROVED/test-nodeids" "plan-being-revised:tasks/plan.json"
+        "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:$APPROVED/contracts.json" "test-nodeids:$APPROVED/test-nodeids" "plan-being-revised:tasks/plan.json"
     fi
   done
 }
@@ -1142,7 +1158,30 @@ print('; '.join(parts))")
 consult_em() {
   local id="$1" evidence="$2"
   rm -f tasks/diagnosis.json
-  local ctx=("plan:tasks/plan.json" "ERD:$APPROVED/ERD.md" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:$APPROVED/contracts.json")
+  # D-116: context minimalism. A task consult is about ONE task: ship its
+  # plan entry (and the failing test sources appended below), never the full
+  # plan + standing ERD + contracts. DRIFT/SPEC-DEFECT consults judge the
+  # whole decomposition, so they keep the full plan + contracts + delta.
+  local task_entry=""
+  if [ "$id" != "DRIFT" ] && [ "$id" != "SPEC-DEFECT" ]; then
+    task_entry="$STATE_DIR/consult-task-$id.json"
+    if ! python3 -c "
+import json, sys
+plan = json.load(open('tasks/plan.json'))
+entry = next((t for t in plan.get('tasks', []) if t.get('id') == sys.argv[1]), None)
+if entry is None:
+    sys.exit(1)
+json.dump(entry, open(sys.argv[2], 'w'), indent=2)
+" "$id" "$task_entry" 2>/dev/null; then
+      task_entry=""
+    fi
+  fi
+  local ctx=()
+  if [ -n "$task_entry" ]; then
+    ctx=("task-entry:$task_entry" "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:$APPROVED/ERD-DELTA.md")
+  else
+    ctx=("plan:tasks/plan.json" "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:$APPROVED/contracts.json")
+  fi
   local f
   for f in $(printf '%s' "$evidence" | grep -oE 'tests/[A-Za-z0-9_/]+\.py' | sort -u || true); do
     ctx+=("failing-test:$f")
@@ -1588,7 +1627,7 @@ sys.stdout.write(d['revised_brief'])" > "$BRIEF_DIR/$id"
         echo "=== EM: revise decomposition (revision $((revs + 1))/$MAX_PLAN_REVISIONS) ==="
         em_call tasks/plan.json scripts/schemas/plan.schema.json \
           "The decomposition is wrong around task $id: $(python3 -c "import json;print(json.load(open('$DIAG_FILE'))['reason'])"). Rewrite the plan fixing it and reply with ONLY the JSON (same requirements as before: one file per task, every inventory-exercising test node-id mapped exactly once, no 'regression' key, erd_version $FROZEN_V, bump plan version, NO status fields). $EM_TASK_KEYS $EM_CONTRACT_ID_RULE Valid contract ids (copy verbatim): $(contract_ids) Keep entries for unrelated tasks byte-identical — completed work is preserved only where entries are unchanged." \
-          "ERD:$APPROVED/ERD.md" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:$APPROVED/contracts.json" "test-nodeids:$APPROVED/test-nodeids" "plan-being-revised:tasks/plan.json"
+          "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:$APPROVED/contracts.json" "test-nodeids:$APPROVED/test-nodeids" "plan-being-revised:tasks/plan.json"
         ensure_plan
         compute_active_delta_scope
         reset_active_delta_tasks
@@ -1818,7 +1857,7 @@ if [ "$DIAG_VERDICT" = "decomposition_wrong" ] && [ "$(plan_revisions_used)" -lt
   write_state plan_revisions $(( $(plan_revisions_used) + 1 ))
   em_call tasks/plan.json scripts/schemas/plan.schema.json \
     "Spec drift: $(python3 -c "import json;print(json.load(open('$DIAG_FILE'))['reason'])"). Rewrite the plan to fix the decomposition and reply with ONLY the JSON (same requirements as before; keep unrelated entries byte-identical). $EM_TASK_KEYS $EM_CONTRACT_ID_RULE Valid contract ids (copy verbatim): $(contract_ids)" \
-    "ERD:$APPROVED/ERD.md" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:$APPROVED/contracts.json" "test-nodeids:$APPROVED/test-nodeids" "plan-being-revised:tasks/plan.json"
+    "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:$APPROVED/contracts.json" "test-nodeids:$APPROVED/test-nodeids" "plan-being-revised:tasks/plan.json"
   ensure_plan
   compute_active_delta_scope
   reset_active_delta_tasks
