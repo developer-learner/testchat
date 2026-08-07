@@ -602,6 +602,125 @@ def test_spec_delta_mapping_file_outside_inventory_fails(delta_repo):
     assert "not in contracts.files" in r.stderr
 
 
+def _stage_pinned_delta(staging, routes):
+    (staging / "contracts.json").write_text(json.dumps({
+        "files": ["src/a.py"],
+        "changed_files": ["src/a.py"],
+        "routes": routes,
+    }))
+    (staging / "ERD-DELTA.md").write_text(
+        "## Changed acceptance criteria\nAC-1\n"
+        "## Superseded acceptance criteria\nNone\n"
+        "## Changed files\nsrc/a.py\n"
+        "## Test-to-file mapping\nAC-1 -> src/a.py\n"
+    )
+
+
+def test_spec_delta_new_pinned_entry_passes_pin_gate(delta_repo):
+    """A new or changed entry carrying a src/*.py file pin (D-120) is
+    well-formed — the pin is what makes the milestone slice possible."""
+    _, approved, staging = delta_repo
+    _stage_pinned_delta(staging, [
+        {"id": "route:GET /a", "path": "/a", "method": "GET",
+         "file": "src/a.py"},
+    ])
+    r = run_spec_delta(staging, approved, staging.parents[2])
+    assert r.returncode == 0, r.stderr
+
+
+def test_spec_delta_new_unpinned_entry_fails_pin_gate(delta_repo):
+    """A new or changed entry without a file pin defeats the slice: the EM
+    would silently lose the entry's body when files outside the milestone
+    inventory are trimmed."""
+    _, approved, staging = delta_repo
+    _stage_pinned_delta(staging, [
+        {"id": "route:GET /a", "path": "/a", "method": "GET"},
+    ])
+    r = run_spec_delta(staging, approved, staging.parents[2])
+    assert r.returncode == 1
+    assert "carries no file pin" in r.stderr
+    assert "(D-120)" in r.stderr
+
+
+def test_spec_delta_carried_unchanged_entry_exempt_from_pin_gate(delta_repo):
+    """Carried-unchanged entries (byte-identical to the frozen copy) keep
+    the slice safe without a pin: nothing new is being added, so nothing
+    can be lost by the trim."""
+    _, approved, staging = delta_repo
+    (approved / "contracts.json").write_text(json.dumps({
+        "files": ["src/a.py"],
+        "changed_files": [],
+        "routes": [{"id": "route:GET /a", "path": "/a", "method": "GET"}],
+    }))
+    _stage_pinned_delta(staging, [
+        {"id": "route:GET /a", "path": "/a", "method": "GET"},
+        {"id": "route:POST /b", "path": "/b", "method": "POST",
+         "file": "src/a.py"},
+    ])
+    r = run_spec_delta(staging, approved, staging.parents[2])
+    assert r.returncode == 0, r.stderr
+
+
+def run_contracts_delta(contracts_path, tmp_path):
+    return subprocess.run(
+        [sys.executable, str(SCRIPTS / "contracts-delta.py"), str(contracts_path)],
+        cwd=tmp_path, capture_output=True, text=True,
+    )
+
+
+def test_contracts_delta_no_pins_emits_full_file(tmp_path):
+    """Inert activation: while no entry carries a file pin (the backfill is
+    TPM-seat, D-120), the generator must emit the full file — the trim must
+    not bite before the pins land."""
+    source = tmp_path / "contracts.json"
+    payload = {
+        "files": ["src/a.py"],
+        "routes": [{"id": "route:GET /a", "path": "/a", "method": "GET"}],
+        "entry_points": ["src.main:app"],
+    }
+    source.write_text(json.dumps(payload))
+    r = run_contracts_delta(source, tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == json.dumps(payload)
+
+
+def test_contracts_delta_slices_out_of_scope_pins(tmp_path):
+    """With pins present, the slice keeps in-inventory pinned entries and
+    every unpinned entry, drops out-of-inventory pins, and derives
+    entry_points to their owning module (D-120)."""
+    source = tmp_path / "contracts.json"
+    source.write_text(json.dumps({
+        "files": ["src/a.py"],
+        "changed_files": ["src/a.py"],
+        "routes": [
+            {"id": "route:GET /a", "path": "/a", "method": "GET",
+             "file": "src/a.py"},
+            {"id": "route:GET /b", "path": "/b", "method": "GET",
+             "file": "src/b.py"},
+            {"id": "route:GET /old", "path": "/old", "method": "GET"},
+        ],
+        "schemas": [{"id": "schema:A", "file": "src/a.py"}],
+        "errors": [{"id": "err:A", "file": "src/a.py"}],
+        "entry_points": [
+            "src.a:app",
+            "src.b:handler",
+            "not-a-module",
+        ],
+    }))
+    r = run_contracts_delta(source, tmp_path)
+    assert r.returncode == 0, r.stderr
+    kept = json.loads(r.stdout)
+    assert kept["files"] == ["src/a.py"]
+    assert [e["id"] for e in kept["routes"]] == [
+        "route:GET /a", "route:GET /old"]
+    assert kept["entry_points"] == ["src.a:app", "not-a-module"]
+
+
+def test_contracts_delta_missing_input_fails(tmp_path):
+    r = run_contracts_delta(tmp_path / "absent.json", tmp_path)
+    assert r.returncode == 1
+
+
 def test_route_check_fails_open_on_dynamic_path(repo):
     """A dynamically-built path is invisible to the AST scan — no false fire."""
     route_repo(repo, (
@@ -2240,7 +2359,8 @@ def v51_new(files):
         "entry_points": [],
         "routes": V51_OLD["routes"] + [
             {"id": "route:GET /api/v1/models/catalog",
-             "method": "GET", "path": "/api/v1/models/catalog"}],
+             "method": "GET", "path": "/api/v1/models/catalog",
+             "file": "src/api/models.py"}],
     }
 
 
@@ -2462,6 +2582,26 @@ def test_contract_id_rule_present_at_all_plan_sites():
         "verbatim id list must be injected at all 4 plan-emission sites"
     )
     assert "never convert a file path to dotted form" in orch
+
+
+def test_contracts_delta_wired_at_plan_sites():
+    """The milestone slice (D-120) must reach all four plan-emission sites
+    and only them: the DRIFT/SPEC-DEFECT consult keeps the full file (D-116,
+    it judges the whole decomposition)."""
+    orch = ORCHESTRATE.read_text()
+    assert orch.count(
+        "contracts:${CONTRACTS_DELTA:-$APPROVED/contracts.json}") == 4, (
+        "milestone slice must ship at all 4 plan-emission sites"
+    )
+    assert orch.count('"contracts:$APPROVED/contracts.json"') == 1, (
+        "exactly one site keeps the full file — the DRIFT/SPEC-DEFECT consult"
+    )
+    assert orch.count("scripts/contracts-delta.py") == 1, (
+        "pre-flight generation block missing"
+    )
+    assert "contracts slice generation failed" in orch, (
+        "fallback WARNING missing — failure must never silently drop context"
+    )
 
 
 def test_contract_id_rule_mirrored_in_drive_plan():

@@ -130,6 +130,25 @@ def validate(staging: Path, approved: Path, repo: Path, current_version: int) ->
                         f"contracts.test_mapping pins {node_id} to "
                         f"{pinned}, which is not in contracts.files"
                     )
+        current = load_json(approved / "contracts.json")
+        for key in ("routes", "schemas", "errors"):
+            incoming_entries = {
+                e.get("id"): e for e in incoming.get(key, [])
+                if isinstance(e, dict) and e.get("id")
+            }
+            current_entries = {
+                e.get("id"): e for e in current.get(key, [])
+                if isinstance(e, dict) and e.get("id")
+            }
+            for entry_id, entry in sorted(incoming_entries.items()):
+                if entry == current_entries.get(entry_id):
+                    continue  # carried unchanged — exempt
+                if not re.fullmatch(r"src/.*\.py", entry.get("file", "")):
+                    errors.append(
+                        f"contracts.{key}[{entry_id}] is new or changed but "
+                        f"carries no file pin — add \"file\": \"<owning "
+                        f"src/...py path>\" (D-120)"
+                    )
     if missing_sections:
         errors.append("missing required section(s): " + ", ".join(missing_sections))
     if missing_acs:
