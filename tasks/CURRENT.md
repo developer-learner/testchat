@@ -659,3 +659,29 @@ Full frozen TPM suite green against spec v71. Feature built and validated.
     updated D-119 guard (full file ships at no site unconditionally),
     existing contract-id/rule guards intact. `.manifest-template` regenerated.
   - No spec change, no state mutation — control-plane only.
+
+## Results (audit follow-up — TPM consolidation v85 + ui pinning v86, control-plane + spec)
+
+  Milestone-audit follow-up (the CEO's ask about the "remaining full-scope"
+  items in the EM/coder context):
+  - **v85 consolidation** (`e9ce192`): staged PRD.md + ERD.md folding the
+    composer milestone (M35) out of ERD-DELTA, retired ERD-DELTA, created
+    the empty DELTA-v85 marker. Chore `70f863c` removed the dead
+    DELTA-v79..v84 stack — the delta ladder collapsed to the standing spec.
+  - **v86 (`4383616`)**: the last audit item — every `contracts.ui` testid
+    now pins its behavioral-owner file (`data-testid` → the script whose
+    logic drives it), closing the D-120 gap on the UI contract block. The
+    milestone slice (`contracts-delta.py`) gained `ui` in its pinned keys:
+    out-of-inventory testids index to a one-line out_of_scope entry (id +
+    testid + pin), unpinned entries still carry in full. Companion gate
+    commit `953e602` (generator + selftest + regenerated manifests).
+  - Runtime check: with a backend-only inventory the 46 ui testids index
+    as one-liners; with the owner file in inventory they ride in full.
+  - Selftests: 289/289. No product files changed, no test bytes staged —
+    DELTA-v86 is purely the 46 ui contract ids.
+  - Verified during the audit (held): every other EM/coder context load is
+    already milestone-scoped (D-119 node-ids, D-124 contract ids, routes/
+    schemas/errors pins since v83); the CEO's "path A/B" question needs no
+    decision — the TPM-seat backfill is the D-120 design itself and pins
+    already existed; the residual 8,203 B of unpinned ui testids is what
+    v86 just closed.
