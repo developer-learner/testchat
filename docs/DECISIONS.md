@@ -21,6 +21,16 @@
 
 ## Decisions
 
+## D-119 — 2026-08-06 — Re-plan calls get the scoped node-id list, not the full test-nodeids file
+
+**Decision:** The decomposition-wrong re-emit and the spec-drift re-plan no longer ship the full 198-id `test-nodeids` file to the EM. Both instructions now print a flat, delta-scoped list — `$(plan_mapped_ids)`, the deduplicated union of node-ids the current plan maps, in task order (the same extraction as the D-112 verdict union) — and the context drops the `test-nodeids:` block. The EM keeps its safe-omit rule, and the validator names any node-id it must still map. The greenfield plan emission (no prior plan exists to anchor a scope on) keeps the full file.
+
+**Reason:** Carried node-ids never appear in the plan — the shell routes carried coverage itself — so the plan's own mapped union IS the delta scope. A decomp re-plan must remap exactly that set (carried mappings are preserved byte-identical per the instruction); shipping all 198 ids forces the EM to re-derive the delta boundary from a file the shell already knows. This closes the last full-load EM site after D-116: standing ERD, contracts-coder, consult, and now node-ids are all scoped; only the greenfield plan emission and the DRIFT/SPEC-DEFECT full-context branch intentionally carry full files.
+
+**Alternatives considered:** (a) Reuse `$STATE_DIR/subtree-scope.json`'s `map_nodeids` (the delta re-plan's list) — rejected: it is computed by `compute_active_delta_scope` only AFTER these calls fire, and `plan_mapped_ids` is derivable from data already on disk. (b) Ship a delta-scoped node-ids file computed from `contracts.test_mapping` — rejected: v82 has no `test_mapping`, and the plan's union is available at every re-plan site regardless of spec version.
+
+**Do not suggest:** Removing the full file from the greenfield emission (no plan yet — the EM needs the full list or the validator's must-map loop runs it blind); adding the file back to re-plan calls; renaming `plan_mapped_ids` or folding it into the verdict block (drive-verdict.sh extracts that block by marker; the helper must stay standalone).
+
 ## D-118 — 2026-08-06 — Escalation bundles carry the milestone slice: the standing summary + ERD-DELTA the TPM must revise against
 
 **Decision:** `package_escalation` now appends the milestone slice to every TPM-bound bundle: the generated standing summary (the same `standing-summary.md` the EM receives, D-116) and the frozen `ERD-DELTA.md` (D-107), labeled with the spec version, in a dedicated section between the EM diagnosis and the referenced-contract/test-source section. A consolidation freeze with no delta emits a one-line note that the standing ERD is the current reference. The summary-generation fallback of the D-116 pre-flight is inherited via `STANDING_SUMMARY`.

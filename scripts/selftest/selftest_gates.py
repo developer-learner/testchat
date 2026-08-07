@@ -1455,6 +1455,46 @@ def test_standing_summary_missing_erd_exits_nonzero(tmp_path):
     assert out.returncode == 1
 
 
+def test_plan_mapped_ids_is_the_delta_scope(tmp_path):
+    """D-119: plan_mapped_ids extracts the dedup union of plan-mapped
+    node-ids in task order — the same union the D-112 verdict uses. Carried
+    node-ids never appear in the plan, so the plan's union IS the delta
+    scope for re-plan calls."""
+    src = (SCRIPTS / "orchestrate.sh").read_text()
+    helper = re.search(r"^plan_mapped_ids\(\) \{.*?^\}", src, re.M | re.S)
+    assert helper, "plan_mapped_ids not found — extractor drift"
+    (tmp_path / "tasks").mkdir()
+    (tmp_path / "tasks" / "plan.json").write_text(json.dumps({
+        "tasks": [
+            {"id": "T1", "file": "src/a.py", "tests": ["n1", "n2"]},
+            {"id": "T2", "file": "src/b.py", "tests": ["n2", "n3"]},
+        ],
+    }))
+    runner = f"""#!/usr/bin/env bash
+set -euo pipefail
+cd {tmp_path}
+{helper.group(0)}
+plan_mapped_ids"""
+    r = subprocess.run(["bash", "-c", runner], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "n1, n2, n3"
+
+
+def test_replan_contexts_scope_nodeids_not_full_file():
+    """D-119: decomp-wrong and drift re-plan calls print the scoped
+    plan-mapped list and no longer ship the full test-nodeids file; the
+    greenfield plan emission keeps the full file (no prior plan to anchor
+    the scope on)."""
+    src = (SCRIPTS / "orchestrate.sh").read_text()
+    assert src.count('"test-nodeids:$APPROVED/test-nodeids"') == 1, (
+        "full test-nodeids must ship only at the greenfield plan emission"
+    )
+    assert src.count("$(plan_mapped_ids)") == 2, (
+        "expected the scoped list at decomp-wrong AND drift re-plan"
+    )
+    assert src.count("the shell routes carried coverage itself (D-119)") == 2
+
+
 def test_prompt_files_match_d116_context_rules():
     """D-116: coder.md no longer promises pasted contracts; em.md names the
     standing summary + delta as the arriving context."""

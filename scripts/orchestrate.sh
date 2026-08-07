@@ -66,6 +66,27 @@ for key in ("files", "entry_points", "routes", "schemas", "errors", "externals",
 print(", ".join(dict.fromkeys(ids)))
 PY
 }
+# D-119: the delta-scoped node-id set for re-plan calls. The plan maps only
+# node-ids that exercise delta files (carried coverage is shell-routed), so
+# the plan's own union IS the delta scope — the same extraction as the
+# D-112 verdict union. Re-plan calls print it as a flat list instead of
+# shipping the full 198-id test-nodeids file; the EM keeps its safe-omit
+# rule, and the validator names any node-id it must still map.
+plan_mapped_ids() {
+  python3 -c "
+import json
+try:
+    p = json.load(open('tasks/plan.json'))
+except (OSError, ValueError):
+    print('(none)')
+    raise SystemExit(0)
+ids = []
+for t in p.get('tasks', []):
+    for n in t.get('tests', []):
+        if n not in ids:
+            ids.append(n)
+print(', '.join(ids) if ids else '(none)')"
+}
 # D-69: wall-clock budget for the WHOLE run, in seconds (0 disables). With
 # D-60 atomic tasks and a non-thinking local coder, a healthy run finishes in
 # minutes — a run that blows past this is thrashing (thinking drift, EM loops,
@@ -1664,8 +1685,8 @@ sys.stdout.write(d['revised_brief'])" > "$BRIEF_DIR/$id"
         write_state plan_revisions $((revs + 1))
         echo "=== EM: revise decomposition (revision $((revs + 1))/$MAX_PLAN_REVISIONS) ==="
         em_call tasks/plan.json scripts/schemas/plan.schema.json \
-          "The decomposition is wrong around task $id: $(python3 -c "import json;print(json.load(open('$DIAG_FILE'))['reason'])"). Rewrite the plan fixing it and reply with ONLY the JSON (same requirements as before: one file per task, every inventory-exercising test node-id mapped exactly once, no 'regression' key, erd_version $FROZEN_V, bump plan version, NO status fields). $EM_TASK_KEYS $EM_CONTRACT_ID_RULE Valid contract ids (copy verbatim): $(contract_ids) Keep entries for unrelated tasks byte-identical — completed work is preserved only where entries are unchanged." \
-          "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:$APPROVED/contracts.json" "test-nodeids:$APPROVED/test-nodeids" "plan-being-revised:tasks/plan.json"
+          "The decomposition is wrong around task $id: $(python3 -c "import json;print(json.load(open('$DIAG_FILE'))['reason'])"). Rewrite the plan fixing it and reply with ONLY the JSON (same requirements as before: one file per task, every inventory-exercising test node-id mapped exactly once, no 'regression' key, erd_version $FROZEN_V, bump plan version, NO status fields). Map ONLY node-ids from this list, each to exactly one of your tasks: $(plan_mapped_ids). If a listed node-id is not exercised by any file you are planning, OMIT it — the shell routes carried coverage itself (D-119). $EM_TASK_KEYS $EM_CONTRACT_ID_RULE Valid contract ids (copy verbatim): $(contract_ids) Keep entries for unrelated tasks byte-identical — completed work is preserved only where entries are unchanged." \
+          "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:$APPROVED/contracts.json" "plan-being-revised:tasks/plan.json"
         ensure_plan
         compute_active_delta_scope
         reset_active_delta_tasks
@@ -1894,8 +1915,8 @@ consult_em "DRIFT" "$drift_evidence"
 if [ "$DIAG_VERDICT" = "decomposition_wrong" ] && [ "$(plan_revisions_used)" -lt "$MAX_PLAN_REVISIONS" ]; then
   write_state plan_revisions $(( $(plan_revisions_used) + 1 ))
   em_call tasks/plan.json scripts/schemas/plan.schema.json \
-    "Spec drift: $(python3 -c "import json;print(json.load(open('$DIAG_FILE'))['reason'])"). Rewrite the plan to fix the decomposition and reply with ONLY the JSON (same requirements as before; keep unrelated entries byte-identical). $EM_TASK_KEYS $EM_CONTRACT_ID_RULE Valid contract ids (copy verbatim): $(contract_ids)" \
-    "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:$APPROVED/contracts.json" "test-nodeids:$APPROVED/test-nodeids" "plan-being-revised:tasks/plan.json"
+    "Spec drift: $(python3 -c "import json;print(json.load(open('$DIAG_FILE'))['reason'])"). Rewrite the plan to fix the decomposition and reply with ONLY the JSON (same requirements as before; keep unrelated entries byte-identical). Map ONLY node-ids from this list, each to exactly one of your tasks: $(plan_mapped_ids). If a listed node-id is not exercised by any file you are planning, OMIT it — the shell routes carried coverage itself (D-119). $EM_TASK_KEYS $EM_CONTRACT_ID_RULE Valid contract ids (copy verbatim): $(contract_ids)" \
+    "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:$APPROVED/contracts.json" "plan-being-revised:tasks/plan.json"
   ensure_plan
   compute_active_delta_scope
   reset_active_delta_tasks
