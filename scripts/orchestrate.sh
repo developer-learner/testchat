@@ -1182,8 +1182,27 @@ json.dump(entry, open(sys.argv[2], 'w'), indent=2)
   else
     ctx=("plan:tasks/plan.json" "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:$APPROVED/contracts.json")
   fi
+  # D-116: a failing test contributes only the source of the functions the
+  # evidence actually names, not the whole file (test_ui.py alone is 1133
+  # lines). extract-test-functions.py pulls the named node-ids' functions plus
+  # any module-level helpers they call; any failure (no node-ids in the
+  # evidence, extraction error, empty output) falls back to the full file, so
+  # the excerpt only ever shrinks context, never drops it.
   local f
   for f in $(printf '%s' "$evidence" | grep -oE 'tests/[A-Za-z0-9_/]+\.py' | sort -u || true); do
+    local nids=() _nid
+    while IFS= read -r _nid; do
+      [ -n "$_nid" ] && nids+=("$_nid")
+    done < <(printf '%s' "$evidence" \
+      | grep -oE "${f}::[A-Za-z0-9_]+(\[[^]]*\])?" | sort -u || true)
+    if [ "${#nids[@]}" -gt 0 ]; then
+      local excerpt="$STATE_DIR/consult-excerpt-${id}-${f##*/}"
+      if python3 scripts/extract-test-functions.py "$f" "${nids[@]}" \
+           > "$excerpt" 2>/dev/null && [ -s "$excerpt" ]; then
+        ctx+=("failing-test-excerpt:$excerpt")
+        continue
+      fi
+    fi
     ctx+=("failing-test:$f")
   done
   local instr="Task consult. Task '$id' — $evidence. Decide ONE verdict: brief_wrong (the task brief mis-specified the work — include a full revised_brief, Rule 8 discipline), decomposition_wrong (the task split/dependencies are wrong), or contract_or_test_wrong (the frozen contract or test itself is wrong — your reason becomes the evidence a human carries to the TPM, so be specific: name the contract id or test node-id and what about it is wrong). Reply with ONLY the diagnosis JSON matching the schema you were given, shaped exactly like this example: {\"verdict\": \"decomposition_wrong\", \"reason\": \"T2 imports the parser T4 creates but does not depend on T4\"}. Do NOT include a task_id field — the orchestrator records it itself."
