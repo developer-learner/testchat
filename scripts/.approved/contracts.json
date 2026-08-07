@@ -1,5 +1,5 @@
 {
-  "erd_version": 83,
+  "erd_version": 84,
   "files": [
     "src/static/app.js",
     "src/static/index.html"
@@ -584,9 +584,17 @@
       "description": "guidance/error bubble in the chat container (AC-131); distinct from msg-assistant"
     }
   ],
-  "smoke_checks": {
-    "src/static/app.js": "grep -q webToggle src/static/app.js && grep -q pollStatus src/static/app.js && grep -q queueRender src/static/app.js"
-  },
   "no_edit_files": [],
-  "changed_files": []
+  "changed_files": [
+    "src/static/app.js",
+    "src/static/index.html"
+  ],
+  "test_mapping": {
+    "tests/test_ui.py::test_no_loaded_model_shows_placeholder_and_send_guides[chromium]": "src/static/app.js",
+    "tests/test_ui.py::test_message_input_plain_enter_inserts_newline_without_sending[chromium]": "src/static/app.js",
+    "tests/test_ui.py::test_message_input_ctrl_enter_sends[chromium]": "src/static/app.js",
+    "tests/test_ui.py::test_message_input_cmd_enter_sends[chromium]": "src/static/app.js",
+    "tests/test_ui.py::test_message_input_ctrl_enter_empty_sends_nothing[chromium]": "src/static/app.js",
+    "tests/test_ui.py::test_message_input_placeholder_states_shortcuts[chromium]": "src/static/index.html"
+  }
 }

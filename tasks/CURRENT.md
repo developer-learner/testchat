@@ -5,6 +5,62 @@
 
 ---
 
+## State at 2026-08-06 — control-plane session: D-121 + v83 pin backfill + D-122 landed; M35 (v84) in-flight in the other LLM's lane
+
+Verified against the tree, not from memory or a prior handoff.
+
+**Frozen spec:** v83 (`scripts/.approved/VERSION` = 83). Installed at
+`d7caf3b [refreeze v83]` — auto-approved under the new D-121 policy
+(`auto-approved (D-121); DIFF-SHA 0e81d86a…`). This was the CEO-approved
+40-pin contracts backfill: every contract entry now names its owning
+`src/*.py` file (15 routes → handler files, 21 schemas → defining files,
+4 errors → raising files), the precondition for the EM contracts-trim
+(D-120) to slice context without losing entry bodies. `erd_version 83`,
+`changed_files: []` — a pure pin freeze. Ownership map derived from the
+tree: `chat.py` / `threads.py` (split ownership noted for 422 + HistoryEntry),
+`models.py` (both 503s), `main.py` (static mounts), `settings.py`,
+`status.py`.
+
+**Working tree:** NOT clean — the M35 v84 freeze is in progress in the
+other LLM's lane right now (uncommitted: `ERD-DELTA.md`, `contracts.json`,
+`tests/test_ui.py`, new `DELTA-v84.json`). Do not touch any of those.
+Everything else is committed.
+
+**HEAD:** `38a9425 control (D-122)` — the delta-completeness gate.
+
+**What landed this session (commits, in order):**
+- `1cce8e4 control (D-121)` — refreeze has no human approval step: the
+  `--approve <sha>` / `--interactive` paths die on use; auto-apply on green
+  preflights is the only mode; `--diff` stays a read-only preview. CEO
+  ruling verbatim in DECISIONS.md D-121. 283 selftests green at the time.
+- `d7caf3b [refreeze v83]` — the 40/40 pin backfill (above). DELTA-v83.json
+  records 40 changed_contract_ids, 0 tests, 0 files.
+- `38a9425 control (D-122)` — the delta-completeness gate (CEO-authorized
+  after a brief): `check-spec-delta.py` now fail-closes two shapes the
+  DELTA-vN bookkeeping cannot see — (1) ERD-DELTA marks a frozen test
+  `(UPDATED)` while the freeze stages no bytes for its file (the v82
+  incident: DELTA-v82 recorded `changed_tests: []` for a claimed test
+  update), and (2) contracts change only bookkeeping-invisible keys
+  (`test_mapping`/`smoke_checks`/`files`/`no_edit_files`) with no declared
+  changed_files, staged test bytes, or entry deltas. Marker matching is
+  case-sensitive so historical prose never trips it. Verified live: passes
+  on the v84 staging, and fires on a simulated v82 shape against real repo
+  data (both messages). 287 selftests green (4 new). DECISIONS.md D-122.
+- `8178507` (earlier this session) — retired DELTA-v1..v78; deltas v79–v83
+  remain on disk.
+
+**M35 (v84) staging, validated but handed off:** the v84 staging was
+assembled (v83-approved pins inherited + M35's `test_mapping` 6 node-ids
+→ `app.js`/`index.html` + `changed_files` + `smoke_checks` retired) and
+passed `check-spec-delta.py` + a dry-run `--diff` (DIFF-SHA `a7448f36…`)
+before handoff. The install + orchestrate run belongs to the other LLM —
+refreeze is unattended under D-121, no approval step needed.
+
+**Open thread (carried):** the pipeline declutter/proportionality work
+from the M34 entry — still untouched.
+
+---
+
 ## State at 2026-08-04 — M34 shipped (spec v79); tree clean
 
 Verified against the tree, not from memory or a prior handoff.

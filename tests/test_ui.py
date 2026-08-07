@@ -1088,6 +1088,7 @@ def test_message_input_ctrl_enter_sends(
     page: Page, app_url: str
 ) -> None:
     page.goto(app_url)
+    page.get_by_test_id("model-select").select_option("beta-model")
     box = page.get_by_test_id("message-input")
     box.fill("sent via ctrl enter")
     box.press("Control+Enter")
@@ -1095,6 +1096,7 @@ def test_message_input_ctrl_enter_sends(
     expect(page.get_by_test_id("msg-user").first).to_contain_text(
         "sent via ctrl enter"
     )
+    expect(page.get_by_test_id("msg-assistant")).to_have_count(1)
 
 
 # AC-153 (macOS modifier): Cmd+Enter is the send shortcut on macOS
@@ -1102,10 +1104,15 @@ def test_message_input_cmd_enter_sends(
     page: Page, app_url: str
 ) -> None:
     page.goto(app_url)
+    page.get_by_test_id("model-select").select_option("beta-model")
     box = page.get_by_test_id("message-input")
     box.fill("sent via cmd enter")
     box.press("Meta+Enter")
     expect(page.get_by_test_id("msg-user")).to_have_count(1)
+    expect(page.get_by_test_id("msg-user").first).to_contain_text(
+        "sent via cmd enter"
+    )
+    expect(page.get_by_test_id("msg-assistant")).to_have_count(1)
 
 
 # AC-154: Ctrl+Enter with empty or whitespace-only input sends nothing
