@@ -99,7 +99,10 @@ implementation change. Split the responsibilities:
 
 - **`ERD.md`** (standing) — architecture, file inventory, conventions, suite
   properties, standing risks. Changes rarely; a freeze that only bumps
-  `ERD-DELTA.md` leaves this file's hash and content untouched.
+  `ERD-DELTA.md` leaves this file's hash and content untouched. In TPM
+  session context and EM context it travels as a generated standing summary
+  (standing rules + per-file map, D-116/D-117) — never the accumulated
+  prose.
 - **`ERD-DELTA.md`** (per-delta) — this milestone's ACs, supersessions,
   changed files, test-to-file mapping, and per-file behavioral detail. It is
   required whenever tests, test removals, new AC ids, or substantive

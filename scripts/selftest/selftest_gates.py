@@ -22,6 +22,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -1401,6 +1402,75 @@ def test_prompt_files_match_d116_context_rules():
     em = (SCRIPTS.parent / ".opencode" / "prompts" / "em.md").read_text()
     assert "`standing` block plus `ERD-delta`" in em
     assert "minimal summary of the standing architecture" in em
+
+
+def run_tpm_pack(tmp_path, with_delta=True, with_summary_generator=True):
+    """D-117 fixture: a fake repo tree with tpm-pack.sh + the two python
+    helpers it calls, so the real script runs against a controlled spec."""
+    repo = tmp_path / "repo"
+    (repo / "scripts" / ".approved").mkdir(parents=True)
+    (repo / "scripts" / "schemas").mkdir(parents=True)
+    (repo / "docs").mkdir(parents=True)
+    for name in ("tpm-pack.sh", "spec_artifacts.py"):
+        shutil.copy(SCRIPTS / name, repo / "scripts" / name)
+    if with_summary_generator:
+        shutil.copy(SCRIPTS / "standing-summary.py",
+                    repo / "scripts" / "standing-summary.py")
+    (repo / "scripts" / ".approved" / "VERSION").write_text("117\n")
+    (repo / "scripts" / ".approved" / "PRD.md").write_text("# PRD\n\nstanding product\n")
+    (repo / "scripts" / ".approved" / "ERD.md").write_text(
+        "## Model-selector invariant\n\nkeep me\n\n"
+        "## As-built architecture — front end\n\n"
+        "* **`src/static/app.js`** — the whole accumulated milestone detail "
+        "that the summary exists to drop, going on and on past the "
+        "truncation threshold with no informational value left in it.\n")
+    if with_delta:
+        (repo / "scripts" / ".approved" / "ERD-DELTA.md").write_text(
+            "# ERD-DELTA M117\n\nchange app.js\n")
+    (repo / "scripts" / ".approved" / "contracts.json").write_text(
+        '{"files": ["src/static/app.js"], "smoke_checks": [], '
+        '"test_mapping": {}}\n')
+    (repo / "docs" / "TPM-ROLE.md").write_text("# TPM role\n")
+    (repo / "scripts" / "schemas" / "contracts.schema.json").write_text("{}\n")
+    return subprocess.run(
+        ["bash", str(repo / "scripts" / "tpm-pack.sh")],
+        capture_output=True, text=True, cwd=str(repo),
+    )
+
+
+def test_tpm_pack_ships_milestone_slice_not_standing_erd(tmp_path):
+    """D-117: with a delta in flight, the TPM bundle carries the generated
+    standing summary + ERD-DELTA — never the accumulated standing ERD."""
+    r = run_tpm_pack(tmp_path, with_delta=True)
+    assert r.returncode == 0, r.stderr
+    out = r.stdout
+    assert "=== CONTEXT FILE: scripts/.approved/ERD-DELTA.md ===" in out
+    assert "(file map)" in out
+    assert "=== CONTEXT FILE: scripts/.approved/ERD.md ===" not in out
+    assert "no informational value left in it" not in out
+    assert "=== CONTEXT FILE: scripts/.approved/PRD.md ===" in out
+    assert "=== CONTEXT FILE: scripts/.approved/contracts.json ===" in out
+
+
+def test_tpm_pack_no_delta_ships_full_standing_erd(tmp_path):
+    """D-117: no delta (initial freeze / consolidation) — the standing ERD
+    is the reference and ships in full."""
+    r = run_tpm_pack(tmp_path, with_delta=False)
+    assert r.returncode == 0, r.stderr
+    assert "=== CONTEXT FILE: scripts/.approved/ERD.md ===" in r.stdout
+    assert "no informational value left in it" in r.stdout
+    assert "=== CONTEXT FILE: scripts/.approved/ERD-DELTA.md ===" not in r.stdout
+
+
+def test_tpm_pack_generator_failure_falls_back_to_full_erd(tmp_path):
+    """D-117: summary generation failure falls back to the full standing
+    ERD, and the warning goes to stderr — the bundle is a verbatim relay
+    (D-49), so it must stay clean."""
+    r = run_tpm_pack(tmp_path, with_delta=True, with_summary_generator=False)
+    assert r.returncode == 0, r.stderr
+    assert "=== CONTEXT FILE: scripts/.approved/ERD.md ===" in r.stdout
+    assert "standing summary generation failed" in r.stderr
+    assert "standing summary generation failed" not in r.stdout
 
 
 def test_edit_mode_output_budget_has_no_hardcoded_call_site():
