@@ -1,5 +1,6 @@
 {
-  "erd_version": 82,
+  "version": 3,
+  "erd_version": 84,
   "tasks": [
     {
       "brief": "**Implementation constraints (FIRST):** JavaScript in the existing file; edit via anchored SEARCH/REPLACE blocks (D-59) \u2014 never retype unchanged regions. Change nothing outside the message-input keydown handler and its immediate surroundings. Do not alter the submit handler's empty-input guard (trims and no-ops on empty) and keep the `isComposing` IME guard. No new libraries, no new globals.\n\n**Behavioral specification:** the message-input keydown handler currently submits the form on plain Enter and lets Shift+Enter keep the textarea's default newline behavior. Invert it: plain Enter keeps the default newline (never sends); Shift+Enter keeps the default newline; Ctrl+Enter or Cmd+Enter submits the form through the same `form.requestSubmit()` path the current handler uses.\n\n**Acceptance condition:** the frozen tests `test_message_input_plain_enter_inserts_newline_without_sending`, `test_message_input_ctrl_enter_sends`, `test_message_input_cmd_enter_sends`, `test_message_input_ctrl_enter_empty_sends_nothing`, and `test_no_loaded_model_shows_placeholder_and_send_guides` (all in tests/test_ui.py) pass. The rename-input Enter-commit behaviors (AC-114, `thread-rename-input` / `current-thread-title-input`) are untouched.",
@@ -26,6 +27,5 @@
         "tests/test_ui.py::test_no_loaded_model_shows_placeholder_and_send_guides[chromium]"
       ]
     }
-  ],
-  "version": 2
+  ]
 }
