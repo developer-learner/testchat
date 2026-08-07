@@ -62,6 +62,20 @@
           "fingerprint": "d8218bdc56a1245f8d91b2cfa113b4cfe153812fed6fcdfbe2d5ccb4a55fed0b"
         }
       }
+    },
+    "84": {
+      "tasks": {
+        "T1": {
+          "file": "src/static/app.js",
+          "file_sha256": "7327ee481779df97168d3778e4889a0682dfc918b9b1ec00555fb81483417e63",
+          "fingerprint": "a7e024eeaf3d246327ff07eaf960d5acb643a9cbcb12519ace52e08681fc1566"
+        },
+        "T2": {
+          "file": "src/static/index.html",
+          "file_sha256": "b07c3fdd4777c5fab8f94cfb79dee95e110b10b27dc65687103b05ad9bd10037",
+          "fingerprint": "e35dddf7ac33d3d274eaee47ef48294bd4a6e0893fad6b36c9ae6eb3e0ab9b17"
+        }
+      }
     }
   }
 }

@@ -636,3 +636,7 @@ Full frozen TPM suite green against spec v71. Feature built and validated.
 ## Results
 
   Full frozen TPM suite green against spec v79. Feature built and validated.
+
+## Results
+
+  Delta-mapped frozen tests green against spec v84 — feature done (verdict scope: mapped tests only, D-112). Feature built and validated.
