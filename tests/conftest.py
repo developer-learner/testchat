@@ -73,6 +73,7 @@ STREAM_DELTAS = [
 ]
 
 # AC-48 (M10): a deliberately slow stream so a test can click Stop mid-reply.
+# UPDATED 2026-08-08: re-cut AC-48 text restored to PRD (post-condition clause).
 SLOW_DELTAS = [{"content": "tick" + str(i) + " "} for i in range(20)]
 
 # shape: capture tavily-search.json (M25) — two fixed sources for every

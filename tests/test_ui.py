@@ -227,6 +227,7 @@ def test_thread_delete_removes_thread(page: Page, app_url: str) -> None:
 
 
 # AC-48 [M10 ratify — stop button keeps the partial reply]
+# UPDATED 2026-08-08: re-cut text restored to PRD (post-condition clause).
 def test_stop_button_keeps_partial_reply(page: Page, app_url: str) -> None:
     page.goto(app_url)
     select = page.get_by_test_id("model-select")

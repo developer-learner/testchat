@@ -290,6 +290,14 @@ and the local model catalog.
 * **AC-155:** THE message input's placeholder SHALL state the keyboard
   shortcuts: "Ctrl+Enter to send, Enter for newline".
 
+**Streaming send control**
+
+* **AC-48 (stop):** WHILE a reply is streaming, THE SYSTEM SHALL present
+  the send control as 'Stop'; WHEN the user clicks it after visible text
+  has arrived, THE SYSTEM SHALL end the stream, keep the partial reply in
+  the thread, and restore the 'Send' control, such that the stream ends
+  and no further tokens arrive.
+
 ## Out of scope
 
 * **Sidebar row auto-scroll on switch.** AC-121 requires the mark to be
