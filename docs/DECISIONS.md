@@ -21,6 +21,17 @@
 
 ## Decisions
 
+## D-129 — 2026-08-08 — mypy is an acceptance gate in the sandbox, not a CI-only survivor
+
+**Decision:** `run_tests()` runs `mypy --explicit-package-bases --cache-dir=/tmp/mypy-cache src/` inside the sandbox before any pytest invocation; a type error fails the acceptance (rc=1, FAILING=mypy:src) and the pytest run is skipped; CI keeps its own mypy step.
+**Alternatives considered:** (a) keep mypy CI-only — the M29 `psutil` class proved a gate living only in CI does not exist until a child has a remote (testchat shipped 40 spec versions with a dark type gate, red on first push); (b) host-side mypy — host stack is not the pinned sandbox stack (D-50) and the acceptance is the sandbox (D-53).
+**Reason:** mypy 2.1.0 + types-psutil already in requirements.txt/Containerfile — no rebuild, no dependency add. Live probe: `mypy --explicit-package-bases src/` green (11 files, no issues); requires `--cache-dir=/tmp/mypy-cache` because the repo mounts read-only and mypy insists on writing `.mypy_cache`. Fail-closed: a sandbox stack missing mypy hard-halts, never skips. Selftest stub distinguishes the mypy invocation from pytest (SANDBOX_MYPY_RC); 306 selftests green in both repos.
+**Do not suggest:** moving the type gate back to CI-only, or running mypy outside the D-30 sandbox (stack-divergence is the defect class being closed).
+
+---
+
+## Decisions
+
 ## D-128 — 2026-08-08 — Reverse-direction spec lint (S6): whole-world-mock rejection and carried-tests-vs-new-ACs citation check
 
 > Mirror of the blueprint entry (same decision, both ledgers; the gate is

@@ -8,8 +8,12 @@
 ## Up Next
 
 
-### Discover models from generic OpenAI-compatible endpoints
-**Priority:** P1
+### ~~Discover models from generic OpenAI-compatible endpoints~~ — REMOVED 2026-08-08
+**Priority:** ~~P1~~ — struck by CEO decision: not needed. Contrary evidence
+noted (MTPLX chat works but the model is unselectable), but generic
+`/v1/models` discovery is out of scope by direction. **Original entry
+retained below for provenance:**
+
 **Why:** Live deployment against MTPLX on 2026-07-30 proved that chat
 completions work end to end (`APP_OK` through `/api/v1/chat`), but the browser
 cannot select the model. `list_models()` probes only LM Studio's non-standard
@@ -17,12 +21,12 @@ cannot select the model. `list_models()` probes only LM Studio's non-standard
 shape. With both script-run models unloaded, the selector therefore shows no
 loaded model and Send remains disabled. This contradicts the product promise
 that testchat works with any OpenAI-compatible local endpoint.
-**What:** New frozen-spec milestone: when the configured completion endpoint
-does not yield an LM Studio catalog, discover served model IDs from the
-standard OpenAI `GET /v1/models` response, expose them as loaded remote models,
-and allow the UI to select and route to them. Preserve LM Studio behavior and
-script-model load/unload semantics. Tests must be TPM-authored and installed
-through `refreeze.sh`; EM/coder work must run through `orchestrate.sh`.
+**What:** New frozen-spec milestone: the configured endpoint must expose an
+LM Studio catalog, discover served model IDs from the standard OpenAI `GET
+/v1/models` response, expose them as loaded remote models, and allow the UI to
+select and route to them. Preserve LM Studio behavior and script-model
+load/unload semantics. Tests must be TPM-authored and installed through
+`refreeze.sh`; EM/coder work must run through `orchestrate.sh`.
 **Rough size:** Spec + API/service tests + `services/models.py` + model source
 schema (and UI test only if existing generic-model behavior is insufficient)
 
@@ -196,19 +200,30 @@ per-context" is browser-context only, NOT server/port/storage. Real sharding
 needs per-worker ports + server instances + data files (keyed off
 `PYTEST_XDIST_WORKER`), a conftest rework — not a dependency add. And/or (b) a
 changed-tests-first ordering so a red staged suite fails in seconds — this one
-IS cheap and unblocked. And/or (c) a **concurrent backend lane** (verified
-2026-08-04): only 3 files use the shared UI server (`test_ui*.py`); the other 14
-use no `app_url`/stub/`TESTCHAT_DATA`, so they can run as a second `pytest`
+IS cheap and unblocked. And/or (c) a ~~concurrent backend lane~~ — **DROPPED 2026-08-08 (scoped
+review):** only 3 files use the shared UI server (`test_ui*.py`); the other 14
+use no `app_url`/stub/`TESTCHAT_DATA`, so they could run as a second `pytest`
 process alongside the UI files, folding the ~40s backend suite into the ~4min UI
-window. Caveat: only ~40s of ceiling, and it needs ≥2 CPUs in the sandbox (raise
-`--cpus`) to actually overlap — otherwise a time-shared no-op. Lands via the
-orchestrate/sandbox acceptance invocation, not conftest. Tests-lane infra:
-`conftest.py` + possibly CI config, so it lands via a refreeze.
+window. But the split is messier than the 2026-08-04 note claimed (8 of 17
+files touch shared server/stub/TESTCHAT_DATA — per-file isolation checking
+required), the payoff is ~40s of ceiling that mostly no longer applies since
+D-112 took the full suite off the per-milestone verdict path (only refreeze
+staging / on-demand `--full-suite` pay it), and it changes how the verdict is
+computed (two pytest processes → report merge) — the lie-green surface the
+system guards. Not worth the risk; (a)/(b) stand.
 **Rough size:** (a) per-worker isolation rework of the session fixtures — NOT
 trivial; (b) small — a pytest ordering hook.
 
-### Fold `mypy` into the sandbox run
-**Priority:** P2
+### ~~Fold `mypy` into the sandbox run~~ — DONE 2026-08-08 (D-129)
+**Priority:** ~~P2~~ — shipped. `run_tests()` now type-checks `src/` in the
+sandbox before pytest; a type error fails acceptance rc=1 (`FAILING=mypy:src`)
+without launching pytest. Wired blueprint-first (template-owned files), synced
+via template-update; 306 selftests green both repos. Also resolved this
+session: the wall-clock (c) concurrent backend lane is DROPPED — measured
+~40s ceiling that mostly no longer applies post-D-112 (full suite off the
+per-milestone verdict path), and it touches the verdict-computation path for
+net-negative risk. Mypy **Alternative considered — wall-clock (c)**: rejected
+at scoping (see above). **Original entry:**
 **Why:** CI's type-check is a gate nothing local exercises — the sandbox runs
 pytest and ruff only. M29's `psutil` addition passed two full platform runs at
 153/153 and still broke CI on `Library stubs not installed for "psutil"`,
@@ -265,8 +280,10 @@ locked.
 **Rough size:** Spec + test + `static/app.js` (likely a load affordance beside
 the eject button)
 
-### Spec lint at refreeze — post-conditions for state-changing ACs
-**Priority:** P1
+### ~~Spec lint at refreeze — post-conditions for state-changing ACs~~ — SHIPPED (S5)
+**Priority:** ~~P1~~ — closed 2026-08-08: `scripts/check-ac-postconditions.py`
+is wired as the S5 pre-check in `refreeze.sh:235`. Original entry retained
+below for provenance:
 **Why:** The two defects above share one cause. A lint over 77 ACs
 reconstructed from 33 PRD versions found it confined entirely to process
 lifecycle: **5 of 8 process ACs fail**, while **9 of 9 file-lifecycle ACs
