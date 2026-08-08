@@ -744,6 +744,30 @@ Nothing to run until a milestone exists; v86 is metadata-only.
 **Stop condition:** no further doc-sweep passes unless (a) a guard fires,
 (b) a new decision lands, or (c) the lineage test surfaces a defect.
 
+**REOPENED 2026-08-08 — the lineage test found the next defect while
+still pre-milestone:** audit against the LIVE frozen data found
+DELTA-v87.json carrying **58 changed_tests / 0 changed_files** for M35's
+two-comment-line UI milestone — 6 pinned M35 tests (the only ones in
+`contracts.test_mapping`) + 52 relabeled leftovers of the same test file
+(the D-116 shape-flip class). File-granular `changed_tests` are a
+file-scope, not a milestone; `_hit_task_ids` invalidation and the
+full-emission EM scope shipped all 58. **Fixed same day (D-130, rolled in
+via template-update 6da4beb→b39bb08):** `validate-plan.py` now owns ONE
+producer — `milestone_scope_ids()` (raw `changed_tests` ∩ frozen
+`test_mapping` families, parametrization-stripped, plus the D-124
+staged-file repair; inert when the mapping is empty) — and all three
+consumers use it: `--subtree-scope` (map_nodeids + invalidation),
+`--affected` (task-state reset), and orchestrate's full-emission
+`--milestone-scope` (the inline union heredoc is gone). Verified live:
+`--milestone-scope DELTA-v87.json` → **58 → 6**; selftests 315 pass in
+both repos.
+ 
+**Next trigger (updated):** the next REAL milestone freeze with a
+test_mapping — after the node-scope fix, the first full end-to-end line
+is a fasting data-driven milestone (the staged model-registry item),
+which also re-proves plan → coder → gates → verdict on the sliced scope.
+Nothing to run until a milestone exists.
+
 **Decision made 2026-08-07 (CEO): guard-as-warning.** The doc-consistency
 guard was built: `scripts/doc-consistency.sh` (enumerated retired-token scan
 over enumerated state-describing docs), wired into the pre-commit hook as
