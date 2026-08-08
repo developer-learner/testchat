@@ -2,6 +2,14 @@
 
 > You are the CEO. You make two kinds of decisions: **what to build**, and
 > **whether the spec says what you asked for**. Everything else runs without you.
+>
+> **The CEO is not asked technical questions.** Scope ("this bundle or that
+> bundle"), sequencing, method, and feasibility are decided by the technical
+> seats (TPM / conductor) — they are never posed to you as options. The only
+> things that justify spending your attention are **cost** (wall-clock,
+> model calls, resources) and **your intent**. If a technical choice has
+> material cost, it comes to you as a *decision with numbers* — "one recut:
+> ~5 min; all three: ~45 min" — not as a menu of technical options.
 > You run **no commands** (D-40): your interface is a conductor chat —
 > Claude Code, OpenCode's built-in Build agent, or any similar tool you
 > prefer (D-53: the choice is a preference, not an architecture decision,
@@ -87,6 +95,13 @@ usual. Same trust model — you copy text between two chats, nothing more.
 
 ## Rules that keep you safe
 
+- **You are never asked a technical question.** Scope, bundling,
+  sequencing, method, feasibility are the TPM's/conductor's calls. They
+  present you *decisions with numbers* when a choice has real cost/time
+  impact ("AC-42 alone ~5 min; all three ~45 min — pick on the numbers"),
+  never a menu of un-quantified technical options. An agent posing
+  "should I do X or Y?" back to you is bucking its own seat — answer with
+  intent, not with the technical call.
 - **The TPM must never see `src/`.** The tests are trustworthy precisely
   because their author has never seen the implementation. The harness
   blocks it, but back the machine up: never paste source into the TPM
