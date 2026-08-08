@@ -432,7 +432,10 @@ earns; 38%→~85% on the CI floor is still gated on the mac/Linux delta).
 
 - Mobile/responsive layout (sidebar needs touch treatment)
 - Export/import conversations
-- Search across threads
+- ~~Search across threads~~ — DONE: shipped M18–M20 (AC-63..71); the sidebar search matches
+  BOTH thread titles and message content (`src/static/threads.js:374-377`), hit
+  navigation in the open thread. Retired 2026-08-08 after implementing
+  verification (the PRD/test-assertion view understated the shipped scope).
 - Multi-model comparison (side-by-side responses)
 
 ### Candidate: file-granular changed_tests refinement (review granularity only)
