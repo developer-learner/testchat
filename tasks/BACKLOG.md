@@ -157,11 +157,24 @@ new AC-104 correctly refuses to spawn and `Popen` is never called — while the
 test asserts it was. Unsatisfiable alongside AC-104; cost a full escalation
 cycle and the v59 refreeze to fix.
 **What:** (a) diff live carried-forward tests against the ACs a delta ADDS, not
-only staged tests against live ACs; (b) treat a mock that answers every URL as a
-lint failure — it encodes "the whole world is ready" and silently couples
+only staged tests against live ACs; (b) treat a mock that answers every URL as
+a lint failure — it encodes "the whole world is ready" and silently couples
 unrelated subsystems.
 **Rough size:** `check-test-surface.py` or a new refreeze lint — shipped as the
 latter.
+
+### S6 residual — 9 sandbox-frozen whole-world mocks still held in the suite
+**Priority:** P3
+**Why:** D-128 scopes S6's whole-world-mock check to delta-touched tests;
+test_models_api.py:140,166,319 and test_models_service.py:159,181,190,202,214,357
+carry 9 legacy bare-Mock patterns, grandfathered by design (re-cutting old
+content must not gate every future refreeze). The class is still live in the
+suite; a future test that interacts with one of those subsystems must mock the
+real seam, and S6's check 2 (carried test citing a NEW AC) is the net if it
+doesn't.
+**What:** Re-cut those 7 sites via the TPM bundle only when a refreeze is
+already scheduled for other reasons — no standalone freeze just for this.
+**Rough size:** Spec/test-only
 
 ### Halve the full-suite wall clock (freeze-time floor)
 **Priority:** P2
