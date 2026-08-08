@@ -5,6 +5,28 @@
 
 ---
 
+## State at 2026-08-08 (session end) — handoff: S6 + D-128 landed; the only open P1 is AC-42 (TPM lane); two CEO directional decisions pending
+
+**Fresh-session entry point:** read `AGENTS.md` (CLAUDE.md) first — their correction log, operating rules, and lane ladder are the memory layer. Two repos, both clean and IN SYNC: blueprint HEAD `228d600`, testchat HEAD `db95e2e` (template ref `0598ab6`). **A parallel conductor session is live in the same workspace** — one-writer per file; it still has mypy-into-sandbox parked in its lane; don't pick that up without coordinating.
+
+**What shipped in this session (both repos, 304 selftests, in sync):**
+- **S6 reverse-direction lint (the backlog P1, done):** `scripts/check-test-direction.py`, wired as an S6 preflight in `refreeze.sh` (runs on merged preview). Check 1 rejects URL-verb mocks that ignore their URL arg (or bare `Mock()`) — **scoped to delta-touched tests only** (D-128 amend: the live frozen suite carries 9 legacy whole-world mocks in test_models_api/service; a whole-suite halt would brick every refreeze — caught by the parallel session's live probe; valuable lesson logged). Check 2 rejects a carried test citing an AC the delta ADDS. 4 selftests pin both directions; live-suite validation done (0 findings; staged mock still rejected).
+- **DECISIONS.md: D-128** in both ledgers (blueprint full entry + testchat mirror; ledger travels with code rule).
+- em.md verbatim-node-ids requirement (other session) — shipped.
+- D-127 sandbox non-root proof, D-126 metrics durability — shipped earlier this arc.
+
+**Remaining board (CEO-prioritized):**
+- **P1: AC-42 flake hardening** — the only P1 left; it's a TPM/refreeze item (needs the TPM shuttle round-trip then `refreeze.sh` on green preflights). Prepare the staged bundle, run `tpm-pack.sh`, hand the bundle to the CEO verbatim (D-49), apply via `tpm-unpack.sh` + `refreeze.sh` on green.
+- **P1: (MSTPLX demoted by CEO 2026-08-08)** — model-discovery milestone is OUT; don't schedule it.
+- **P2 conductor lane (mine):** the two collated "it's mine" hygiene items — AC-48 audit, testchat `.opencode/node_modules` cleanup; plus manifest-drift doc guard + status.py coverage **awaiting CEO directional decisions** (they were surfaced as decision-memos, not asked to decide alone).
+- **P2 (other agent's lane):** mypy-into-sandbox, and the changed-tests ordering item is a TPM refreeze item per its own lane check (conftest.py is INV-1-pinned).
+
+**CEO positions recorded 2026-08-08:** no human approval at refreeze (D-121, auto-apply on green preflights); the CEO is directional, not technical, at that stage. MTPLX demoted. Conductor stack = the table I sent (cleanup have the answers).
+
+**Next move for a fresh session:** (1) confirm both heads/in-sync, (2) take the conductor hygiene batch (AC-48 audit + node_modules cleanup + whichever CEO decides), (3) when green, prepare the AC-42 bundle via the TPM shuttle (D-49) — no diff needed in the code first; the board only needs the CEO's two decisions to complete the table.
+
+---
+
 ## State at 2026-08-06 (late) — M35 v84 run root-caused: not the EM, not the ordering — D-64 swept pinned node-ids
 
 Verified against the tree, the run log, and `.em-archive/2026-08-06_192053_plan-subtree/`.
