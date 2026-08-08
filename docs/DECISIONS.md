@@ -21,6 +21,15 @@
 
 ## Decisions
 
+## D-128 — 2026-08-08 — Reverse-direction spec lint (S6): whole-world-mock rejection and carried-tests-vs-new-ACs citation check
+
+> Mirror of the blueprint entry (same decision, both ledgers; the gate is
+> template-owned, synced via the template manifest).
+
+**Decision:** A refreeze preflight (`scripts/check-test-direction.py`, "S6") rejects (1) a suite mock — carried or staged — that answers every URL (a URL-verb fake whose callable ignores its URL argument, or a bare `Mock()`), and (2) a carried-forward test that cites an AC id this delta adds. Both halves run on the merged preview suite (current frozen + incoming overlay) before the freeze applies.
+**Reason (the v58 incident):** The forward lints compare STAGED tests against LIVE ACs; v58 passed them and still shipped the reverse contradiction — a carried test that monkeypatched `httpx.get` to return 200 for every URL made the "other" script model read as loaded, so the new AC-104 spawn-refusal never ran and the test asserting `Popen` was called could not fail. A whole-world mock encodes "the whole world is ready" and silently couples unrelated subsystems; the citation check is freeze-lane attribution (a test whose assumptions predate an AC this delta adds must ride the delta or the 'new' claim is false).
+**Do not suggest:** Demoting either half to advisory without a measured false-positive (D-115); moving the scan off the merged preview into CI (it would race the S-LINE staged/preview erased-state class); tightening the mock analysis beyond "reads its URL parameter" (speculative pre-hardening, D-32).
+
 ## D-127 — 2026-08-08 — The sandbox has never run as root and the constraint-2 verifier now proves it mechanically
 
 > Mirror of the blueprint entry (same decision, both ledgers; sandbox and its

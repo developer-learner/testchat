@@ -142,7 +142,13 @@ interim rule is superseded for the user-privilege axis (still standing for
 platform-specific code like macOS root calls, per M29).
 
 ### Spec lint, reverse direction — live tests vs NEW ACs
-**Priority:** P1
+**Priority:** ~~P1~~ — closed 2026-08-08 with S6 (D-128): `scripts/check-test-direction.py`
+preflight, wired into `refreeze.sh` after INV-4. It rejects (1) a suite mock —
+carried or staged — that answers every URL (a URL-verb fake whose callable
+never reads its URL parameter, or a bare `Mock()`), and (2) a carried-forward
+test that cites an AC id this delta adds. Runs on the merged preview suite, so
+neither side of the delta escapes. 303 selftests pin it in both repos
+(whole-world mock rejected, carry-citation rejected, URL-scoped fake accepted).
 **Why:** The existing lint checks staged tests against live ACs. v58 passed it
 and still shipped a contradiction in the other direction: the carried-forward
 `test_load_nemotron_expands_script_path` monkeypatches `httpx.get` to return
@@ -154,7 +160,8 @@ cycle and the v59 refreeze to fix.
 only staged tests against live ACs; (b) treat a mock that answers every URL as a
 lint failure — it encodes "the whole world is ready" and silently couples
 unrelated subsystems.
-**Rough size:** `check-test-surface.py` or a new refreeze lint
+**Rough size:** `check-test-surface.py` or a new refreeze lint — shipped as the
+latter.
 
 ### Halve the full-suite wall clock (freeze-time floor)
 **Priority:** P2
