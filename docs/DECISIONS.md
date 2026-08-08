@@ -25,6 +25,13 @@
 
 > Mirror of the blueprint entry (same decision, both ledgers; the gate is
 > template-owned, synced via the template manifest).
+> **Amended 2026-08-08 (same day):** check 1 (whole-world mock) is scoped to
+> the tests THIS DELTA TOUCHES, not the whole merged suite — this repo's own
+> frozen suite carries 9 legacy bare-Mock whole-world patterns
+> (test_models_api.py:140/166/319, test_models_service.py:159/181/190/202/
+> 214/357); a whole-suite halt would brick every refreeze on content no
+> milestone is about. Now: staged bare mock rejected, carried legacy mock
+> grandfathered, standalone invocation still audits the whole directory.
 
 **Decision:** A refreeze preflight (`scripts/check-test-direction.py`, "S6") rejects (1) a suite mock — carried or staged — that answers every URL (a URL-verb fake whose callable ignores its URL argument, or a bare `Mock()`), and (2) a carried-forward test that cites an AC id this delta adds. Both halves run on the merged preview suite (current frozen + incoming overlay) before the freeze applies.
 **Reason (the v58 incident):** The forward lints compare STAGED tests against LIVE ACs; v58 passed them and still shipped the reverse contradiction — a carried test that monkeypatched `httpx.get` to return 200 for every URL made the "other" script model read as loaded, so the new AC-104 spawn-refusal never ran and the test asserting `Popen` was called could not fail. A whole-world mock encodes "the whole world is ready" and silently couples unrelated subsystems; the citation check is freeze-lane attribution (a test whose assumptions predate an AC this delta adds must ride the delta or the 'new' claim is false).
