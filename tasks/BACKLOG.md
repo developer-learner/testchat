@@ -418,6 +418,13 @@ a TPM spec + `scripts/refreeze.sh`, not a patch. That is also why it never got
 done incidentally.
 **Rough size:** Spec/test-only (no `src/` change expected)
 **Source:** 2026-07-24 coverage-ratchet session.
+**DECIDED 2026-08-08 (b — accept and record):** doesn't ship the CEO-judged
+platform-specific helpers; status.py stops reading as neglect — a documented
+decision, not an oversight. The fixture tests (monkeypatched `subprocess.run`
+over captured `sysctl`/`vm_stat` output) are not lost: they fold into a later
+TPM refreeze that already touches this file for another reason — no standalone
+freeze for coverage alone (the refreeze floor costs more than the coverage
+earns; 38%→~85% on the CI floor is still gated on the mac/Linux delta).
 
 ---
 
