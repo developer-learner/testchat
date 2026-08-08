@@ -37,7 +37,8 @@ D-95/D-121), after which it is frozen and
 hash-pinned. The orchestrator validates the EM's plan mechanically
 (`scripts/validate-plan.py`), walks the task DAG, runs the coder one file at a
 time inside a read-only-repo sandbox, and gates every step. A feature is done
-when the FULL frozen suite is green. See `docs/TPM-ROLE.md` for the top tier's
+when the delta's mapped verdict is green (D-112; the full
+frozen suite is an on-demand `--full-suite` regression check). See `docs/TPM-ROLE.md` for the top tier's
 job description and `docs/ESCALATION.md` for how failures climb.
 
 **No agent harness sits in the execution path (D-53).** EM and coder have no
@@ -190,7 +191,8 @@ The dangerous failure is acting confidently when wrong — not stopping.
 
 Never report a task complete based on your own judgment. The orchestrator
 runs the frozen suite; a task is done only when its mapped tests pass, and a
-feature is done only when the FULL frozen suite is green with no regressions.
+feature is done when the delta's mapped verdict is green (D-112; the full
+frozen suite is an on-demand `--full-suite` regression check).
 "It looks correct" is not evidence. The tests are.
 
 ### Rule 6 — Tests derive from the spec, and nobody downstream writes them
