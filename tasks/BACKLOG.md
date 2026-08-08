@@ -126,18 +126,20 @@ lost state, never a fresh project. Offer the reconstruct path rather than
 silently planning a full rebuild.
 **Rough size:** `orchestrate.sh` pre-flight
 
-### Run the frozen suite unprivileged in the sandbox
-**Priority:** P1
-**Why:** The container runs as root; the app runs as a normal user on macOS.
-M29 shipped `psutil.net_connections()` (module-level), which needs root on
-macOS: it passed 153/153 in the container while 5 tests failed on the host. A
-green oracle over a broken production path — caught only because the host run
-was done manually. The per-process form (`psutil.process_iter()` →
-`proc.net_connections()`) works in both and is what landed.
-**What:** Drop root in `sandbox-run.sh` so capability-dependent code cannot pass
-in the sandbox and fail in production. Interim rule until then: never declare
-green without a host run.
-**Rough size:** `sandbox-run.sh` / `Containerfile` + a DECISIONS entry
+### ~~Run the frozen suite unprivileged in the sandbox~~ — DONE 2026-08-08 (D-127)
+**Priority:** ~~P1~~ — closed after truthful premise correction. The sandbox
+has run as non-root `agent` (UID 1000, `USER agent` in the Containerfile)
+since the template bootstrap — verified inside the dev-vm: sandbox `id -u`
+returns 1000, `Uid:`/`Gid:` all 1000, under `--userns=keep-id
+--cap-drop=ALL --security-opt no-new-privileges`. M29's incident was a
+macOS-vs-Linux psutil semantics gap (module-level `net_connections()`), not
+a container privilege gap; the per-process form already landed. The real
+gap: nothing PROVED the property — the constraint-2 verifier never checked
+the process user. Closed with `verify along in D-127`: the verifier now
+asserts non-root (check 6), so a regression to `USER root` in the image
+fails selftests outright. The "never declare green without a host run"
+interim rule is superseded for the user-privilege axis (still standing for
+platform-specific code like macOS root calls, per M29).
 
 ### Spec lint, reverse direction — live tests vs NEW ACs
 **Priority:** P1

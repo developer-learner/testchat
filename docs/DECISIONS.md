@@ -21,6 +21,17 @@
 
 ## Decisions
 
+## D-127 — 2026-08-08 — The sandbox has never run as root and the constraint-2 verifier now proves it mechanically
+
+> Mirror of the blueprint entry (same decision, both ledgers; sandbox and its
+> verifier are template-owned).
+
+**Decision:** The sandbox runs pytest/smoke runs as the image's non-root `agent` user (UID 1000 — `USER agent` in the Containerfile, `--userns=keep-id --cap-drop=ALL --security-opt no-new-privileges`), and `scripts/selftest/verify-sandbox-in-vm.sh` gains check [6]: the sandbox process uid must be non-root.
+
+**Reason (the M29 incident, corrected):** The sandbox has been unprivileged since the template bootstrap; the M29 failures were a macOS-vs-Linux psutil semantics difference (module-level `net_connections()` is a macOS root-only call; the Linux container never needed root). The P1 backlog item's premise ("the container runs as root") was wrong — and the missing piece was never the user, but the PROOF. The verifier checked mounts, rw lanes, and network but never the process user, so a silent drift to a root-running image could never fail loud. Check [6] makes the property mechanical.
+
+**Do not suggest:** running the sandbox as root for any convenience; dropping the non-root assertion from the verifier; asserting the property from the host instead of inside the container.
+
 ## D-126 — 2026-08-07 — The metrics layer: a per-milestone aggregate over the data the pipeline already writes; metrics.tsv is the D-115 admission input
 
 **Decision:** `scripts/metrics-report.py` aggregates ONLY post-teardown-durable sources — `.measurement/counters` (per-run exit rows with `rc=`, `spec=`, `elapsed=`), `.measurement/timings-<TS>.tsv` copies, `.em-archive/*/meta.txt` (spec-tagged), `.pipeline-flakes.json` (committed, D-111) — into one TSV row per milestone in `.measurement/metrics.tsv` (columns: milestone, date, feature, gate_hours, selftest_count, selftest_s, em_calls, em_waste, flakes, success_runs, retry_runs). The row is idempotent per milestone+feature (D-111 habit), scoped to one spec version across all sources, and `--evidence` prints the same numbers without writing — the measured-evidence block a D-115 retirement entry must cite. The success path records the row automatically after the `[success]` commit (`--feature v$FROZEN_V`, `|| true` — a report can never fail a run). D-108's lesson, applied: `.pipeline-state` is wiped by the success teardown (`rm -rf`), so the row is computed after the wipe from what outlives it — never stored inside the blast radius. It is a report, never a gate: nothing in the completion path reads metrics.tsv.

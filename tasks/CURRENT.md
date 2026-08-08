@@ -755,3 +755,15 @@ ledger), output is `.measurement/metrics.tsv`, and the success path records
 each milestone's row automatically (`|| true`). The next `[success]` run
 will emit its row with no manual step — then the ≥3-milestone accumulation
 for the first real D-115 retirement (todo 7) is possible.
+
+## Sandbox privilege property 2026-08-08 (record)
+
+D-127 (mirrored from blueprint `fb9fa84`): the sandbox has run as non-root
+`agent`/1000 since the template bootstrap — verified live in the dev-vm
+(`sandbox-run.sh -- sh -c 'id -u'` → 1000, CapEff empty, no-new-privileges).
+The M29 backlog premise ("container runs as root") was wrong; the incident
+was macOS-vs-Linux psutil semantics. What was genuinely missing was
+mechanical proof — the constraint-2 verifier checked mounts/network but
+never the process user. Check 6 now asserts non-root at every
+verify-sandbox-in-vm run. BACKLOG.md item retired with the correction
+recorded.
