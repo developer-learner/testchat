@@ -5,6 +5,14 @@
 
 ---
 
+## State at 2026-08-08 (session end — 2) — hygiene batch done, CEO memos never drafted, stop confirmed
+
+- Both repos clean and IN SYNC: testchat HEAD `d0ac352` (backlog: AC-48 audit DONE), template HEAD `1f7d1c4` (drift clean).
+- AC-48 audit closed and recorded (`tasks/BACKLOG.md`, commit `d0ac352`): text recovered verbatim from refreeze v20 (`51149c1`); §5.1 lint FAILS — "end the stream" is mechanism, no `such that` post-condition; frozen test does pin the partial-reply retention + Send restore pair, so observable coverage exists in test form; re-cut clauses drafted for the next TPM bundle (ride along AC-42's).
+- testchat `.opencode/node_modules` removed (101M, gitignored, regenerable from package.json) — nothing committed, tree clean.
+- **NOT DONE** — deliberately stopped mid-step before drafting either CEO memo (manifest-drift guard; statuses coverage). They were waiting on the CEO conversation anyway; nothing repo-visible needs them.
+- loosed at the still open-info `~/.lima/dev-vm` still running (last session's). Stop when convenient: `limactl stop dev-vm`.
+
 ## State at 2026-08-08 (session end) — handoff: S6 + D-128 landed; the only open P1 is AC-42 (TPM lane); two CEO directional decisions pending
 
 **Fresh-session entry point:** read `AGENTS.md` (CLAUDE.md) first — their correction log, operating rules, and lane ladder are the memory layer. Two repos, both clean and IN SYNC: blueprint HEAD `228d600`, testchat HEAD `db95e2e` (template ref `0598ab6`). **A parallel conductor session is live in the same workspace** — one-writer per file; it still has mypy-into-sandbox parked in its lane; don't pick that up without coordinating.
