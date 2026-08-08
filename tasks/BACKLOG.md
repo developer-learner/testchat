@@ -301,9 +301,12 @@ un-retired AC (the AC-15 case). Likely blueprint-side — see
 `tasks/HANDOFF-blueprint-items.md`.
 **Rough size:** `scripts/` + BLUEPRINT
 
-### AC-48 audit — Stop-mid-stream is an unaudited cancellation AC
-**Priority:** P3
-**Status:** DONE 2026-08-08 (this session)
+### ~~AC-48 audit — Stop-mid-stream is an unaudited cancellation AC~~ — DONE (v87, 2026-08-08)
+**Priority:** ~~P3~~ — all text re-applied at `refreeze v87` (`a520c46`): re-cut
+AC-48 criterion + "such that the stream ends and no further tokens arrive"
+post-condition clause placed in the PRD; citing tests restaged with the delta
+to retire the S6 carried-claim; preflights green and the frozen tests verified
+in the sandbox. Entry retained below for provenance of the audit:
 **Why:** The 2026-07-25 lint recovered 77 of ~100 AC statements; 23 have no
 surviving PRD text. All 23 are UI/theme/markdown/rename **except AC-48**
 (deliberately slow stream so a test can click Stop mid-reply), which is a
@@ -311,7 +314,7 @@ cancellation operation — the same class as the failing process-lifecycle ACs
 and never checked for a post-condition.
 **What:** Recover AC-48's text and apply the §5.1 lint.
 **Rough size:** Spec review only
-**Verdict (2026-08-08):** Text recovered verbatim from refreeze v20 (`51149c1`):
+**Verdict (2026-08-08):** Text recovered verbatim from freeze v20 (`51149c1`):
 "AC-48 (stop): WHILE a reply is streaming, THE SYSTEM SHALL present the send
 control as 'Stop'; WHEN the user clicks it after visible text has arrived, THE
 SYSTEM SHALL end the stream, keep the partial reply in the thread, and restore
@@ -321,7 +324,7 @@ observable check. The frozen test (tests/test_ui.py:229, M10 ratify) does pin
 the observable pair the lint wants ("Send" restored, partial reply retained,
 control re-enabled), so the coverage exists in test form — but the PRD text
 never carried the post-condition, and per D-31 the PRD only changes via
-refreeze. Re-cut text drafted for the next TPM bundle: add "such that the
+refreeze. Re-cut text drafted into the PRD: add "such that the
 stream ends and no further tokens arrive" as the post-condition clause.
 
 ### ~~AC-42 flake hardening — test_thinking_placeholder_shows_then_clears~~ — DONE (v55 recut)
@@ -350,8 +353,13 @@ pipeline fix (D-77, retry-in-isolation before DRIFT) is blueprint-side,
 parked in `tasks/HANDOFF-blueprint-items.md`.
 **Rough size:** Spec/test-only
 
-### AC-47 recut — thread-delete confirm off native window.confirm
-**Priority:** P2 (bundle with the AC-42 refreeze above)
+### ~~AC-47 recut — thread-delete confirm off native window.confirm~~ — DONE (v55 + live-fix)
+**Priority:** ~~P2~~ — closed 2026-08-08: the recut **already shipped**.
+Test re-cut at `51cb22e` [refreeze v55] (M28d: `test_thread_delete_removes_thread`
+clicks `delete-confirm`, no `page.once("dialog")`); the `deleteThread` →
+`confirmDelete()` swap landed as live-fixes `2f25d4e` + `1fa18ed`.
+Verified today: `test_thread_delete_removes_thread` green in the sandbox
+(3/3 in the same run as the AC-42/AC-48 tests).
 **Why:** CEO wants all confirms themed (2026-07-19). Message-pair delete
 now uses the themed delete-confirm-modal (live-fix), but thread delete
 must stay `window.confirm` because frozen AC-47
