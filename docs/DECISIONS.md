@@ -99,6 +99,157 @@
 
 **Do not suggest:** Re-adding the full suite to milestone completion; treating a red --full-suite check as a milestone failure when tasks are green (it routes to the TPM lane); marking a task done on self-judgment because the verdict scope shrank (mapped acceptance is still the oracle); running orchestrate.sh on the macOS host (D-55).
 
+## D-125 — 2026-08-04 — The frozen suite is size-governed: parsimony and retirement are spec properties, TPM guidance, not gates
+
+**Decision:** `docs/TESTING.md` gains two standing rules for the frozen suite. (1) **Parsimony:** one test per acceptance criterion is the default; a second test is justified only by exercising a different surface (unit vs API vs UI) or a distinct failure class — when a unit test and an API test would assert the same fact, one is carrying the other. (2) **Retirement:** a frozen test that has not failed for five consecutive milestones, or that no longer maps to a current acceptance criterion or locked surface, is a retirement candidate the TPM flags at the next refreeze; removal happens through the same `refreeze.sh` delta path as any other spec change, never by direct edit. Suite size is a review item at every freeze: a `tests/` diff without a corresponding PRD acceptance-criterion change is a smell. Both rules are advisory TPM guidance, deliberately not mechanical gates: per-node failure history is not tracked, so a mechanical dead-test detector has no input data, and per D-115 a check with no consumer is decoration. The mechanization path is named in TESTING.md (a failure-history ledger — the D-111 flake ledger tracks only accepted flakes, not "never failed") — adopt only if frozen-suite bloat incidents arrive. Separately: retiring D-88 (quote-brittle smoke-check preflight) and trimming `check-test-surface.py`'s selector blocklist were evaluated and **rejected**. Each is incident-purchased; D-88's entry carries an explicit anti-retirement clause ("do not suggest: demoting to advisory once 'we haven't seen a false positive in N freezes'") and its check is ~130 lines scoped to grep-family/literal-quote/new-entry patterns; the selector families map 1:1 to the 2026-07-11 audit findings (bare-tag selectors, role/text locators, raw CSS/XPath, `locator()`/`query_selector`, data-testid literals), with the blocklist backstops covering receivers the main rule cannot see.
+
+
+
+> Renumbered from D-117 on 2026-08-07 (ledger alignment): D-117 now designates the TPM-bundle-slice decision back-ported from testchat; this size-governance entry is D-125.
+
+
+
+> Ported from the blueprint 2026-08-07 (ledger alignment; same decision, blueprint numbering).
+
+**Reason:** The frozen suite is the only artifact class in the system with no size governance: it can only grow (removal requires a TPM round-trip through refreeze), every entry is collected/parsed/diffed on each run, and testchat's 18-file/4,287-line accretion shows the pattern. The 2026-08-04 review pass found the example suite itself proportionate (234 lines pinning a 37-line PRD, one test per criterion) but the *direction* structurally one-directional; these rules close that direction cheaply at spec time — where test authorship already lives — without adding pipeline machinery. The D-88/selector retirement proposal is recorded here because it was seriously considered and stopped at the D-record's own evidence: per D-115, retirement requires *measured* blast radius vs cost, and "the check is complex" is not evidence of false-positive cost.
+
+**Alternatives considered:** (a) A mechanical dead-test detector (failure-history ledger + freeze-time advisory) — rejected: no data source exists (the flake ledger tracks flakes, not never-failed tests), and per D-115 a new paid check needs blast radius > cost; TESTING.md names this as the escalation path if bloat incidents occur. (b) Retiring D-88 — rejected: its entry's "do not suggest" was written against exactly this proposal, and no track record exists either way (the gate is a week old). (c) Trimming selector regexes — rejected: each regex is a distinct audit finding's accident class; removing one reopens that family. (d) Enforcing suite size with a line-count cap — rejected: length is a smell, not a violation.
+
+**Do not suggest:** Mechanizing retirement before failure history exists; a line/function-count cap on `tests/` (blocks legitimately thorough suites); reviving the D-88 demotion or the selector trim without new false-positive evidence; repurposing the D-111 flake ledger to track "never failed" (that is a different ledger with a different consumer — name the consumer first).
+
+## D-124 — 2026-08-02 — A node-id relabel in a byte-identical suite must not widen the freeze delta
+
+**Decision:** `refreeze.sh`'s delta computation is extracted into `scripts/refreeze_delta.py` (a real producer with a direct unit test), and its "removed" term — `old_nodeids - new_nodeids` — is scoped to node-ids whose source FILE actually changed in this delta (`changed_files` ∪ `removed_files`). A node-id that disappears from the collected set only because collection relabeled it (pytest's parametrized `name[chromium]` when the sandbox collect succeeds vs static AST's bare `name` when it does not) no longer enters `changed_tests` while its file is byte-identical and still present. The "in changed files" term is already file-scoped and is unchanged. Genuine retirements (files in `REMOVED`) and real edits (staged byte-different files) still populate the delta exactly as before.
+
+
+
+> Renumbered from D-116 on 2026-08-07 (ledger alignment): D-116 now designates the context-minimalism decision back-ported from testchat; this relabel entry is D-124.
+
+
+
+> Ported from the blueprint 2026-08-07 (ledger alignment; same decision, blueprint numbering).
+
+**Reason:** testchat's v77 re-freeze staged a byte-identical suite, but collection flipped 60 node-ids from the parametrized to the bare shape. The old removed term counted all 60 as retirements, so the delta invalidated and re-ran three already-done, green tasks off a phantom scope — the frozen suite, the app, and the requirements were all unchanged; only the labels flickered. The frozen `test-nodeids` file legitimately churns shape between freezes depending on whether the sandbox collect succeeds; that instability must not translate into work. Scoping the removed term to files the delta actually touched neutralizes both flip directions (parametrized→bare and bare→parametrized) without weakening real-removal detection. The computation moved to its own module because the delta runs post-apply, past `--diff` — an inline heredoc could not be unit-tested, and the correction-log meta-rule (adapters need a real producer test) applies.
+
+**Alternatives considered:** (a) Stabilize the frozen node-id set itself so it never flips shape (always AST, or always pytest) — rejected: AST cannot see parametrization (undercounts) and pytest collect is not always available at freeze time (INV-1 tests precede their imports); the set's shape is legitimately environment-dependent, so the delta must tolerate it rather than the set being forced. (b) Compare node-ids with parametrize suffixes stripped — rejected: brittle to any future id-shape change and would also mask genuine parametrization changes in a truly edited file. (c) Leave it inline and test end-to-end only — rejected: the existing `freezable_repo` end-to-end tests cover the apply path but cannot cheaply exercise the collection flip; a direct producer test pins the guard precisely.
+
+**Do not suggest:** Re-widening the removed term to the raw `old - new` set "to be safe" (that is the defect); forcing the frozen node-id set to a single collection method; auto-editing the frozen spec to prune stale entries (the spec is human/TPM-authored — machinery surfaces, never edits it, per D-75's warn-only stance).
+
+## D-115 — 2026-08-02 — Retire non-decisional freeze advisories; admit/retire safeguards on measured blast radius
+
+**Decision:** The `refreeze.sh` freeze-time advisories D-83 (fresh-milestone note), D-56's ZERO-external NOTE, and D-89's per-file ERD prose-mass advisory are retired. `refreeze.sh` no longer prints them; `validate-plan.py` keeps only D-89's plan-gate half (the `MAX_BRIEF_CHARS` overflow hint names the ERD section size when a brief is actually rejected); `ERD-MASS` is no longer a preflight. Retiring an advisory is a doc-level amendment to the originating D-entry (D-83, D-56, D-89, D-107's "concatenates before running D-89" clause) — history stays, intent is updated. All hard gates are untouched: D-78 satisfiability, D-88 smoke quotes, D-87 static-asset, D-107 ERD-delta validation, INV-4 surface, staged-test parse+lint+determinism, D-75 red-before-green, the plan gate, and every coder/EM lane.
+
+
+
+> Ported from the blueprint 2026-08-07 (ledger alignment; same decision, blueprint numbering).
+
+**Reason:** The three advisories cost ~0.04-0.04s each per freeze and none ever changed a freezing behavior in twelve weeks (measured, not assumed). Each printed a verdict nobody consumed (the D-85 lesson generalized): D-83 fires only in the "same-session" case the CEO drives anyway; D-56's zero-external NOTE restates what the diff already shows; D-89's per-file mass correlated with brief size but never blocked a freeze and duplicated the plan gate's already-harder check. The advisory carve-out in D-95's auto-approval is textually unchanged — this is retirement, not promotion. New selection rule (applies from now on): a candidate freeze-time advisory is admitted only if its blast radius (a subclass defect it would plausibly catch) exceeds its runtime and false-positive costs; a paid advisory that has produced no behavioral change is retired rather than kept to demonstrate diligence.
+
+**Alternatives considered:** (a) Keep the advisories and make them toggle-able — rejected, three more code paths to test for no consumer; (b) only merge D-89's freeze and plan-gate halves into one scored gate — rejected, the plan gate is the only point where rejection happens and is the correct sole consumer; (c) move the rules to README prose so the history keeps the note while the pipeline drops it — rejected, docs still claim a script prints it and a docs-only claim is a lie (Rule 5); (d) apply the same measured-cost discipline to the retained hard gates — explicitly out of scope; gates that change what a violation does are stop-and-ask (Rule 3).
+
+**Do not suggest:** Re-adding any of the retired advisories "as a light diagnostic" — none had a consumer; converting any retired advisory into a hard gate; extending `refreeze.sh` preflight count as a delivery metric; removing a hard gate because an advisory was removed.
+
+---
+
+## D-114 — 2026-08-02 — Frozen oracle is content-scoped, tests/-confined, and Linux-sandbox-only
+
+**Decision:** Every production pytest entry point is explicitly confined to `tests/`. Refreeze classifies a staged test as changed only when it is new or byte-different from the tracked test. Pytest collection and the D-75 red-before-green check execute only through the Linux Podman sandbox; collection may use static AST when pre-implementation imports prevent sandbox collection, but generated tests never execute on macOS. If the red-check sandbox cannot produce a readable report, refreeze halts. D-90's host-execution fallback is retired. Separately, when a task has already consumed its brief-revision allowance, the orchestrator packages a TPM escalation before calling the EM; it does not require and validate a revised brief that it must discard.
+
+
+
+> Ported from the blueprint 2026-08-07 (ledger alignment; same decision, blueprint numbering).
+
+**Reason:** Testchat v75 collected 19 archived staging tests outside `tests/`, classified a byte-identical returned suite as 98 changed tests, and spent its final model call producing a schema-valid 2,631-character revised brief after the 2,500-character allowance was already exhausted. The artifact then failed validation before the existing escalation branch could run. These were scope and ordering defects: more machinery produced less useful evidence and added roughly 25 minutes to a run that completed no task.
+
+**Alternatives considered:** Keep bare repository-root pytest and exclude known archive paths (rejected — every new directory reopens collection); compare staged tests by path presence (rejected — whole-suite TPM returns make unchanged behavior look new); retry/compress the over-cap brief (rejected — the revision cannot be consumed); execute generated tests on the Mac when Podman is unavailable (rejected — it contradicts the VM boundary and turns TPM output into host code execution).
+
+**Do not suggest:** Restoring repository-root project pytest; treating a returned-but-identical test as changed; adding a host pytest fallback; consulting for a revised brief after its allowance is exhausted.
+
+## D-123 — 2026-08-01 — Real container builds run on packaging changes and a weekly backstop
+
+**Decision:** A project-owned `.github/workflows/container-build.yml` performs a pulled, no-cache Docker build when `Containerfile`, `.dockerignore`, `requirements.txt`, or the workflow itself changes; it also runs every Monday and on manual dispatch. After building, it starts the image and asserts that `/work` contains no source, tests, or Git metadata and that the temporary requirements manifest was removed. The blueprint and the actively maintained `testchat` child carry the workflow; other local children remain explicitly deferred because their stack adaptations are project-owned.
+
+
+
+> Renumbered from D-112 on 2026-08-07 (ledger alignment): D-112 now designates the delta-mapped verdict decision back-ported from testchat; this container-build entry is D-123.
+
+
+
+> Ported from the blueprint 2026-08-07 (ledger alignment; same decision, blueprint numbering).
+
+**Reason:** Static checks prove that the Dockerfile no longer says `COPY .`, but they cannot prove the base image still resolves, browser installation still works, dependencies remain installable, or the finished image has the expected filesystem shape. Building on every source commit would repeatedly pay for the accepted ~1.2 GB browser layer without testing a changed packaging input. Change-scoped plus weekly provides real integration evidence at bounded cost.
+
+**Do not suggest:** Running the expensive clean build on every source-only commit; pushing the validation image to a registry; restoring build cache to make a test named “clean build” faster; treating a successful Dockerfile parse or static grep as equivalent to a completed image build.
+
+## D-113 — 2026-08-01 — Success cleanup recovers its prior spec from durable history
+
+**Decision:** When the runtime task checkpoint is empty after intentional success cleanup—or partial state loss—`scripts/orchestrate.sh` resolves the prior milestone from the newest validated entry in `.pipeline-completions.json` instead of trusting a lone `.pipeline-state/spec_version`. That recovered version drives `SPEC_ADVANCED` before exact-match completions are restored and is retained separately as `delta_baseline_spec` for the entire in-progress milestone, so same-spec retries preserve every intervening delta in D-65 edit scope. Task reset and edit scope share one fail-closed affected-task computation over that range, and every in-process plan revision recomputes and reapplies it before the DAG continues. `completion-ledger.py latest` returns the newest successful spec (or zero for no history), accepts only canonical positive version keys, validates the entire ledger, and makes malformed history halt. A prior version newer than the frozen spec and a missing intervening delta also halt rather than guessing through incomplete history.
+
+
+
+> Ported from the blueprint 2026-08-07 (ledger alignment; same decision, blueprint numbering).
+
+**Reason:** D-108 correctly ordered restore before delta invalidation, but D-99's success cleanup deleted the runtime version used to arm that invalidation. The fallback silently set the missing prior version equal to the new frozen version, so `SPEC_ADVANCED=0`; a partial checkpoint could also retain only that version after losing every task marker. A one-file mechanical re-plan can preserve an affected task's exact fingerprint when test content changes under the same node-id; D-108 could then restore it as done and skip the affected-task reset. A first correction that considered only the newest delta still failed when more than one freeze elapsed after success; advancing runtime `spec_version` after the first reset then lost that wider range on retry. Separately recomputing D-65 scope could fail open, while caching it across a later decomposition revision made it stale. The full suite remained a backstop, but legitimate implementation work was misrouted into drift/escalation instead of reaching the coder.
+
+**Alternatives considered:** Persist only `spec_version` inside `.pipeline-state/` after success (rejected — success cleanup must leave no runtime checkpoint that resembles a live run); infer the version from commit subjects (rejected — the tracked ledger is schema-validated and already binds successful specs); require every re-plan to change the task fingerprint (rejected — mechanical one-file planning intentionally carries unchanged briefs and same-node test mappings); rely on the full-suite drift path (rejected — fail-closed is not the same as routing work correctly).
+
+**Do not suggest:** Trusting runtime `spec_version` when the task checkpoint is empty; using current runtime version as the edit-scope baseline after a same-spec retry; defaulting missing runtime version to the current freeze when durable history exists; accepting zero, leading-zero, or malformed ledger versions as history; considering only the newest delta when several freezes elapsed; recomputing edit scope with a fail-open branch or retaining it across a validated plan revision; restoring exact-match completions before determining whether the spec advanced; treating the final suite's eventual red verdict as proof that the task-routing defect is harmless.
+
+## D-111 — 2026-08-01 — Accepted flakes are counted by spec and recur into a TPM escalation
+
+**Decision:** D-77 flake-green occurrences are recorded in tracked `.pipeline-flakes.json` only after the milestone's full-suite success. Each node records its successful spec version and whether it passed one or two isolation attempts; rerunning the same spec replaces rather than increments the event. Before auto-green, the shell projects the new count. At `SWBP_FLAKE_ESCALATION_THRESHOLD` (default 3, positive integer), the suite remains red and the shell creates a recurring-flake TPM bundle directly, bypassing the generic EM drift consult. History is schema-validated, bounded to 50 spec events per node, and malformed history fails closed.
+
+
+
+> Ported from the blueprint 2026-08-07 (ledger alignment; same decision, blueprint numbering).
+
+**Reason:** D-77 and D-100 distinguish a one-off carried flake from reproducible drift within one run, but every later run forgot that evidence. The result could be an indefinitely unstable frozen test repeatedly excused as a new one-off. Spec-version counting is durable and idempotent; the threshold converts repeated evidence into the correct owner action. A flaky frozen oracle is a TPM test/spec defect, not an implementation decomposition problem an EM can repair.
+
+**Alternatives considered:** Count every retry (rejected — operator reruns would inflate history); record candidates before milestone success (rejected — failed runs are not accepted flake evidence and would dirty the tree before escalation); quarantine the test (rejected — frozen acceptance cannot silently shrink); send chronic flakes through the EM first (rejected — the shell already has the decisive test-history evidence and the EM cannot edit frozen tests).
+
+**Do not suggest:** Resetting counts at milestone boundaries; counting 0/2 isolation failures as flakes; allowing the threshold event to auto-green and merely writing a warning; letting an agent edit the ledger; using wall-clock timestamps instead of successful spec versions as the identity.
+
+## D-110 — 2026-08-01 — Test-report compatibility exercises the real pytest plugin
+
+**Decision:** The unconditional control-plane selftest job installs `pytest-json-report`. Selftests invoke a real pytest subprocess with that plugin, then feed its generated green and skipped reports through the production `run_tests` parser. Hand-built report shapes remain for adversarial cases, but they are no longer the only compatibility evidence.
+
+
+
+> Ported from the blueprint 2026-08-07 (ledger alignment; same decision, blueprint numbering).
+
+**Reason:** Synthetic JSON fixtures can remain green while a plugin upgrade changes field placement, outcome names, or summary structure. The parser decides whether code ships, so its adapter boundary must be tested against the actual producer. A passing report pins the positive path; the real skipped report pins the frozen-oracle rule that only ordinary passes are green.
+
+**Do not suggest:** Replacing adversarial synthetic fixtures entirely (they cheaply cover rare xfail/XPASS and corrupt-report shapes); trusting pytest's process exit alone; installing the plugin only in the application-test job while the skeleton-safe control-plane job runs the compatibility test.
+
+## D-109 — 2026-08-01 — Approval hashes exclude volatile diff timestamps
+
+**Decision:** Every refreeze deletion diff that compares a tracked artifact with `/dev/null` supplies explicit `diff --label` values. The review output still identifies the real path and `/dev/null`, but neither header contains a filesystem timestamp. The existing end-to-end `--diff` then `--approve <hash>` tests remain the mechanical contract.
+
+
+
+> Ported from the blueprint 2026-08-07 (ledger alignment; same decision, blueprint numbering).
+
+**Reason:** D-107 added automatic retirement of the prior `ERD-DELTA.md`. Its unified diff used `/dev/null` directly, whose displayed timestamp changes between invocations. The approval token is the SHA-256 of that text, so an unchanged staging tree could produce a different hash seconds later and reject a valid approval. A hash-bound gate must vary only when the reviewed content varies.
+
+**Do not suggest:** Removing the hash binding; retrying until two timestamps happen to match; omitting deletion content from the review diff; normalizing the hash after displaying different bytes to the reviewer.
+
+## D-108 — 2026-07-30 — Successful task completions have a durable, exact-match ledger
+
+> Amended 2026-08-01 by D-113: post-success re-freeze detection recovers the
+> prior successful spec from this ledger before restoration and delta reset.
+
+**Decision:** On a full-suite-green run, `scripts/orchestrate.sh` records every completed task in tracked `.pipeline-completions.json` before deleting `.pipeline-state/` and includes the ledger in the `[success]` commit. Each record binds the task id to its full plan-entry fingerprint, output path, and output-file SHA-256. On a later run, the shell may restore `done` markers only into an entirely empty runtime task-state and only when all three values still match; any live/partial checkpoint takes precedence. The ledger's newest successful spec replaces the runtime version erased by success cleanup (D-113); restore then runs before re-freeze invalidation, so the existing delta reset makes affected tasks pending when mapped test content changed without changing the plan entry. `SWBP_REBUILD_FROM_SCRATCH=1` bypasses restoration. The ledger retains the newest 50 successful spec versions and fails closed when malformed.
+
+
+
+> Ported from the blueprint 2026-08-07 (ledger alignment; same decision, blueprint numbering).
+
+**Reason:** D-99 fixed the permanent post-success halt by recognizing a covering `[success]` commit, but the success path still erased every `done` marker. The next milestone therefore knew it was safe to run yet forgot which unchanged work had already passed, contradicting D-24 resume economics and forcing needless coder calls. Git ancestry proves that cleanup was legitimate; it cannot prove that a particular current output still matches a particular completed task. The fingerprint-plus-output-hash binding supplies that missing proof without treating runtime counters, logs, retries, or escalations as durable state.
+
+**Alternatives considered:** Preserve all of `.pipeline-state/` after success (rejected — transient counters, locks, logs, and escalation artifacts would masquerade as a live run, and operator cleanup would erase the only record); infer completion from `[task]` commits (rejected — commit subjects do not bind the current plan entry or output bytes); trust only the output hash (rejected — the same bytes can sit under a materially changed brief or test mapping); store status in `tasks/plan.json` (rejected — D-26 keeps procedural state shell-owned and the validator forbids model-authored status).
+
+**Do not suggest:** Restoring a task when either its plan fingerprint or output hash differs; restoring over a non-empty crash checkpoint; moving retry/log/escalation state into the tracked ledger; bypassing delta-driven invalidation because a prior output hash still matches; making a malformed ledger silently authoritative.
+
 ## D-107 — 2026-07-28 — Behavioral freezes carry a fresh, checked current-change ERD
 
 **Decision:** Every post-v1 re-freeze that changes tests, retires tests, introduces AC ids, or substantively changes contracts must stage `ERD-DELTA.md`. It has mechanically recognizable sections for changed ACs, superseded ACs, changed files, and test-to-file mapping. `scripts/check-spec-delta.py` rejects missing sections, newly introduced AC ids absent from the delta, and `contracts.changed_files` entries absent from the delta. The EM treats this file as the authoritative current-milestone slice when it explicitly supersedes standing ERD prose. A later non-behavioral freeze that refreshes `ERD.md` without a new delta consolidates the completed behavior and retires the prior delta. The EM prompt also states the already-enforced D-64 Playwright final-task rule and the empty-contract-list rule verbatim.
@@ -527,27 +678,262 @@
 
 ---
 
-## D-01 — 2026-06-04 — Pruned BLUEPRINT.md (557 → ~440 lines)
+## D-08 — 2026-06-09 — AC9 compliance: mandatory sandbox + freeze trap closure
 
-**Decision:** Apply the noise/redundancy findings from a parallel LLM audit; skip the lifecycle/strategy findings from a second LLM.
-**Documentation-only:** This decision documents a doc-pruning action; it does not change the API or build plan.
-**Alternatives considered:** (a) accept both LLMs' suggestions and add new rules; (b) leave the file as-is; (c) full rewrite.
-**Reason:** BLUEPRINT.md is the LLM's entry point. Every redundant line is context-window cost and a chance for ambiguity to compound. Pruning is a guardrail against drift, not cosmetics. Adding more rules (the second LLM's "fortify" suggestions: Doc-Sync hard rule, TDD loop, REVIEW checkpoints, `/reset-context`) would partially undo the trim and add bloat.
-**Do not suggest:** Re-adding the dropped sections. The "Document Map" alone is sufficient; the verbose "Document Roles Explained" was redundant. "Step 5 — Adapt the stack" is a pointer to Rule 3, not a restatement. Bootstrap cleanup, OpenCode Configuration, and Quick Reference Card are now minimal — keep them so.
+**Decision:** Two changes for temp PM review compliance:
 
-**Trimmed (12 items, ~115 lines removed):**
-- Dropped "Document Roles Explained" (duplicated Document Map)
-- Collapsed Bootstrap Step 5 to a 1-line pointer to Rule 3
-- Trimmed Maintenance Contract from 6 rows to 4 (dropped obvious triggers)
-- Trimmed Files Never to Touch from 5 items to 3 (universal best-practice items removed)
-- Shrunk Bootstrap Step 4 cleanup (24→6 lines)
-- Trimmed Step 7 preamble (dropped "Hard Rule 5" restatement)
-- Shrunk OpenCode Configuration section (28→3 lines + pointer to `opencode.json`)
-- Trimmed anti-pattern "wrong provider name" to a one-liner
-- Deleted Quick Reference Card (restated diagram + rules)
-- Fixed phantom "Step 4.5" reference on line 490 → "Step 4"
-- Reduced duplicate "lms not lmstudio" mentions from 3 to 1
-- Reduced "AGENTS.md symlinks to CLAUDE.md" mentions from 5 to 3 (one in prose + 2 short callouts)
+1. **AC9 (no sandbox override):** Removed the `I_UNDERSTAND_UNSANDBOXED` override entirely. `orchestrate.sh` now fails immediately if `SANDBOX != 1` — no fallback path, no debug flag. Containerized execution is mandatory.
+2. **Freeze trap (P3 fix):** Moved `ARCHITECTURE.approved.md` from `docs/` (architect's writable lane) to `scripts/.approved/` (outside every agent's whitelisted directory). The orchestrator creates the directory and copies the file after the architect gate passes; no agent can touch it.
+
+**Reason:** The frozen AC9 criterion specified no env var or flag that disables containerized execution. The `I_UNDERSTAND_UNSANDBOXED` override existed as a conversational suggestion from the PM during code review but violated the frozen spec. Debug frequency is low enough that the friction is negligible — strict compliance avoids the "advisory safety" pattern the project exists to reject. The freeze trap was exposed by an empirical test: a re-plan architect could and did overwrite `docs/ARCHITECTURE.approved.md` because `docs/` is the architect's permitted directory. Moving the file to `scripts/.approved/` makes the constraint structural (wrong lane) rather than rule-based (gate carve-out).
+
+**Do not suggest:** Re-adding `I_UNDERSTAND_UNSANDBOXED` or any sandbox-disable flag. Moving `ARCHITECTURE.approved.md` back to `docs/`. Both were deliberate removals against verified defects.
+
+---
+
+## D-22 — 2026-06-07 — INV-2 gate: halt, not auto-clean (reaffirmed)
+
+**Decision:** The INV-2 gate exits with code 1 on any boundary violation (build writes tests/, test writes src/). It does not auto-clean, retry, or continue. A boundary violation is a signal for the human keystone — evidence that the instruction or model is wrong — not noise to sweep.
+
+**Reason reaffirmed after:** A prior session softened the gate to cleanup+continue, which silently swallowed violations. The build agent wrote to tests/ (correctly detecting), the gate auto-swept it, and the run continued as if nothing happened. That defeat is why the halt exists. The cost of a halted run is the cost of INV-2 working correctly.
+
+**Do not suggest:** Re-softening to cleanup+continue without PM sign-off.
+
+> Add new decisions above this line, newest first.
+## D-21 — 2026-06-07 — Operating Rules: rationale per rule
+
+**Documentation-only:** This entry documents rationale for Operating Rules; it does not change the API or build plan.
+
+**Rule 1 (report against the tree):** A hallucinated "6 commits" and an undisclosed model swap each cost a full PM review cycle to catch. The marker file makes the ref retrievable outside conversation history.
+
+**Rule 2 (one commit, one concern):** A safety-rule change (gate halt→cleanup) was bundled with prompt edits and a pip fallback in a single commit, bypassing review. Bundling is how serious changes slip through.
+
+**Rule 3 (stop-and-ask on constraint changes):** The gate soften was treated as routine de-blocking. Changing what happens on violation is a process decision, not a fix.
+
+**Rule 4 (conditionals are checkpoints):** The `-ud-mlx` fallback was used silently despite its precondition (base model failure) never occurring. The swap was only caught in post-hoc review.
+
+**Rule 5 (read the artifact):** A validation report was written from the build agent's chat summary, not from the committed artifact. The summary was less accurate than the file it described.
+
+**Rule 6 ("detected" ≠ "enforced"):** A standalone gate-test result was placed under a live-run section, implying the pipeline enforced a boundary that was switched off at the time.
+
+**Rule 7 (decide trivial calls):** A placement question (where in AGENTS.md to put the Reporting section) burned three turns when the PM had already stated "put it where process docs live." Re-asking after the principle is clear wastes cycles. Asking is not failure when correctness is at stake — that's the second clause of the rule.
+
+---
+
+## D-20 — 2026-06-07 — Advisory vs mechanical enforcement
+
+**Decision:** Of the seven Operating Rules, only Rule 1 ("report against the tree") has a mechanical backstop — `docs/.pm-last-review` for the ref plus the PM's source-side reconciliation as the ultimate check. Rules 2–7 are advisory: they rely on PM review for enforcement and no agent workflow enforces them mechanically.
+
+**Documentation-only:** This decision documents a process observation; it does not change the API or build plan.
+
+**Reason:** Honest labeling prevents these rules from being mistaken for guarantees. The durable safeguard is the PM's verification, not the doc. Aspirational claims that a rule "prevents" or "ensures" something erode trust when inevitably violated.
+
+**Do not suggest:** Claiming mechanical enforcement where none exists; adding commit-scope hooks or other automated enforcement without a separate PM decision.
+
+---
+
+## D-19 — 2026-06-07 — docs/.pm-last-review: PM-owned ref marker
+
+**Decision:** Introduced `docs/.pm-last-review` — a one-line file holding the last PM-reviewed commit hash. The build agent reads it at report time to scope its commit list; no agent writes or advances it. "Reviewed" means verified and accepted by the PM — not pushed, not agent-declared done. This is the same artifact-over-memory principle the project enforces on tests (PRD → tests, never src → tests), applied to reporting: the marker removes the retrieval failure (ref buried in chat), but the PM's source-side reconciliation remains the actual guarantee.
+
+**Alternatives considered:** (a) Storing the ref in the build agent's session/context — proven unreliable, this entire fix is why. (b) Tagging the repo with each review — noisy and requires push permissions. (c) Reading the ref from a PM-API call — overengineered.
+
+**Reason:** The previous design relied on the PM's ref persisting in conversation history across turns. It didn't. A file in the repo is persistent, versioned, and readable by tool calls. The PM advances it only after verifying the work. The file assists, it doesn't replace the human check.
+
+**Do not suggest:** Any agent writing to this file; removing the PM's source-side reconciliation because the file exists.
+
+## D-18 — 2026-06-07 — 32K context as pinned default for local model
+
+**Decision:** Confirmed the 32,768 token context length as the pinned operational setting for `qwen/qwen3.6-35b-a3b`. Measured the largest agent payload at ~3,000 tokens (test agent prompt + instruction + opencode system preamble). 32K provides 10x headroom for conversation history.
+
+**Alternatives considered:** (a) 8,192 (LM Studio default) — caused context-length errors in prior runs. (b) 131,072 or 262,144 (model max) — unnecessary GPU memory consumption, model seats 32K at 35.16 GiB.
+
+**Reason:** The model natively supports 262,144 tokens (`max_position_embeddings` confirmed via HuggingFace config). 32K is a comfortable operating point that leaves GPU memory headroom (35.16 GiB used across the available 128 GiB). No prompt trimming needed — the bottleneck was LM Studio's default.
+
+**Do not suggest:** Lowering context below 32K; raising to 256K without a demonstrated need.
+
+---
+
+## D-17 — 2026-06-07 — Template deps: app packages baked into Containerfile
+
+**Decision:** Keep `fastapi uvicorn httpx pydantic` baked into the Containerfile and `PYTHONPATH=/work` in `sandbox-run.sh` as template defaults. These are not validation-harness-only — they fix a universal bug: the non-root `agent` user (UID 1000) cannot `pip install --user` into system site-packages. Any FastAPI project in this template runs into the same failure.
+
+**Alternatives considered:** (a) Remove baked deps, require every project to add its own via `requirements.txt` — every new project re-debugs the same user-site-packages issue. (b) Switch to root container user — defeats the isolation purpose. (c) Install via build agent at runtime — lost on container exit, which is why the orchestrator's `pip install` fallback exists on line 123.
+
+**Reason:** The four packages cover the most common FastAPI stack. The `pip install` fallback in `orchestrate.sh` line 123 is now redundant and should be removed as a follow-up — the Containerfile guarantees the deps are present at build time. The `PYTHONPATH=/work` fix is similarly universal: without it, `from src.main import app` fails in the container regardless of project.
+
+**Do not suggest:** Removing these deps from the Containerfile. Removing `PYTHONPATH=/work`. Both will cause the same failures for every new project and the fix will be re-discovered each time.
+
+---
+
+## D-16 — 2026-06-07 — Model pin: qwen/qwen3.6-35b-a3b (base) as default
+
+**Decision:** Standardize on `qwen/qwen3.6-35b-a3b` (base model, 8-bit MLX, 37.75 GB) as the local build/test agent model. The `-ud-mlx` variant exists at 21.66 GB (4-bit) as a lower-memory fallback. The `opencode.json` config already points to the base model — this entry confirms it as the deliberate choice, not an accidental default.
+
+**Alternatives considered:** (a) `qwen3.6-35b-a3b-ud-mlx` — 4-bit quantized, 21.66 GB, faster load but slightly lower quality. (b) `qwen/qwen3-coder-next` — 80B, 44.86 GB, too large for routine agent calls. (c) `[FRONTIER_MODEL]` — reserved for pm/architect only.
+
+**Reason:** The base model seated 32K context at 35.16 GiB on M5 Max (128 GB unified memory), leaving ~90 GB for other workloads. The MLX variant loads in 21.66 GB but introduces a different serving path (unsorted, unproven for this project). The base model is the one the prompts were written and validated for. The two-tier cost model (frontier for planning, local for build/test) is preserved with a line at 35B, not 7B.
+
+**Do not suggest:** Switching to `-ud-mlx` as the default; running build/test on frontier models permanently; dropping below 35B for writing agents.
+
+---
+
+## D-15 — 2026-06-07 — INV-2 gate: halt, not cleanup
+
+**Decision:** Reverted the INV-2 gate handler in `scripts/orchestrate.sh` from cleanup+continue back to halt-and-flag (exit 1 with violation note in `tasks/CURRENT.md`). The prompt-hardening ("Write src/ only", "Write tests/ only") from the same commit was kept.
+
+**Alternatives considered:** (a) Keep cleanup+continue — unblocks the run but silently swallows a boundary violation that should be visible. (b) Leave the gate as-is (soft-halt with inspection note but no exit) — same problem, different disguise.
+
+**Reason:** A boundary violation (build wrote to `tests/` or test wrote to `src/`) is evidence that the model or instructions are wrong. That signal must stop the run and be recorded, not auto-swept. The halt is the enforcement; the gate (phase-gate.sh) is the detector. Cleaning up and continuing makes the violation invisible to the human keystone. The price of a halted run is the cost of INV-2 working correctly.
+
+**Do not suggest:** Re-introducing cleanup+continue; treating a gate violation as a routine iteration failure rather than a process break.
+
+---
+
+## D-14 — 2026-06-07 — Context window ceiling measurement and fix
+
+**Decision:** Measured the largest 35B agent payload (test agent: `.opencode/prompts/test.md` ~721B + orchestrator instruction ~166B + opencode system preamble ~8000B). Total estimated at ~3000 tokens. Raised LM Studio context length for `qwen/qwen3.6-35b-a3b` from the 8192 default to 32768 (32K) — four orders of magnitude over the measured need, with generous headroom for conversation history. The model natively supports 262144 (`max_position_embeddings` confirmed via HuggingFace config). Lever used: context bump, not prompt trim — the prompts themselves are small; the ceiling was LM Studio's default.
+
+**Reason:** The 35B model's default context window in LM Studio (8192) was too small for the combined system preamble + agent prompt + instruction, causing context-length errors in prior runs. The model supports 256K native; 32K is a comfortable operating point that leaves GPU memory headroom (35.16 GiB used, 128 GiB available on M5 Max).
+
+**Also changed:** `developer.separateReasoningContentInAPI` in `~/.lmstudio/settings.json` from `true` to `false`. When `true`, Qwen models that have reasoning enabled return `content: ''` with output in `reasoning_content` — opencode reads `content` only, so the model was unusable. Merging reasoning into `content` (even with the `<think>` block) keeps the model functional. To fully disable thinking (no reasoning tokens wasted), toggle the "Think" switch off in LM Studio UI for this model.
+
+**Do not suggest:** Lowering context below 32K; switching to the `-ud-mlx` variant for context reasons only (the regular model seats 32K comfortably); trimming the agent prompts (they are not the bottleneck).
+
+---
+
+## D-13 — 2026-06-07 — Pipeline robustness fixes (container deps, PYTHONPATH, gate recovery)
+
+**Decision:** Bake `fastapi uvicorn httpx pydantic` into Containerfile, add `PYTHONPATH=/work` to sandbox-run.sh, soften gate violations from hard-halt to cleanup+continue, and add `pip install` fallback before pytest.
+
+**Alternatives considered:** Installing via `pip install --user` at runtime (fails — user site-packages not on Python search path), installing via build agent (lost on container exit), mounting host `site-packages` (fragile).
+
+**Reason:** Non-root `agent` user (UID 1000) has no sudo and `pip install --user` drops to `~/.local/lib/python3.12/site-packages/` which Python does not search by default. The 35B model sometimes writes tests during build phase despite explicit prompts — cleanup+continue is more productive than halting. `pip install` before pytest ensures deps survive container rebuilds.
+
+**Do not suggest:** Installing deps via the build agent (agent runs in disposable container, install lost on exit). Hard-halting on gate violations (35B model needs graceful recovery). Removing `PYTHONPATH` (required for `from src.main import app`).
+
+---
+
+## D-12 — 2026-06-06 — Local Model Tier: Qwen3.6-35B-A3B for Build/Test
+
+**Decision:** Build and test agents default to `lms/qwen/qwen3.6-35b-a3b` (35B parameters, 3B active). The 7B `qwen3-coder-next` model produces malformed tool calls (omits required fields like `filePath` and `content` from the Write tool) and is removed from any file-writing role. PM and architect agents remain on `[FRONTIER_MODEL]` per the cost-tier design.
+
+**Alternatives considered:**
+- (a) Run all agents on frontier models — higher cost, negates local-tier savings
+- (b) Wait for better 7B tool-calling support — uncertain timeline
+- (c) Use Gemma-4-31B — not tested, but 35B Qwen writes files correctly
+
+**Reason:** The 35B model is the smallest local model found that reliably constructs valid OpenCode tool calls. It writes files, installs dependencies, and passes gates. The two-tier cost model (frontier for planning, local for build/test) is preserved — the threshold is 35B, not 7B.
+
+**Do not suggest:** Reverting build/test to the 7B model; running build/test on frontier models permanently.
+
+---
+
+## D-11 — 2026-06-06 — Agent Permission Model: No Catch-All Deny
+
+**Decision:** The test agent's `edit` permission uses explicit `src/**": "deny"` and `tests/**": "allow"` with no `**": "deny"` catch-all. The catch-all overrode the specific allow because `**` matches `tests/` paths. Build agent keeps `tests/**": "deny"` with `**": "allow"` as its catch-all — reversed logic because build's allowed set (everything except tests) is too broad to enumerate.
+
+**Alternatives considered:**
+- (a) Keep `**": "deny"` and list every non-test directory explicitly — brittle, misses new directories
+- (b) Use `--dangerously-skip-permissions` server-side — bypasses the entire permission model
+- (c) Single agent with no role separation — violates INV-2
+
+**Reason:** Explicit + allow with no deny catch-all is the simplest permission config that lets the test agent write files. OpenCode's permission engine applies matching deny rules regardless of specificity — a `**`: deny always catches `tests/` paths. Removing the catch-all fixes this at the config level.
+
+**Do not suggest:** Re-adding `**": "deny"` to the test agent; adding `--dangerously-skip-permissions` as a permanent fix.
+
+---
+
+## D-10 — 2026-06-06 — macOS Compatibility Fixes for Sandbox Scripts
+
+**Decision:** `scripts/sandbox-run.sh` and `scripts/orchestrate.sh` use `pwd -P` instead of `pwd` to resolve macOS `/tmp` → `/private/tmp` symlink for Podman bind-mount path matching. `sandbox-run.sh` uses Podman's built-in `--timeout` flag instead of external `timeout(1)` (which does not exist on macOS). `orchestrate.sh` detects `gtimeout` (macOS, from `brew install coreutils`) vs `timeout` (Linux) for its script-level agent timeout.
+
+**Alternatives considered:**
+- (a) Install coreutils on macOS and alias `timeout` — requires every macOS dev to opt in
+- (b) Skip timeout entirely on macOS — agents hang indefinitely
+- (c) Use Podman's `--timeout` only (already present) and skip the script-level wrapper — the wrapper is needed for the non-sandbox path and as a belt-and-suspenders guard
+
+**Reason:** macOS is the primary development platform (verified by `uname`). The `/tmp` symlink (`/tmp` → `/private/tmp`) causes Podman bind-mount failures because the container resolves the physical path differently than the host. External `timeout(1)` is a Linux-only command. Podman's `--timeout` flag works on both platforms and replaces it. The `gtimeout`/`timeout` detection on the orchestrator's non-sandbox path follows the same pattern as the project's other platform-detection logic.
+
+**Do not suggest:** Removing macOS support; switching to a Linux-only requirement; wrapping `timeout` in a shell function that fails silently.
+
+---
+
+## D-09 — 2026-06-06 — Sandbox Wiring in Orchestrator
+
+**Decision:** `scripts/orchestrate.sh` routes agent calls and pytest through `scripts/sandbox-run.sh` when the `SANDBOX=1` environment variable is set. The sandbox path wraps each agent call with `timeout "${AGENT_TIMEOUT}"` (the container runs Debian where `timeout` is available from coreutils). The non-sandbox path uses `$TIMEOUT_CMD "${AGENT_TIMEOUT}"` (`gtimeout` on macOS, `timeout` on Linux). `SANDBOX_LLM_HOST` is read from the environment; both `orchestrate.sh` and `sandbox-run.sh` default it to `host.containers.internal` independently. When the orchestrator drives the run, its exported value is inherited by the container launcher; run standalone, `sandbox-run.sh` supplies its own default. The orchestrator does not hard-code the address — it reads the variable set upstream.
+
+**Alternatives considered:**
+- (a) Always run inside the sandbox, no fallback — breaks for developers without Podman
+- (b) Hard-code `host.containers.internal` directly in `orchestrate.sh` — duplicates the address assumption that step 0 is supposed to prove
+- (c) No sandbox path — forfeits container isolation
+
+**Reason:** The `SANDBOX=1` env var is a single indirection point. Defaulting to `SANDBOX=0` preserves the existing non-sandbox workflow for development. The sandbox path delegates entirely to `sandbox-run.sh`, which is the single script that manages Podman flags, volume mounts, and the LLM host address. The orchestrator only knows `host.containers.internal` via the env var chain, not as a literal.
+
+**Do not suggest:** Hard-coding `host.containers.internal` in `orchestrate.sh`; removing the `SANDBOX=0` fallback; adding a second sandboxing mechanism.
+
+> **2026-06-09 correction:** The "SANDBOX=0 fallback" and "always run inside the sandbox" alternatives were revisited for AC9 compliance. The sandbox is now mandatory (no fallback). This decision entry is historical context; the current behavior is documented in the 2026-06-09 entry above.
+
+---
+
+## D-07 — 2026-06-06 — Four-role PRD→Plan→Build→Test pipeline
+
+**Decision:** Adopted a four-role pipeline (PM, Architect, Build, Test) with two non-negotiable invariants: INV-1 (tests derive from the PRD, never from `src/` implementation) and INV-2 (Build never edits `tests/`; Test never edits `src/`). The PRD in `tasks/CURRENT.md` is the single oracle — the human's casual instruction is translated into structured acceptance criteria and flagged assumptions, then frozen on Approval. The Architect is also the orchestrator: it delegates build→test, runs `scripts/phase-gate.sh` after each phase, reads `.cache/test-report.json`, and routes failures per Rule 2/7 (build bug→build, same failure twice→re-plan, plan fails twice→PM).
+
+**Alternatives considered:** (a) Extend the existing single-agent loop with role instructions in CLAUDE.md; (b) use OpenCode agent permissions alone for INV-2 enforcement; (c) keep the flat loop and add no roles.
+
+**Reason:** A single-agent loop conflates planning, writing, and testing in one context — the model's self-judgment replaces the test-report oracle (Rule 5 drift) and nothing prevents it from writing tests that confirm what `src/` does rather than what the spec says (INV-1 violation). Separate roles with frozen contracts force the verification gap that catches bugs. OpenCode's agent permissions (`permission.edit` globs) are non-transitive — a restricted agent can bypass limits via the Task tool (opencode issues #12566, #20549) — so INV-2 is enforced mechanically by `scripts/phase-gate.sh`, not by permissions alone. Doc guards catch intent; mechanical gates catch the result (documented pattern from the 2026-06-04 auto-load entry). Cost rationale: build/test use the local model (free, 80% of tasks); pm/architect use frontier for reasoning walls and spec work.
+
+**Do not suggest:** Letting the test agent read `src/` implementation to author tests (INV-1). Enforcing INV-2 with agent permissions alone — the git gate is the binding layer. Merging the four roles back into a single agent — the whole point is the verification gap between them. Letting the build or test agent edit the PRD or architecture docs.
+
+---
+
+## D-06 — 2026-06-06 — Adopted EARS for acceptance criteria
+
+**Decision:** Acceptance criteria in `tasks/CURRENT.md` are now written in EARS notation (THE SYSTEM SHALL / WHEN...SHALL / WHILE...SHALL / IF...THEN SHALL / WHERE...SHALL). Each criterion is a single observable clause that maps one-to-one to a test case. The PM prompt enforces this at PRD time; the test prompt reinforces the mapping at test time. Template examples in CURRENT.md demonstrate all five forms plus an HTML-comment reference guide.
+
+**Reason:** EARS forces each requirement into a single testable clause, giving the test agent an unambiguous oracle and tightening INV-1 enforcement. Vague prose criteria ("handles errors gracefully", "works correctly") were the weak point — the tester had to interpret intent, which reintroduces the ambiguity the pipeline was designed to eliminate. A one-clause-to-one-test mapping makes the test agent's job mechanical and removes the interpretation gap.
+
+**Do not suggest:** Reverting to free-form prose criteria, or forcing all five EARS forms when a single SHALL clause suffices (avoid ceremony — see the repo's anti-over-engineering history, BLUEPRINT.md and DECISIONS.md prune entries).
+
+---
+
+## D-05 — 2026-06-06 — Code-driven orchestration loop
+
+**Decision:** Moved loop control out of `architect.md` (where an LLM must remember to run the gate, read the test report, count strikes, and route) and into `scripts/orchestrate.sh`. The orchestrator is a shell script that drives the build→test loop deterministically: it starts a headless `opencode serve`, calls each agent via `opencode run --attach --agent <name>`, runs `scripts/phase-gate.sh` after each phase, parses the JSON test report via `python3 -c`, computes a `sha1(sorted(failing_node_ids))` signature for two-strike detection, and escalates to re-plan on identical failure signatures. The architect prompt shrinks to "produce/refresh the plan only."
+
+**Reason:** Loop control in an LLM prompt is a doc-guard — the architect could forget to run the gate, mis-count strikes, or skip escalation. Moving it to a script makes the gate invocation, the two-strike counter, and the halt deterministic — each is a line of shell code, not a remembered instruction. Additionally, each scoped `opencode run` sidesteps the non-transitive-permission bug (each agent runs in its own invocation with its own permissions) and prevents context bloat over long loops. The script wraps each agent call in a `run_agent` function that is the single indirection point for future sandbox adoption.
+
+**Do not suggest:** Putting orchestration logic back into `architect.md`, or auto-approving the PRD (the orchestrator refuses to run unless `Status: Approved`). Adding a queue, daemon, web UI, or multi-feature scheduling — one approved PRD, one run. Replacing the shell script with an orchestration framework (adopt OpenHands later if needed — note it in DECISIONS, don't pre-build for it).
+
+**Server details (for posterity, empirically verified on OpenCode 1.15.13):**
+- `opencode serve --port <n>` starts a headless server; default port is 0 (random), use `--port` explicitly.
+- `opencode run --attach <url> --agent <name> <prompt>` calls a specific agent on the running server.
+- Server is killed on script exit via `trap cleanup EXIT`.
+
+---
+
+## D-04 — 2026-06-06 — Demoted BLUEPRINT.md line-count gate to heuristic
+
+**Decision:** Removed the failing `wc -l BLUEPRINT.md <= 450` check from CI and the correction log's hard-target language. The 450 number was self-imposed by the model during a pruning session, never a human requirement. Line count is a proxy that does not measure the real goal (no redundant/ambiguous content). Enforcement is replaced with a heuristic note at the bottom of BLUEPRINT.md.
+
+**Documentation-only:** This decision documents a CI gate change; it does not change the API or build plan.
+
+**Reason:** Enforcing a specific line count as a CI failure pressures edits to delete real content — including safety rules — to stay green. A mechanical gate is right for binary invariants (INV-2, placeholder completeness), wrong for a judgment call like doc leanness. The anti-bloat principle is genuine (BLUEPRINT is the LLM's entry point; redundancy is token cost and ambiguity risk), but enforcement should be human review and cross-reference discipline, not a numeric gate.
+
+**Do not suggest:** Re-adding a failing line-count check, or compressing rules to hit a number. The "do not re-add pruned sections" guards in DECISIONS.md and human review are the correct mechanisms — they target redundancy directly.
+
+---
+
+## D-03 — 2026-06-04 — Removed CLAUDE.md mirror guard (decoupling template from project)
+
+**Decision:** Remove the one-line "Do not re-add sections dropped from BLUEPRINT.md in the 2026-06-04 prune" guard from `CLAUDE.md`'s "What NOT To Do" → Operating guardrails. The rule still lives in `DECISIONS.md` → "Pruned BLUEPRINT.md" entry.
+
+**Documentation-only:** This decision documents a doc decoupling action; it does not change the API or build plan.
+
+**Reason:** CLAUDE.md is a template — `my-project` is still a placeholder. Baking a project-specific date ("2026-06-04 prune") into a template file makes the rule meaningless for any future project created from this template. The visibility argument was real but the template-vs-project boundary was muddied. The principle (don't re-add dropped sections) stays binding via DECISIONS.md's "Do not suggest" line and the correction log capture.
+
+**Do not suggest:** Re-adding the mirror guard. Cross-reference, don't copy.
 
 ---
 
@@ -577,262 +963,27 @@ Doc guards catch the LLM's *intent*; mechanical gates catch the *result*. Both h
 
 ---
 
-## D-03 — 2026-06-04 — Removed CLAUDE.md mirror guard (decoupling template from project)
+## D-01 — 2026-06-04 — Pruned BLUEPRINT.md (557 → ~440 lines)
 
-**Decision:** Remove the one-line "Do not re-add sections dropped from BLUEPRINT.md in the 2026-06-04 prune" guard from `CLAUDE.md`'s "What NOT To Do" → Operating guardrails. The rule still lives in `DECISIONS.md` → "Pruned BLUEPRINT.md" entry.
+**Decision:** Apply the noise/redundancy findings from a parallel LLM audit; skip the lifecycle/strategy findings from a second LLM.
+**Documentation-only:** This decision documents a doc-pruning action; it does not change the API or build plan.
+**Alternatives considered:** (a) accept both LLMs' suggestions and add new rules; (b) leave the file as-is; (c) full rewrite.
+**Reason:** BLUEPRINT.md is the LLM's entry point. Every redundant line is context-window cost and a chance for ambiguity to compound. Pruning is a guardrail against drift, not cosmetics. Adding more rules (the second LLM's "fortify" suggestions: Doc-Sync hard rule, TDD loop, REVIEW checkpoints, `/reset-context`) would partially undo the trim and add bloat.
+**Do not suggest:** Re-adding the dropped sections. The "Document Map" alone is sufficient; the verbose "Document Roles Explained" was redundant. "Step 5 — Adapt the stack" is a pointer to Rule 3, not a restatement. Bootstrap cleanup, OpenCode Configuration, and Quick Reference Card are now minimal — keep them so.
 
-**Documentation-only:** This decision documents a doc decoupling action; it does not change the API or build plan.
-
-**Reason:** CLAUDE.md is a template — `my-project` is still a placeholder. Baking a project-specific date ("2026-06-04 prune") into a template file makes the rule meaningless for any future project created from this template. The visibility argument was real but the template-vs-project boundary was muddied. The principle (don't re-add dropped sections) stays binding via DECISIONS.md's "Do not suggest" line and the correction log capture.
-
-**Do not suggest:** Re-adding the mirror guard. Cross-reference, don't copy.
-
----
-
-## D-04 — 2026-06-06 — Demoted BLUEPRINT.md line-count gate to heuristic
-
-**Decision:** Removed the failing `wc -l BLUEPRINT.md <= 450` check from CI and the correction log's hard-target language. The 450 number was self-imposed by the model during a pruning session, never a human requirement. Line count is a proxy that does not measure the real goal (no redundant/ambiguous content). Enforcement is replaced with a heuristic note at the bottom of BLUEPRINT.md.
-
-**Documentation-only:** This decision documents a CI gate change; it does not change the API or build plan.
-
-**Reason:** Enforcing a specific line count as a CI failure pressures edits to delete real content — including safety rules — to stay green. A mechanical gate is right for binary invariants (INV-2, placeholder completeness), wrong for a judgment call like doc leanness. The anti-bloat principle is genuine (BLUEPRINT is the LLM's entry point; redundancy is token cost and ambiguity risk), but enforcement should be human review and cross-reference discipline, not a numeric gate.
-
-**Do not suggest:** Re-adding a failing line-count check, or compressing rules to hit a number. The "do not re-add pruned sections" guards in DECISIONS.md and human review are the correct mechanisms — they target redundancy directly.
-
----
-
-## D-05 — 2026-06-06 — Code-driven orchestration loop
-
-**Decision:** Moved loop control out of `architect.md` (where an LLM must remember to run the gate, read the test report, count strikes, and route) and into `scripts/orchestrate.sh`. The orchestrator is a shell script that drives the build→test loop deterministically: it starts a headless `opencode serve`, calls each agent via `opencode run --attach --agent <name>`, runs `scripts/phase-gate.sh` after each phase, parses the JSON test report via `python3 -c`, computes a `sha1(sorted(failing_node_ids))` signature for two-strike detection, and escalates to re-plan on identical failure signatures. The architect prompt shrinks to "produce/refresh the plan only."
-
-**Reason:** Loop control in an LLM prompt is a doc-guard — the architect could forget to run the gate, mis-count strikes, or skip escalation. Moving it to a script makes the gate invocation, the two-strike counter, and the halt deterministic — each is a line of shell code, not a remembered instruction. Additionally, each scoped `opencode run` sidesteps the non-transitive-permission bug (each agent runs in its own invocation with its own permissions) and prevents context bloat over long loops. The script wraps each agent call in a `run_agent` function that is the single indirection point for future sandbox adoption.
-
-**Do not suggest:** Putting orchestration logic back into `architect.md`, or auto-approving the PRD (the orchestrator refuses to run unless `Status: Approved`). Adding a queue, daemon, web UI, or multi-feature scheduling — one approved PRD, one run. Replacing the shell script with an orchestration framework (adopt OpenHands later if needed — note it in DECISIONS, don't pre-build for it).
-
-**Server details (for posterity, empirically verified on OpenCode 1.15.13):**
-- `opencode serve --port <n>` starts a headless server; default port is 0 (random), use `--port` explicitly.
-- `opencode run --attach <url> --agent <name> <prompt>` calls a specific agent on the running server.
-- Server is killed on script exit via `trap cleanup EXIT`.
+**Trimmed (12 items, ~115 lines removed):**
+- Dropped "Document Roles Explained" (duplicated Document Map)
+- Collapsed Bootstrap Step 5 to a 1-line pointer to Rule 3
+- Trimmed Maintenance Contract from 6 rows to 4 (dropped obvious triggers)
+- Trimmed Files Never to Touch from 5 items to 3 (universal best-practice items removed)
+- Shrunk Bootstrap Step 4 cleanup (24→6 lines)
+- Trimmed Step 7 preamble (dropped "Hard Rule 5" restatement)
+- Shrunk OpenCode Configuration section (28→3 lines + pointer to `opencode.json`)
+- Trimmed anti-pattern "wrong provider name" to a one-liner
+- Deleted Quick Reference Card (restated diagram + rules)
+- Fixed phantom "Step 4.5" reference on line 490 → "Step 4"
+- Reduced duplicate "lms not lmstudio" mentions from 3 to 1
+- Reduced "AGENTS.md symlinks to CLAUDE.md" mentions from 5 to 3 (one in prose + 2 short callouts)
 
 ---
 
-## D-06 — 2026-06-06 — Adopted EARS for acceptance criteria
-
-**Decision:** Acceptance criteria in `tasks/CURRENT.md` are now written in EARS notation (THE SYSTEM SHALL / WHEN...SHALL / WHILE...SHALL / IF...THEN SHALL / WHERE...SHALL). Each criterion is a single observable clause that maps one-to-one to a test case. The PM prompt enforces this at PRD time; the test prompt reinforces the mapping at test time. Template examples in CURRENT.md demonstrate all five forms plus an HTML-comment reference guide.
-
-**Reason:** EARS forces each requirement into a single testable clause, giving the test agent an unambiguous oracle and tightening INV-1 enforcement. Vague prose criteria ("handles errors gracefully", "works correctly") were the weak point — the tester had to interpret intent, which reintroduces the ambiguity the pipeline was designed to eliminate. A one-clause-to-one-test mapping makes the test agent's job mechanical and removes the interpretation gap.
-
-**Do not suggest:** Reverting to free-form prose criteria, or forcing all five EARS forms when a single SHALL clause suffices (avoid ceremony — see the repo's anti-over-engineering history, BLUEPRINT.md and DECISIONS.md prune entries).
-
----
-
-## D-07 — 2026-06-06 — Four-role PRD→Plan→Build→Test pipeline
-
-**Decision:** Adopted a four-role pipeline (PM, Architect, Build, Test) with two non-negotiable invariants: INV-1 (tests derive from the PRD, never from `src/` implementation) and INV-2 (Build never edits `tests/`; Test never edits `src/`). The PRD in `tasks/CURRENT.md` is the single oracle — the human's casual instruction is translated into structured acceptance criteria and flagged assumptions, then frozen on Approval. The Architect is also the orchestrator: it delegates build→test, runs `scripts/phase-gate.sh` after each phase, reads `.cache/test-report.json`, and routes failures per Rule 2/7 (build bug→build, same failure twice→re-plan, plan fails twice→PM).
-
-**Alternatives considered:** (a) Extend the existing single-agent loop with role instructions in CLAUDE.md; (b) use OpenCode agent permissions alone for INV-2 enforcement; (c) keep the flat loop and add no roles.
-
-**Reason:** A single-agent loop conflates planning, writing, and testing in one context — the model's self-judgment replaces the test-report oracle (Rule 5 drift) and nothing prevents it from writing tests that confirm what `src/` does rather than what the spec says (INV-1 violation). Separate roles with frozen contracts force the verification gap that catches bugs. OpenCode's agent permissions (`permission.edit` globs) are non-transitive — a restricted agent can bypass limits via the Task tool (opencode issues #12566, #20549) — so INV-2 is enforced mechanically by `scripts/phase-gate.sh`, not by permissions alone. Doc guards catch intent; mechanical gates catch the result (documented pattern from the 2026-06-04 auto-load entry). Cost rationale: build/test use the local model (free, 80% of tasks); pm/architect use frontier for reasoning walls and spec work.
-
-**Do not suggest:** Letting the test agent read `src/` implementation to author tests (INV-1). Enforcing INV-2 with agent permissions alone — the git gate is the binding layer. Merging the four roles back into a single agent — the whole point is the verification gap between them. Letting the build or test agent edit the PRD or architecture docs.
-
----
-
-## D-08 — 2026-06-09 — AC9 compliance: mandatory sandbox + freeze trap closure
-
-**Decision:** Two changes for temp PM review compliance:
-
-1. **AC9 (no sandbox override):** Removed the `I_UNDERSTAND_UNSANDBOXED` override entirely. `orchestrate.sh` now fails immediately if `SANDBOX != 1` — no fallback path, no debug flag. Containerized execution is mandatory.
-2. **Freeze trap (P3 fix):** Moved `ARCHITECTURE.approved.md` from `docs/` (architect's writable lane) to `scripts/.approved/` (outside every agent's whitelisted directory). The orchestrator creates the directory and copies the file after the architect gate passes; no agent can touch it.
-
-**Reason:** The frozen AC9 criterion specified no env var or flag that disables containerized execution. The `I_UNDERSTAND_UNSANDBOXED` override existed as a conversational suggestion from the PM during code review but violated the frozen spec. Debug frequency is low enough that the friction is negligible — strict compliance avoids the "advisory safety" pattern the project exists to reject. The freeze trap was exposed by an empirical test: a re-plan architect could and did overwrite `docs/ARCHITECTURE.approved.md` because `docs/` is the architect's permitted directory. Moving the file to `scripts/.approved/` makes the constraint structural (wrong lane) rather than rule-based (gate carve-out).
-
-**Do not suggest:** Re-adding `I_UNDERSTAND_UNSANDBOXED` or any sandbox-disable flag. Moving `ARCHITECTURE.approved.md` back to `docs/`. Both were deliberate removals against verified defects.
-
----
-
-## D-09 — 2026-06-06 — Sandbox Wiring in Orchestrator
-
-**Decision:** `scripts/orchestrate.sh` routes agent calls and pytest through `scripts/sandbox-run.sh` when the `SANDBOX=1` environment variable is set. The sandbox path wraps each agent call with `timeout "${AGENT_TIMEOUT}"` (the container runs Debian where `timeout` is available from coreutils). The non-sandbox path uses `$TIMEOUT_CMD "${AGENT_TIMEOUT}"` (`gtimeout` on macOS, `timeout` on Linux). `SANDBOX_LLM_HOST` is read from the environment; both `orchestrate.sh` and `sandbox-run.sh` default it to `host.containers.internal` independently. When the orchestrator drives the run, its exported value is inherited by the container launcher; run standalone, `sandbox-run.sh` supplies its own default. The orchestrator does not hard-code the address — it reads the variable set upstream.
-
-**Alternatives considered:**
-- (a) Always run inside the sandbox, no fallback — breaks for developers without Podman
-- (b) Hard-code `host.containers.internal` directly in `orchestrate.sh` — duplicates the address assumption that step 0 is supposed to prove
-- (c) No sandbox path — forfeits container isolation
-
-**Reason:** The `SANDBOX=1` env var is a single indirection point. Defaulting to `SANDBOX=0` preserves the existing non-sandbox workflow for development. The sandbox path delegates entirely to `sandbox-run.sh`, which is the single script that manages Podman flags, volume mounts, and the LLM host address. The orchestrator only knows `host.containers.internal` via the env var chain, not as a literal.
-
-**Do not suggest:** Hard-coding `host.containers.internal` in `orchestrate.sh`; removing the `SANDBOX=0` fallback; adding a second sandboxing mechanism.
-
-> **2026-06-09 correction:** The "SANDBOX=0 fallback" and "always run inside the sandbox" alternatives were revisited for AC9 compliance. The sandbox is now mandatory (no fallback). This decision entry is historical context; the current behavior is documented in the 2026-06-09 entry above.
-
----
-
-## D-10 — 2026-06-06 — macOS Compatibility Fixes for Sandbox Scripts
-
-**Decision:** `scripts/sandbox-run.sh` and `scripts/orchestrate.sh` use `pwd -P` instead of `pwd` to resolve macOS `/tmp` → `/private/tmp` symlink for Podman bind-mount path matching. `sandbox-run.sh` uses Podman's built-in `--timeout` flag instead of external `timeout(1)` (which does not exist on macOS). `orchestrate.sh` detects `gtimeout` (macOS, from `brew install coreutils`) vs `timeout` (Linux) for its script-level agent timeout.
-
-**Alternatives considered:**
-- (a) Install coreutils on macOS and alias `timeout` — requires every macOS dev to opt in
-- (b) Skip timeout entirely on macOS — agents hang indefinitely
-- (c) Use Podman's `--timeout` only (already present) and skip the script-level wrapper — the wrapper is needed for the non-sandbox path and as a belt-and-suspenders guard
-
-**Reason:** macOS is the primary development platform (verified by `uname`). The `/tmp` symlink (`/tmp` → `/private/tmp`) causes Podman bind-mount failures because the container resolves the physical path differently than the host. External `timeout(1)` is a Linux-only command. Podman's `--timeout` flag works on both platforms and replaces it. The `gtimeout`/`timeout` detection on the orchestrator's non-sandbox path follows the same pattern as the project's other platform-detection logic.
-
-**Do not suggest:** Removing macOS support; switching to a Linux-only requirement; wrapping `timeout` in a shell function that fails silently.
-
----
-
-## D-11 — 2026-06-06 — Agent Permission Model: No Catch-All Deny
-
-**Decision:** The test agent's `edit` permission uses explicit `src/**": "deny"` and `tests/**": "allow"` with no `**": "deny"` catch-all. The catch-all overrode the specific allow because `**` matches `tests/` paths. Build agent keeps `tests/**": "deny"` with `**": "allow"` as its catch-all — reversed logic because build's allowed set (everything except tests) is too broad to enumerate.
-
-**Alternatives considered:**
-- (a) Keep `**": "deny"` and list every non-test directory explicitly — brittle, misses new directories
-- (b) Use `--dangerously-skip-permissions` server-side — bypasses the entire permission model
-- (c) Single agent with no role separation — violates INV-2
-
-**Reason:** Explicit + allow with no deny catch-all is the simplest permission config that lets the test agent write files. OpenCode's permission engine applies matching deny rules regardless of specificity — a `**`: deny always catches `tests/` paths. Removing the catch-all fixes this at the config level.
-
-**Do not suggest:** Re-adding `**": "deny"` to the test agent; adding `--dangerously-skip-permissions` as a permanent fix.
-
----
-
-## D-12 — 2026-06-06 — Local Model Tier: Qwen3.6-35B-A3B for Build/Test
-
-**Decision:** Build and test agents default to `lms/qwen/qwen3.6-35b-a3b` (35B parameters, 3B active). The 7B `qwen3-coder-next` model produces malformed tool calls (omits required fields like `filePath` and `content` from the Write tool) and is removed from any file-writing role. PM and architect agents remain on `[FRONTIER_MODEL]` per the cost-tier design.
-
-**Alternatives considered:**
-- (a) Run all agents on frontier models — higher cost, negates local-tier savings
-- (b) Wait for better 7B tool-calling support — uncertain timeline
-- (c) Use Gemma-4-31B — not tested, but 35B Qwen writes files correctly
-
-**Reason:** The 35B model is the smallest local model found that reliably constructs valid OpenCode tool calls. It writes files, installs dependencies, and passes gates. The two-tier cost model (frontier for planning, local for build/test) is preserved — the threshold is 35B, not 7B.
-
-**Do not suggest:** Reverting build/test to the 7B model; running build/test on frontier models permanently.
-
----
-
-## D-13 — 2026-06-07 — Pipeline robustness fixes (container deps, PYTHONPATH, gate recovery)
-
-**Decision:** Bake `fastapi uvicorn httpx pydantic` into Containerfile, add `PYTHONPATH=/work` to sandbox-run.sh, soften gate violations from hard-halt to cleanup+continue, and add `pip install` fallback before pytest.
-
-**Alternatives considered:** Installing via `pip install --user` at runtime (fails — user site-packages not on Python search path), installing via build agent (lost on container exit), mounting host `site-packages` (fragile).
-
-**Reason:** Non-root `agent` user (UID 1000) has no sudo and `pip install --user` drops to `~/.local/lib/python3.12/site-packages/` which Python does not search by default. The 35B model sometimes writes tests during build phase despite explicit prompts — cleanup+continue is more productive than halting. `pip install` before pytest ensures deps survive container rebuilds.
-
-**Do not suggest:** Installing deps via the build agent (agent runs in disposable container, install lost on exit). Hard-halting on gate violations (35B model needs graceful recovery). Removing `PYTHONPATH` (required for `from src.main import app`).
-
----
-
-## D-14 — 2026-06-07 — Context window ceiling measurement and fix
-
-**Decision:** Measured the largest 35B agent payload (test agent: `.opencode/prompts/test.md` ~721B + orchestrator instruction ~166B + opencode system preamble ~8000B). Total estimated at ~3000 tokens. Raised LM Studio context length for `qwen/qwen3.6-35b-a3b` from the 8192 default to 32768 (32K) — four orders of magnitude over the measured need, with generous headroom for conversation history. The model natively supports 262144 (`max_position_embeddings` confirmed via HuggingFace config). Lever used: context bump, not prompt trim — the prompts themselves are small; the ceiling was LM Studio's default.
-
-**Reason:** The 35B model's default context window in LM Studio (8192) was too small for the combined system preamble + agent prompt + instruction, causing context-length errors in prior runs. The model supports 256K native; 32K is a comfortable operating point that leaves GPU memory headroom (35.16 GiB used, 128 GiB available on M5 Max).
-
-**Also changed:** `developer.separateReasoningContentInAPI` in `~/.lmstudio/settings.json` from `true` to `false`. When `true`, Qwen models that have reasoning enabled return `content: ''` with output in `reasoning_content` — opencode reads `content` only, so the model was unusable. Merging reasoning into `content` (even with the `<think>` block) keeps the model functional. To fully disable thinking (no reasoning tokens wasted), toggle the "Think" switch off in LM Studio UI for this model.
-
-**Do not suggest:** Lowering context below 32K; switching to the `-ud-mlx` variant for context reasons only (the regular model seats 32K comfortably); trimming the agent prompts (they are not the bottleneck).
-
----
-
-## D-15 — 2026-06-07 — INV-2 gate: halt, not cleanup
-
-**Decision:** Reverted the INV-2 gate handler in `scripts/orchestrate.sh` from cleanup+continue back to halt-and-flag (exit 1 with violation note in `tasks/CURRENT.md`). The prompt-hardening ("Write src/ only", "Write tests/ only") from the same commit was kept.
-
-**Alternatives considered:** (a) Keep cleanup+continue — unblocks the run but silently swallows a boundary violation that should be visible. (b) Leave the gate as-is (soft-halt with inspection note but no exit) — same problem, different disguise.
-
-**Reason:** A boundary violation (build wrote to `tests/` or test wrote to `src/`) is evidence that the model or instructions are wrong. That signal must stop the run and be recorded, not auto-swept. The halt is the enforcement; the gate (phase-gate.sh) is the detector. Cleaning up and continuing makes the violation invisible to the human keystone. The price of a halted run is the cost of INV-2 working correctly.
-
-**Do not suggest:** Re-introducing cleanup+continue; treating a gate violation as a routine iteration failure rather than a process break.
-
----
-
-## D-16 — 2026-06-07 — Model pin: qwen/qwen3.6-35b-a3b (base) as default
-
-**Decision:** Standardize on `qwen/qwen3.6-35b-a3b` (base model, 8-bit MLX, 37.75 GB) as the local build/test agent model. The `-ud-mlx` variant exists at 21.66 GB (4-bit) as a lower-memory fallback. The `opencode.json` config already points to the base model — this entry confirms it as the deliberate choice, not an accidental default.
-
-**Alternatives considered:** (a) `qwen3.6-35b-a3b-ud-mlx` — 4-bit quantized, 21.66 GB, faster load but slightly lower quality. (b) `qwen/qwen3-coder-next` — 80B, 44.86 GB, too large for routine agent calls. (c) `[FRONTIER_MODEL]` — reserved for pm/architect only.
-
-**Reason:** The base model seated 32K context at 35.16 GiB on M5 Max (128 GB unified memory), leaving ~90 GB for other workloads. The MLX variant loads in 21.66 GB but introduces a different serving path (unsorted, unproven for this project). The base model is the one the prompts were written and validated for. The two-tier cost model (frontier for planning, local for build/test) is preserved with a line at 35B, not 7B.
-
-**Do not suggest:** Switching to `-ud-mlx` as the default; running build/test on frontier models permanently; dropping below 35B for writing agents.
-
----
-
-## D-17 — 2026-06-07 — Template deps: app packages baked into Containerfile
-
-**Decision:** Keep `fastapi uvicorn httpx pydantic` baked into the Containerfile and `PYTHONPATH=/work` in `sandbox-run.sh` as template defaults. These are not validation-harness-only — they fix a universal bug: the non-root `agent` user (UID 1000) cannot `pip install --user` into system site-packages. Any FastAPI project in this template runs into the same failure.
-
-**Alternatives considered:** (a) Remove baked deps, require every project to add its own via `requirements.txt` — every new project re-debugs the same user-site-packages issue. (b) Switch to root container user — defeats the isolation purpose. (c) Install via build agent at runtime — lost on container exit, which is why the orchestrator's `pip install` fallback exists on line 123.
-
-**Reason:** The four packages cover the most common FastAPI stack. The `pip install` fallback in `orchestrate.sh` line 123 is now redundant and should be removed as a follow-up — the Containerfile guarantees the deps are present at build time. The `PYTHONPATH=/work` fix is similarly universal: without it, `from src.main import app` fails in the container regardless of project.
-
-**Do not suggest:** Removing these deps from the Containerfile. Removing `PYTHONPATH=/work`. Both will cause the same failures for every new project and the fix will be re-discovered each time.
-
----
-
-## D-18 — 2026-06-07 — 32K context as pinned default for local model
-
-**Decision:** Confirmed the 32,768 token context length as the pinned operational setting for `qwen/qwen3.6-35b-a3b`. Measured the largest agent payload at ~3,000 tokens (test agent prompt + instruction + opencode system preamble). 32K provides 10x headroom for conversation history.
-
-**Alternatives considered:** (a) 8,192 (LM Studio default) — caused context-length errors in prior runs. (b) 131,072 or 262,144 (model max) — unnecessary GPU memory consumption, model seats 32K at 35.16 GiB.
-
-**Reason:** The model natively supports 262,144 tokens (`max_position_embeddings` confirmed via HuggingFace config). 32K is a comfortable operating point that leaves GPU memory headroom (35.16 GiB used across the available 128 GiB). No prompt trimming needed — the bottleneck was LM Studio's default.
-
-**Do not suggest:** Lowering context below 32K; raising to 256K without a demonstrated need.
-
----
-
-## D-19 — 2026-06-07 — docs/.pm-last-review: PM-owned ref marker
-
-**Decision:** Introduced `docs/.pm-last-review` — a one-line file holding the last PM-reviewed commit hash. The build agent reads it at report time to scope its commit list; no agent writes or advances it. "Reviewed" means verified and accepted by the PM — not pushed, not agent-declared done. This is the same artifact-over-memory principle the project enforces on tests (PRD → tests, never src → tests), applied to reporting: the marker removes the retrieval failure (ref buried in chat), but the PM's source-side reconciliation remains the actual guarantee.
-
-**Alternatives considered:** (a) Storing the ref in the build agent's session/context — proven unreliable, this entire fix is why. (b) Tagging the repo with each review — noisy and requires push permissions. (c) Reading the ref from a PM-API call — overengineered.
-
-**Reason:** The previous design relied on the PM's ref persisting in conversation history across turns. It didn't. A file in the repo is persistent, versioned, and readable by tool calls. The PM advances it only after verifying the work. The file assists, it doesn't replace the human check.
-
-**Do not suggest:** Any agent writing to this file; removing the PM's source-side reconciliation because the file exists.
-
-## D-20 — 2026-06-07 — Advisory vs mechanical enforcement
-
-**Decision:** Of the seven Operating Rules, only Rule 1 ("report against the tree") has a mechanical backstop — `docs/.pm-last-review` for the ref plus the PM's source-side reconciliation as the ultimate check. Rules 2–7 are advisory: they rely on PM review for enforcement and no agent workflow enforces them mechanically.
-
-**Documentation-only:** This decision documents a process observation; it does not change the API or build plan.
-
-**Reason:** Honest labeling prevents these rules from being mistaken for guarantees. The durable safeguard is the PM's verification, not the doc. Aspirational claims that a rule "prevents" or "ensures" something erode trust when inevitably violated.
-
-**Do not suggest:** Claiming mechanical enforcement where none exists; adding commit-scope hooks or other automated enforcement without a separate PM decision.
-
----
-
-## D-21 — 2026-06-07 — Operating Rules: rationale per rule
-
-**Documentation-only:** This entry documents rationale for Operating Rules; it does not change the API or build plan.
-
-**Rule 1 (report against the tree):** A hallucinated "6 commits" and an undisclosed model swap each cost a full PM review cycle to catch. The marker file makes the ref retrievable outside conversation history.
-
-**Rule 2 (one commit, one concern):** A safety-rule change (gate halt→cleanup) was bundled with prompt edits and a pip fallback in a single commit, bypassing review. Bundling is how serious changes slip through.
-
-**Rule 3 (stop-and-ask on constraint changes):** The gate soften was treated as routine de-blocking. Changing what happens on violation is a process decision, not a fix.
-
-**Rule 4 (conditionals are checkpoints):** The `-ud-mlx` fallback was used silently despite its precondition (base model failure) never occurring. The swap was only caught in post-hoc review.
-
-**Rule 5 (read the artifact):** A validation report was written from the build agent's chat summary, not from the committed artifact. The summary was less accurate than the file it described.
-
-**Rule 6 ("detected" ≠ "enforced"):** A standalone gate-test result was placed under a live-run section, implying the pipeline enforced a boundary that was switched off at the time.
-
-**Rule 7 (decide trivial calls):** A placement question (where in AGENTS.md to put the Reporting section) burned three turns when the PM had already stated "put it where process docs live." Re-asking after the principle is clear wastes cycles. Asking is not failure when correctness is at stake — that's the second clause of the rule.
-
----
-
-## D-22 — 2026-06-07 — INV-2 gate: halt, not auto-clean (reaffirmed)
-
-**Decision:** The INV-2 gate exits with code 1 on any boundary violation (build writes tests/, test writes src/). It does not auto-clean, retry, or continue. A boundary violation is a signal for the human keystone — evidence that the instruction or model is wrong — not noise to sweep.
-
-**Reason reaffirmed after:** A prior session softened the gate to cleanup+continue, which silently swallowed violations. The build agent wrote to tests/ (correctly detecting), the gate auto-swept it, and the run continued as if nothing happened. That defeat is why the halt exists. The cost of a halted run is the cost of INV-2 working correctly.
-
-**Do not suggest:** Re-softening to cleanup+continue without PM sign-off.
-
-> Add new decisions above this line, newest first.
