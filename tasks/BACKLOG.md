@@ -273,6 +273,7 @@ un-retired AC (the AC-15 case). Likely blueprint-side — see
 
 ### AC-48 audit — Stop-mid-stream is an unaudited cancellation AC
 **Priority:** P3
+**Status:** DONE 2026-08-08 (this session)
 **Why:** The 2026-07-25 lint recovered 77 of ~100 AC statements; 23 have no
 surviving PRD text. All 23 are UI/theme/markdown/rename **except AC-48**
 (deliberately slow stream so a test can click Stop mid-reply), which is a
@@ -280,6 +281,18 @@ cancellation operation — the same class as the failing process-lifecycle ACs
 and never checked for a post-condition.
 **What:** Recover AC-48's text and apply the §5.1 lint.
 **Rough size:** Spec review only
+**Verdict (2026-08-08):** Text recovered verbatim from refreeze v20 (`51149c1`):
+"AC-48 (stop): WHILE a reply is streaming, THE SYSTEM SHALL present the send
+control as 'Stop'; WHEN the user clicks it after visible text has arrived, THE
+SYSTEM SHALL end the stream, keep the partial reply in the thread, and restore
+the 'Send' control." Applied the §5.1 lint: **FAILS** — "end the stream" is
+mechanism, not outcome; no `such that` post-condition clause naming an
+observable check. The frozen test (tests/test_ui.py:229, M10 ratify) does pin
+the observable pair the lint wants ("Send" restored, partial reply retained,
+control re-enabled), so the coverage exists in test form — but the PRD text
+never carried the post-condition, and per D-31 the PRD only changes via
+refreeze. Re-cut text drafted for the next TPM bundle: add "such that the
+stream ends and no further tokens arrive" as the post-condition clause.
 
 ### AC-42 flake hardening — test_thinking_placeholder_shows_then_clears
 **Priority:** P1
