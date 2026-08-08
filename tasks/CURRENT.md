@@ -641,7 +641,7 @@ Full frozen TPM suite green against spec v71. Feature built and validated.
 
   Delta-mapped frozen tests green against spec v84 — feature done (verdict scope: mapped tests only, D-112). Feature built and validated.
 
-## Results (D-124 — EM prompt context trim, control-plane)
+## Results (EM prompt context trim, control-plane)
 
   Both remaining full-file context loads are gone from the EM plan prompts:
   - **Contract ids now scoped** (`contract_ids()`): ids owned by a
@@ -680,7 +680,7 @@ Full frozen TPM suite green against spec v71. Feature built and validated.
   - Selftests: 289/289. No product files changed, no test bytes staged —
     DELTA-v86 is purely the 46 ui contract ids.
   - Verified during the audit (held): every other EM/coder context load is
-    already milestone-scoped (D-119 node-ids, D-124 contract ids, routes/
+    already milestone-scoped (D-119 node-ids, the D-120 pin gate for contract ids, routes/
     schemas/errors pins since v83); the CEO's "path A/B" question needs no
     decision — the TPM-seat backfill is the D-120 design itself and pins
     already existed; the residual 8,203 B of unpinned ui testids is what
@@ -721,3 +721,14 @@ non-blocking (D-115: prose has zero runtime blast radius), synced from
 blueprint `23fbe0a` via `[template-update f684a16]`. Its first run caught
 this repo's `README.md:61` (D-121 class) — a file on no sweep list. The
 guard is warning-only by design; it can never fail a commit.
+
+## Ledger alignment 2026-08-07 (record)
+
+DECISIONS.md was realigned with the blueprint's (`641736a`/blueprint
+`71d7404`): both ledgers now agree number-for-number (blueprint renumbered
+its container/relabel/size entries to D-123/124/125; this repo back-ported
+D-108..D-111, D-113..D-115, D-123..D-125). The "EM prompt context trim"
+results section's D-124 designation was removed — that decision was never
+entered, and D-124 now means the node-id relabel decision; when it is
+logged it gets a fresh number. Guard rule recorded in the correction log:
+code back-ports carry their DECISIONS entries.
