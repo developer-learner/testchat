@@ -197,8 +197,14 @@ costing a red build and a follow-up commit (`types-psutil`, `0eb1d38`).
 CI-only gates stop existing.
 **Rough size:** `sandbox-run.sh` + `orchestrate.sh` acceptance
 
-### `em.md` — test node-ids must be copied verbatim
-**Priority:** P2
+### ~~`em.md` — test node-ids must be copied verbatim~~ — DONE 2026-08-08
+**Priority:** ~~P2~~ — shipped. One line added to `em.md`'s plan requirements:
+"copy each node-id EXACTLY as it appears in `test-nodeids`, including any
+parametrization suffix such as `[chromium]` — the plan gate rejects an id that
+does not match the frozen suite byte-for-byte." Landed template-first (blueprint
+`9a623c6`, `.manifest-template` regenerated in the same isolated commit per
+Rule 2) then synced to testchat (`05418dc`); 300 selftests green in both repos.
+**Original entry:**
 **Why:** The EM emitted all 32 `test_ui.py` / `test_ui_websearch.py` node-ids
 without Playwright's `[chromium]` parametrization suffix, so the plan gate
 rejected every one as "not in the frozen suite" and burned a plan revision.
