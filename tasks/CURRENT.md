@@ -742,3 +742,16 @@ now live in both repos. Per-milestone rows land in
 retirement entry must cite. Report only, never a gate. When this repo next
 runs a real milestone to `[success]`, record its row and close the D-115
 admission-data gap.
+
+## Metrics durability fix 2026-08-07 (record)
+
+The original sink (`.pipeline-state/logs/metrics.tsv`) was inside the
+success teardown's `rm -rf .pipeline-state` — the row could never
+accumulate and the milestone's data died with it (D-108 class, correction
+row logged). Fixed same day via template update: sources are now only
+post-teardown-durable artifacts (`.measurement/counters`,
+`.measurement/timings-*.tsv`, spec-tagged `.em-archive`, committed flake
+ledger), output is `.measurement/metrics.tsv`, and the success path records
+each milestone's row automatically (`|| true`). The next `[success]` run
+will emit its row with no manual step — then the ≥3-milestone accumulation
+for the first real D-115 retirement (todo 7) is possible.
