@@ -713,3 +713,11 @@ Nothing to run until a milestone exists; v86 is metadata-only.
 
 **Stop condition:** no further doc-sweep passes unless (a) a guard fires,
 (b) a new decision lands, or (c) the lineage test surfaces a defect.
+
+**Decision made 2026-08-07 (CEO): guard-as-warning.** The doc-consistency
+guard was built: `scripts/doc-consistency.sh` (enumerated retired-token scan
+over enumerated state-describing docs), wired into the pre-commit hook as
+non-blocking (D-115: prose has zero runtime blast radius), synced from
+blueprint `23fbe0a` via `[template-update f684a16]`. Its first run caught
+this repo's `README.md:61` (D-121 class) — a file on no sweep list. The
+guard is warning-only by design; it can never fail a commit.
