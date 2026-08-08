@@ -732,3 +732,13 @@ results section's D-124 designation was removed — that decision was never
 entered, and D-124 now means the node-id relabel decision; when it is
 logged it gets a fresh number. Guard rule recorded in the correction log:
 code back-ports carry their DECISIONS entries.
+
+## Metrics layer 2026-08-07 (record)
+
+D-126 landed (blueprint `cfa8fba` → this repo via `48f8a31`): the metrics
+layer (`scripts/metrics-report.py`, mirror D-126 in the ledger above) is
+now live in both repos. Per-milestone rows land in
+`.pipeline-state/logs/metrics.tsv`; `--evidence` prints the block a D-115
+retirement entry must cite. Report only, never a gate. When this repo next
+runs a real milestone to `[success]`, record its row and close the D-115
+admission-data gap.
