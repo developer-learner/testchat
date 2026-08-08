@@ -685,3 +685,31 @@ Full frozen TPM suite green against spec v71. Feature built and validated.
     decision — the TPM-seat backfill is the D-120 design itself and pins
     already existed; the residual 8,203 B of unpinned ui testids is what
     v86 just closed.
+
+## Milestone-trim arc — CLOSED 2026-08-07 (bounded verdict, stop condition)
+
+**Scope:** milestone-trim audit → validation → back-port → verification.
+The audit bounded: delta artifacts, runtime wiring, back-port drift,
+bidirectional drift, the manifest-propagation bug, and the D-121/D-112
+doc-prose classes.
+
+**Verified against the tree (not asserted):**
+- 291/291 selftests green (blueprint); 5/5 update-template tests.
+- Trim machinery: zero code drift; both repos byte-in-sync
+  (`check-drift.sh`, `phase-gate.sh manifest HEAD` green at every stop).
+- The manifest-propagation fix (`daa24c7`) end-to-end proven on a
+  throwaway child clone: apply, re-run no-op, manifest-only-drift branch.
+- D-121 doc class: zero hits. D-112 completion-criterion class: zero hits
+  (exhaustive case-insensitive sweep; historical records left verbatim).
+
+**Audit boundary (explicit):** docs are NOT mechanically gated. The class
+is closed by sweep, not by a gate; a future decision can re-seed drift.
+Decision on guard (guard-as-warning vs skip) is the CEO's, recorded in
+CURRENT.md when made.
+
+**Next trigger (the only forward item):** the next real milestone freeze —
+the trim's end-to-end lineage test (plan → coder → gates → verdict).
+Nothing to run until a milestone exists; v86 is metadata-only.
+
+**Stop condition:** no further doc-sweep passes unless (a) a guard fires,
+(b) a new decision lands, or (c) the lineage test surfaces a defect.
