@@ -324,8 +324,15 @@ never carried the post-condition, and per D-31 the PRD only changes via
 refreeze. Re-cut text drafted for the next TPM bundle: add "such that the
 stream ends and no further tokens arrive" as the post-condition clause.
 
-### AC-42 flake hardening — test_thinking_placeholder_shows_then_clears
-**Priority:** P1
+### ~~AC-42 flake hardening — test_thinking_placeholder_shows_then_clears~~ — DONE (v55 recut)
+**Priority:** ~~P1~~ — closed 2026-08-08: the recut **already shipped at
+`51cb22e` [refreeze v55]** (2026-07-19, M23d). `tests/conftest.py` gates
+the answer tokens behind `_slowping_gate` and the test releases via
+`/release-slowping` — no wall-clock hold remains (the "~1.2s hold window
+was missed" failure is the pre-v55 stub). v58-era amendments retained the
+gate (frozen-manifest conftest hash `99bdc97b`). Verified today: 7/7 green
+in the sandbox with the pipeline invocation, including a 700MB in-container
+memory-stress run. Original entry retained below for provenance:
 **Why:** M9-era timing-sensitive SLOWPING placeholder test; intermittent
 in full-suite runs. Flagged for hardening 2026-07-15 ("harden both at the
 M23 refreeze") but never done; on 2026-07-19 it failed three M28 close-out
