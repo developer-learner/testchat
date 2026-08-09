@@ -1,4 +1,4 @@
-# ERD-DELTA — spec v96 hydration-retry correction: conversation data safety
+# ERD-DELTA — spec v97 hydration-retry correction: conversation data safety
 
 This milestone repairs the three persistence defects identified in the
 2026-08-08 audit. It is intentionally limited to exact-one deletion,
@@ -89,7 +89,7 @@ Acceptance: the storage smoke check is green and `quarantine_files()` finds a
 file whose name starts with `threads.json.corrupt-` after a schema-invalid
 snapshot is loaded.
 
-### T2 — src/api/threads.py (AC-160, GET wrapper; restore PUT verbatim)
+### T2 — src/api/threads.py (AC-160, GET wrapper; response shape)
 
 Implementation constraints: FastAPI route handlers in `src/api/threads.py`.
 Use the existing models `ThreadsListResponse`, `ThreadsPayload`,
@@ -109,30 +109,19 @@ NEVER pass `ThreadSnapshot.model_validate` itself — storage calls the
 validator with the WHOLE document, so the envelope would always fail and
 quarantine every load.
 `quarantined = bool(quarantine_files())` — never from `([], 0)`.
-Return `ThreadsListResponse(threads=threads, revision=revision, quarantined=quarantined)`.
+Return `ThreadsListResponse(threads=threads, revision=revision, quarantined=quarantined).model_dump(exclude_none=True)` — the response MUST be dumped with `exclude_none=True`: stored messages without `sources` must stay without that key in the wire JSON (a frozen oracle asserts `'sources' not in message`).
 
-PUT must be RESTORED (a prior attempt dropped the serialization step and
-422 checks, breaking frozen persistence and sources-roundtrip oracles):
+The PUT and DELETE handlers must be left EXACTLY as they are (role 422s,
+`model_dump(exclude_none=True)` serialization, `ThreadSnapshot(**item)`
+re-validation, 409 `{"error": "revision_conflict", "current_revision": N}`,
+`{"status": "ok", "revision": N}` — they already satisfy the frozen oracles).
+Do NOT rewrite or reformat them; the file may already satisfy this entire
+brief. If it does, reply with exactly `=== NO CHANGES ===`.
 
-1. If any `message.role` is not `"user"` or `"assistant"`, return 422
-   `JSONResponse(content={"detail": "Invalid role"})`.
-2. Serialize with `[t.model_dump(exclude_none=True) for t in payload.threads]`
-   — REQUIRED: stored messages must NOT carry `sources: None` when the
-   message had no web sources (frozen oracle: `'sources' not in message`).
-3. Re-validate with `ThreadSnapshot(**item)`; on exception return 422
-   `JSONResponse(content={"detail": "Malformed payload"})`.
-4. Call `new_revision = save_versioned_snapshot(serialized, payload.revision)`
-   — pass the list of dicts, never raw pydantic models. On `SnapshotConflict`
-   return the existing 409 `RevisionConflictResponse`.
-5. Return `{"status": "ok", "revision": new_revision}`.
-
-DELETE unchanged: `save_versioned_snapshot([], body.revision)` with the
-existing 422/409 responses.
-
-Acceptance: with a schema-invalid snapshot present, GET returns
-`{"threads": [], "revision": 0, "quarantined": true}` and the primary file is
-moved to exactly one `*.corrupt-*` file byte-for-byte; frozen persistence and
-PUT-roundtrip oracles pass.
+Acceptance: GET returns `{"threads": [], "revision": 0, "quarantined": true}`
+for a schema-invalid snapshot (moved to exactly one `*.corrupt-*` file
+byte-for-byte); frozen persistence, revision-conflict, and PUT-roundtrip
+oracles all pass.
 
 ### T3 — src/static/app.js (AC-158/159, hydration)
 
