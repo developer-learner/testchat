@@ -1,4 +1,4 @@
-# ERD-DELTA — spec v90 correction: conversation data safety
+# ERD-DELTA — spec v91 seam correction: conversation data safety
 
 This milestone repairs the three persistence defects identified in the
 2026-08-08 audit. It is intentionally limited to exact-one deletion,
@@ -23,8 +23,8 @@ documentation drift, and accessibility findings remain outside this slice.
   mutation and all survivors persist through reload.
 * **AC-160 — schema-invalid quarantine:** valid JSON whose thread/message
   shape fails the PUT `ThreadSnapshot` model is quarantined byte-for-byte and
-  read as empty zero, such that invalid state is neither served nor
-  overwritten.
+  read as `threads: []`, `revision: 0`, such that invalid state is neither
+  served nor overwritten.
 
 ## Superseded acceptance criteria
 
@@ -42,16 +42,16 @@ weakening those behaviors.
 * `src/static/app.js` — AC-158/159: on failed GET write exact text and
   retry until success; a success installs threads + revision before mutation;
   later PUTs adopt response revision.
-* `src/services/storage.py` — AC-160: under lock, an optional validator
-  moves JSON/shape failure to `<primary>.corrupt-<timestamp>` and returns
-  `([], 0)`; backup/revision semantics unchanged.
-* `src/api/threads.py` — AC-160: GET passes a `ThreadSnapshot` based
-  validator to storage; quarantine reads yield `{threads: [], revision: 0,
-  quarantined: true}`, such that invalid state is neither served nor
-  overwritten.
+* `src/services/storage.py` — AC-160: the sole validated-read seam is
+  `load_versioned_snapshot(validator=None) -> (list, revision)`. Under lock it
+  applies the callback; JSON/shape failure is quarantined and returns `([], 0)`.
+* `src/api/threads.py` — GET passes its `ThreadSnapshot` validator only to
+  `load_versioned_snapshot`, unpacks `(threads, revision)`, and derives
+  `quarantined` only from `bool(quarantine_files())`, never from `([], 0)`;
+  thus healthy empty storage remains false and invalid state is not served.
 
-DAG: `src/api/threads.py` depends on `src/services/storage.py`; the two
-browser files are orderable but app.js acceptance assumes threads.js
+DAG: `src/api/threads.py` depends on `src/services/storage.py`; keep T2 atomic.
+The browser files remain orderable, with app.js acceptance assuming threads.js
 hydration-status ownership.
 
 ## Test-to-file mapping
@@ -65,8 +65,7 @@ Now-approved node IDs pin exactly:
 * `tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving[chromium]`
   -> `src/static/app.js` (AC-158/159).
 
-The delete oracle hovers its owning `thread-item` before clicking the hidden
-row control. The hydration oracle counts only GETs called from `app.js`, not
-the independent indicator GET. A red-only `src/static/app.js` smoke check
-requires the exact `history unavailable — retrying` token. The storage-test
-bytes and all product acceptance criteria remain unchanged.
+Tests and mappings are unchanged. The backend oracle distinguishes healthy
+empty storage (`quarantined: false`) from schema quarantine. The delete oracle
+hovers its row; the hydration oracle counts only `app.js` GETs. Existing
+`src/static/app.js` smoke still requires `history unavailable — retrying`.

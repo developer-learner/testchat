@@ -1,5 +1,5 @@
 {
-  "erd_version": 90,
+  "erd_version": 91,
   "files": [
     "src/static/app.js",
     "src/static/threads.js",
@@ -141,7 +141,7 @@
         "message": "string",
         "history": "array of HistoryEntry, optional, default []",
         "model": "string, optional, default null",
-        "web": "boolean, optional, default false \u2014 when true the backend performs one Tavily search before the LLM call (AC-86)"
+        "web": "boolean, optional, default false — when true the backend performs one Tavily search before the LLM call (AC-86)"
       },
       "file": "src/api/chat.py"
     },
@@ -164,7 +164,7 @@
     {
       "id": "schema:SSESources",
       "fields": {
-        "event": "literal 'sources' \u2014 emitted at most once, BEFORE any token event, only when the request had web=true",
+        "event": "literal 'sources' — emitted at most once, BEFORE any token event, only when the request had web=true",
         "sources": "array of {n: integer 1-based, title, url}; empty on search failure",
         "notice": "string, present only on search failure: 'web search unavailable' (AC-89)"
       },
@@ -228,7 +228,7 @@
       "id": "schema:ScriptModelLoadResponse",
       "fields": {
         "status": "string, literal 'loaded' or 'error'",
-        "message": "string, optional \u2014 present on 'error'"
+        "message": "string, optional — present on 'error'"
       },
       "file": "src/api/models.py"
     },
@@ -244,7 +244,7 @@
       "id": "schema:ScriptModelUnloadResponse",
       "fields": {
         "status": "string, literal 'unloaded' or 'error'",
-        "message": "string, optional \u2014 present on 'error'"
+        "message": "string, optional — present on 'error'"
       },
       "file": "src/api/models.py"
     },
@@ -253,7 +253,7 @@
       "fields": {
         "id": "integer",
         "title": "string",
-        "messages": "array of HistoryEntry (role: \"user\"|\"assistant\", content, ts, model, optional sources: array of SourceLink \u2014 absent, never empty-list, when the message had no web sources)",
+        "messages": "array of HistoryEntry (role: \"user\"|\"assistant\", content, ts, model, optional sources: array of SourceLink — absent, never empty-list, when the message had no web sources)",
         "model": "string, may be empty",
         "locked": "boolean"
       },
@@ -279,7 +279,7 @@
       "fields": {
         "threads": "array of ThreadSnapshot",
         "revision": "integer >= 0, current persisted generation",
-        "quarantined": "boolean \u2014 true while a quarantined (unreadable) snapshot file sits beside the data file"
+        "quarantined": "boolean — true while a quarantined (unreadable) snapshot file sits beside the data file"
       },
       "file": "src/api/threads.py"
     },
@@ -307,7 +307,7 @@
         "ram_used_gb": "number",
         "ram_total_gb": "number",
         "loadable_gb": "number",
-        "web_configured": "boolean \u2014 true iff TAVILY_API_KEY is set (AC-90)"
+        "web_configured": "boolean — true iff TAVILY_API_KEY is set (AC-90)"
       },
       "file": "src/api/status.py"
     }
@@ -345,13 +345,13 @@
       "id": "external:lmstudio-chat-stream",
       "probe": "curl -sS -N -X POST http://localhost:1234/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"qwen/qwen3.6-27b\",\"messages\":[{\"role\":\"user\",\"content\":\"/no_think Say hi in three words\"}],\"stream\":true}'",
       "capture": "captures/lmstudio-chat-stream.txt",
-      "notes": "OpenAI chunk shape. Captured reality (2026-07-08): thinking arrives INLINE as <think>...</think> inside delta.content \u2014 this LM Studio config emits no reasoning_content. Think text therefore reaches the frontend through SSE 'token' events; the frontend must render it via the think toggle AND strip it from stored/POSTed history. The 'think' SSE event path (reasoning_content) remains contractually valid for configs that parse reasoning."
+      "notes": "OpenAI chunk shape. Captured reality (2026-07-08): thinking arrives INLINE as <think>...</think> inside delta.content — this LM Studio config emits no reasoning_content. Think text therefore reaches the frontend through SSE 'token' events; the frontend must render it via the think toggle AND strip it from stored/POSTed history. The 'think' SSE event path (reasoning_content) remains contractually valid for configs that parse reasoning."
     },
     {
       "id": "external:tavily-search",
       "probe": "curl -sS https://api.tavily.com/search -H 'Content-Type: application/json' -H \"Authorization: Bearer $TAVILY_API_KEY\" -d '{\"query\":\"latest stable Python version July 2026\",\"max_results\":4}'",
       "capture": "captures/tavily-search.json",
-      "notes": "Captured 2026-07-17 against the live API. Backend reads top-level results[] only: url, title, content (extracted page prose \u2014 quality varies by page, hence the per-source char cap). score/raw_content/answer/images are present in the shape but unread. Key travels as Authorization: Bearer; TAVILY_ENDPOINT env overrides the URL so the sandboxed suite binds a loopback stub."
+      "notes": "Captured 2026-07-17 against the live API. Backend reads top-level results[] only: url, title, content (extracted page prose — quality varies by page, hence the per-source char cap). score/raw_content/answer/images are present in the shape but unread. Key travels as Authorization: Bearer; TAVILY_ENDPOINT env overrides the URL so the sandboxed suite binds a loopback stub."
     }
   ],
   "ui": [
@@ -364,7 +364,7 @@
     {
       "id": "ui:thread-item",
       "testid": "thread-item",
-      "description": "each thread entry in the sidebar list (one per thread, newest thread first \u2014 reverse creation order)",
+      "description": "each thread entry in the sidebar list (one per thread, newest thread first — reverse creation order)",
       "file": "src/static/threads.js"
     },
     {
@@ -412,7 +412,7 @@
     {
       "id": "ui:eject-model-btn",
       "testid": "eject-model-btn",
-      "description": "single unload control right-aligned next to the model dropdown; hidden by default, revealed while the dropdown has focus (approximates 'visible while the model menu is open' \u2014 native selects expose no open event); click opens unload-confirm-modal; no-op when no script model is loaded (M28a)",
+      "description": "single unload control right-aligned next to the model dropdown; hidden by default, revealed while the dropdown has focus (approximates 'visible while the model menu is open' — native selects expose no open event); click opens unload-confirm-modal; no-op when no script model is loaded (M28a)",
       "file": "src/static/catalog.js"
     },
     {
@@ -568,13 +568,13 @@
     {
       "id": "ui:save-status",
       "testid": "save-status",
-      "description": "status-strip save indicator: empty while persists succeed; 'not saved' after ordinary failure (AC-75/76); exact 'history changed elsewhere \u2014 reload required' after a 409 until reload (AC-147/148)",
+      "description": "status-strip save indicator: empty while persists succeed; 'not saved' after ordinary failure (AC-75/76); exact 'history changed elsewhere — reload required' after a 409 until reload (AC-147/148)",
       "file": "src/static/threads.js"
     },
     {
       "id": "ui:history-status",
       "testid": "history-status",
-      "description": "status-strip history indicator: empty after healthy hydration; 'history unreadable (backup kept)' after quarantine (AC-80/81); exact 'history unavailable \u2014 retrying' while initial hydration is failing and retrying (AC-158/159)",
+      "description": "status-strip history indicator: empty after healthy hydration; 'history unreadable (backup kept)' after quarantine (AC-80/81); exact 'history unavailable — retrying' while initial hydration is failing and retrying (AC-158/159)",
       "file": "src/static/threads.js"
     },
     {
@@ -646,7 +646,7 @@
   },
   "smoke_checks": {
     "src/static/app.js": "grep -q 'history unavailable — retrying' src/static/app.js",
-    "src/services/storage.py": "grep -q 'def load_snapshot' src/services/storage.py && grep -q 'validator' src/services/storage.py && grep -q 'corrupt-' src/services/storage.py && grep -q 'quarantine' src/services/storage.py",
+    "src/services/storage.py": "grep -q 'def load_versioned_snapshot(validator' src/services/storage.py",
     "src/api/threads.py": "grep -q 'quarantined' src/api/threads.py && grep -q 'validator' src/api/threads.py"
   }
 }
