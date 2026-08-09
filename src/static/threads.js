@@ -460,6 +460,8 @@ function addSources(bubble, sources, notice) {
         TC.currentController.abort();
       }
       TC.threads = TC.threads.filter(function (t) { return t.id !== id; });
+      // Re-render the sidebar immediately so the UI reflects the survivors.
+      renderSidebar();
       // Enqueue a revisioned PUT with the survivor snapshot to persist the change.
       _enqueueMutation('PUT', { threads: _captureSnapshot() });
       if (TC.activeThreadId === id) {
@@ -470,8 +472,6 @@ function addSources(bubble, sources, notice) {
         } else {
           createThread();
         }
-      } else {
-        renderSidebar();
       }
     });
   }
