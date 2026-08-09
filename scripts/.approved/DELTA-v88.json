@@ -1,0 +1,16 @@
+{
+  "changed_contract_ids": [
+    "ui:history-status"
+  ],
+  "changed_tests": [
+    "tests/test_data_safety_storage.py::test_valid_json_with_invalid_thread_schema_is_quarantined",
+    "tests/test_data_safety_ui.py::test_delete_one_thread_survives_reload[chromium]",
+    "tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving[chromium]"
+  ],
+  "changed_files": [
+    "src/static/app.js",
+    "src/static/threads.js",
+    "src/services/storage.py",
+    "src/api/threads.py"
+  ]
+}

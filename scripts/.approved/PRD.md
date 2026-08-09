@@ -298,7 +298,56 @@ and the local model catalog.
   the thread, and restore the 'Send' control, such that the stream ends
   and no further tokens arrive.
 
+**Data-safety milestone — exact deletion, hydration recovery, schema quarantine**
+
+This milestone closes three paths that can silently discard saved conversation
+history. It deliberately changes no chat, model, search, title, or layout
+behavior. Completion is user-checkable by deleting one of several chats and
+reloading, recovering from a transient history-load failure, and observing a
+malformed snapshot preserved under a quarantine name rather than served or
+overwritten.
+
+* **AC-156:** WHEN the user confirms deletion of one thread while other
+  threads exist, THE SYSTEM SHALL remove exactly the selected thread and
+  persist a complete snapshot of every remaining thread through the ordinary
+  revisioned replacement path, such that a subsequent page reload displays
+  all and only the surviving threads with their titles and messages intact.
+
+* **AC-157:** WHEN the browser performs a per-thread deletion, THE SYSTEM
+  SHALL use PUT `/api/v1/threads` with the captured survivor snapshot and
+  SHALL NOT use DELETE `/api/v1/threads`; DELETE remains the explicit
+  clear-all operation, such that a per-thread deletion cannot persist an
+  empty snapshot when survivors remain.
+
+* **AC-158:** WHEN the initial GET `/api/v1/threads` hydration request fails,
+  THE SYSTEM SHALL display exactly `history unavailable — retrying` in the
+  existing `history-status` element and automatically retry hydration while
+  the page remains open; it SHALL NOT create or enqueue a replacement blank
+  thread while the persisted revision is unknown.
+
+* **AC-159:** WHEN hydration has failed and a later automatic retry succeeds,
+  THE SYSTEM SHALL install the returned threads and revision before accepting
+  the next persistence-worthy mutation and clear `history-status`, such that
+  the next mutation is accepted against the hydrated revision and a reload
+  retains both the hydrated survivors and the new mutation.
+
+* **AC-160:** WHEN a primary snapshot contains valid JSON but any thread or
+  message fails the same `ThreadSnapshot` schema used by PUT
+  `/api/v1/threads`, THE SYSTEM SHALL move the complete primary bytes to a
+  same-directory `<file>.corrupt-<timestamp>` quarantine file and return
+  `threads: []`, `revision: 0`, and `quarantined: true`, such that the invalid
+  primary is no longer served and its original bytes remain recoverable.
+
 ## Out of scope
+
+* **Clear-all redesign or removal.** DELETE `/api/v1/threads` retains its
+  revision precondition and empty-snapshot semantics for explicit clear-all
+  callers; this milestone only prevents a row delete from invoking it.
+* **Automatic merge after hydration failure.** The browser waits for an
+  authoritative revision; it does not fabricate a local branch or merge
+  unsaved edits into unknown server state.
+* **Automatic restore from quarantine or `.bak`.** Invalid snapshots remain
+  recoverable by a human but are never silently repaired or restored.
 
 * **Sidebar row auto-scroll on switch.** AC-121 requires the mark to be
   present; it does not require the sidebar to auto-scroll the marked row into
@@ -387,3 +436,11 @@ and the local model catalog.
    With the box empty or whitespace-only, Ctrl+Enter sends nothing and the
    input is unchanged. The box's hint text reads "Ctrl+Enter to send, Enter
    for newline".
+9. Create three chats with visibly different titles, delete the middle one,
+   and reload: exactly the other two chats return with their original content.
+10. During a simulated transient history-load failure, the footer reads
+    `history unavailable — retrying`; when the server responds again, the
+    warning clears and the next new chat survives reload.
+11. Place a syntactically valid snapshot with an invalid message role at the
+    data path, then load the page: no malformed thread is rendered, the API
+    reports quarantine, and the original bytes remain in a `.corrupt-*` file.
