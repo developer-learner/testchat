@@ -1,5 +1,5 @@
 {
-  "erd_version": 88,
+  "erd_version": 89,
   "files": [
     "src/static/app.js",
     "src/static/threads.js",
@@ -574,7 +574,7 @@
     {
       "id": "ui:history-status",
       "testid": "history-status",
-      "description": "status-strip history indicator: empty after healthy hydration; 'history unreadable (backup kept)' after quarantine (AC-80/81); exact 'history unavailable — retrying' while initial hydration is failing and retrying (AC-158/159)",
+      "description": "status-strip history indicator: empty after healthy hydration; 'history unreadable (backup kept)' after quarantine (AC-80/81); exact 'history unavailable \u2014 retrying' while initial hydration is failing and retrying (AC-158/159)",
       "file": "src/static/threads.js"
     },
     {
@@ -639,5 +639,9 @@
     "src/services/storage.py",
     "src/api/threads.py"
   ],
-  "test_mapping": {}
+  "test_mapping": {},
+  "smoke_checks": {
+    "src/services/storage.py": "grep -q 'def load_snapshot' src/services/storage.py && grep -q 'validator' src/services/storage.py && grep -q 'corrupt-' src/services/storage.py && grep -q 'quarantine' src/services/storage.py",
+    "src/api/threads.py": "grep -q 'quarantined' src/api/threads.py && grep -q 'validator' src/api/threads.py"
+  }
 }
