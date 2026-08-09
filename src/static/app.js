@@ -540,8 +540,9 @@
             return response.json();
           })
           .then(function (data) {
-            // On success: clear the warning.
-            if (historyStatus) historyStatus.textContent = '';
+            // On success: set the history-status text to the single-owner value
+            // driven by the hydration response — the ONLY source for this element.
+            if (historyStatus) historyStatus.textContent = data.quarantined ? 'history unreadable (backup kept)' : '';
             // ERD-DELTA v73: hydrate the persistence owner with the server's
             // revision BEFORE any mutation can enqueue (createThread calls
             // persistThreads, which enqueues a PUT that reads _hydratedRevision).
