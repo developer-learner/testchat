@@ -53,11 +53,11 @@ def _validate_snapshot_document(document) -> bool:
     if isinstance(document, dict):
         threads = document.get("threads")
         if not isinstance(threads, list):
-            raise ValueError("threads is not a list")
+            raise ValueError("threads not a list")
     elif isinstance(document, list):
         threads = document
     else:
-        raise ValueError("document is not a dict or list")
+        raise ValueError("invalid document shape")
     for item in threads:
         ThreadSnapshot.model_validate(item)
     return True
@@ -72,29 +72,20 @@ def get_threads():
 
 @router.put("/api/v1/threads")
 def put_threads(payload: ThreadsPayload):
-    for thread in payload.threads:
-        for msg in thread.messages:
+    for t in payload.threads:
+        for msg in t.messages:
             if msg.role not in ("user", "assistant"):
-                return JSONResponse(
-                    status_code=422,
-                    content={"detail": "Invalid role"},
-                )
+                return JSONResponse(content={"detail": "Invalid role"}, status_code=422)
     serialized = [t.model_dump(exclude_none=True) for t in payload.threads]
     for item in serialized:
         try:
             ThreadSnapshot(**item)
         except Exception:
-            return JSONResponse(
-                status_code=422,
-                content={"detail": "Malformed payload"},
-            )
+            return JSONResponse(content={"detail": "Malformed payload"}, status_code=422)
     try:
         new_revision = save_versioned_snapshot(serialized, payload.revision)
-    except SnapshotConflict as exc:
-        return JSONResponse(
-            status_code=409,
-            content={"error": "revision_conflict", "current_revision": exc.current_revision},
-        )
+    except SnapshotConflict:
+        return JSONResponse(content={"detail": "Revision conflict"}, status_code=409)
     return {"status": "ok", "revision": new_revision}
 
 
