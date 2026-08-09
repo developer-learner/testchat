@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 from src.services.storage import (
     SnapshotConflict,
     load_versioned_snapshot,
-    quarantine_files,
     save_versioned_snapshot,
 )
 
@@ -34,6 +33,12 @@ class ThreadSnapshot(BaseModel):
     locked: bool = False
 
 
+class ThreadsListResponse(BaseModel):
+    threads: list[ThreadSnapshot]
+    revision: int
+    quarantined: bool
+
+
 class ThreadsPayload(BaseModel):
     revision: int = Field(ge=0)
     threads: list[ThreadSnapshot]
@@ -43,14 +48,38 @@ class ThreadsRevisionPrecondition(BaseModel):
     revision: int = Field(ge=0)
 
 
+def _validate_thread_snapshot(data: dict) -> bool:
+    try:
+        ThreadSnapshot(**data)
+        return True
+    except Exception:
+        return False
+
+
+def _validate_snapshot(data: list[dict]) -> bool:
+    for item in data:
+        if not _validate_thread_snapshot(item):
+            return False
+    return True
+
+
 @router.get("/api/v1/threads")
 def get_threads():
-    threads, revision = load_versioned_snapshot()
-    return {"threads": threads, "revision": revision, "quarantined": bool(quarantine_files())}
+    threads, revision = load_versioned_snapshot(validator=_validate_snapshot)
+    if threads == [] and revision == 0:
+        return ThreadsListResponse(threads=[], revision=0, quarantined=True)
+    return ThreadsListResponse(threads=threads, revision=revision, quarantined=False)
 
 
 @router.put("/api/v1/threads")
 def put_threads(payload: ThreadsPayload):
+    for thread in payload.threads:
+        for message in thread.messages:
+            if message.role not in ("user", "assistant"):
+                return JSONResponse(
+                    status_code=422,
+                    content={"detail": "Invalid role"},
+                )
     try:
         new_revision = save_versioned_snapshot(
             [t.model_dump(exclude_none=True) for t in payload.threads],
