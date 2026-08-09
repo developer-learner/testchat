@@ -72,8 +72,24 @@ def get_threads():
 
 @router.put("/api/v1/threads")
 def put_threads(payload: ThreadsPayload):
+    for thread in payload.threads:
+        for msg in thread.messages:
+            if msg.role not in ("user", "assistant"):
+                return JSONResponse(
+                    status_code=422,
+                    content={"detail": f"Invalid message role: {msg.role}"},
+                )
+    serialized = [t.model_dump(exclude_none=True) for t in payload.threads]
+    for item in serialized:
+        try:
+            ThreadSnapshot(**item)
+        except Exception:
+            return JSONResponse(
+                status_code=422,
+                content={"detail": "Re-validation failed"},
+            )
     try:
-        new_revision = save_versioned_snapshot([t.model_dump() for t in payload.threads], payload.revision)
+        new_revision = save_versioned_snapshot(serialized, payload.revision)
     except SnapshotConflict as exc:
         return JSONResponse(
             status_code=409,
