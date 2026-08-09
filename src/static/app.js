@@ -523,13 +523,24 @@
 
       // Initial load — retry loop until GET /api/v1/threads succeeds
       (function retryInitialLoad() {
+        // At the START of every iteration, BEFORE issuing the fetch, write the
+        // warning text to the history-status element. This re-asserts the
+        // warning on every retry even if something else overwrites the element
+        // in between (a standalone script-eval GET in threads.js that backs the
+        // load-path quarantine indicator races this code and overwrites the
+        // element with "" when no quarantine is present — the re-assert on the
+        // next retry tick is what keeps the warning visible while hydration
+        // keeps failing).
+        var historyStatus = document.querySelector('[data-testid="history-status"]');
+        if (historyStatus) historyStatus.textContent = 'history unavailable — retrying';
+
         fetch('/api/v1/threads')
           .then(function (response) {
             if (!response.ok) throw new Error('non-ok status');
             return response.json();
           })
           .then(function (data) {
-            var historyStatus = document.querySelector('[data-testid="history-status"]');
+            // On success: clear the warning.
             if (historyStatus) historyStatus.textContent = '';
             // ERD-DELTA v73: hydrate the persistence owner with the server's
             // revision BEFORE any mutation can enqueue (createThread calls
@@ -554,8 +565,10 @@
             }
           })
           .catch(function () {
-            var historyStatus = document.querySelector('[data-testid="history-status"]');
-            if (historyStatus) historyStatus.textContent = 'history unavailable — retrying';
+            // On failure: the warning text was already written at the top of
+            // this iteration. Do NOT call Threads.createThread() on failure —
+            // revision is unknown, so creating replacement state could destroy
+            // survivors. Schedule the next retry via a short setTimeout loop.
             setTimeout(retryInitialLoad, 1000);
           });
       })();
