@@ -67,7 +67,7 @@ def _validate_snapshot_document(document) -> bool:
 def get_threads():
     threads, revision = load_versioned_snapshot(validator=_validate_snapshot_document)
     quarantined = bool(quarantine_files())
-    return ThreadsListResponse(threads=threads, revision=revision, quarantined=quarantined)
+    return ThreadsListResponse(threads=threads, revision=revision, quarantined=quarantined).model_dump(exclude_none=True)
 
 
 @router.put("/api/v1/threads")
