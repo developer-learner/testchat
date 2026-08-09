@@ -1,0 +1,78 @@
+{
+  "erd_version": 89,
+  "tasks": [
+    {
+      "brief": "Implementation constraints: synchronous file I/O under `threading.Lock`; use `json`, `os`, `time`, `copy`; do NOT change backup rotation or revision increment logic.\n\nBehavioral specification: Modify `load_snapshot` to accept an optional `validator` callable. Inside the existing lock, after reading and parsing JSON, if `validator` is provided, call it on the parsed data. If the validator raises (indicating schema-invalid JSON), move the primary data file to `<primary>.corrupt-<timestamp>` (quarantine) and return `([], 0)`. If valid or no validator, proceed with existing logic. Add a `quarantine` helper function if needed, or inline the move logic.\n\nAcceptance condition: `load_snapshot` accepts `validator` kwarg; invalid JSON triggers file rename to `.corrupt-<ts>` and returns empty list/zero revision; valid JSON returns normally.",
+      "contracts": [
+        "src.services.storage",
+        "src.services.storage:load_snapshot"
+      ],
+      "depends_on": [],
+      "file": "src/services/storage.py",
+      "id": "T1",
+      "tests": [
+        "tests/test_data_safety_storage.py::test_valid_json_with_invalid_thread_schema_is_quarantined"
+      ]
+    },
+    {
+      "brief": "Implementation constraints: FastAPI route handler; use `pydantic` models from existing imports; do NOT change PUT/DELETE route logic.\n\nBehavioral specification: Modify the `GET /api/v1/threads` handler. Import or define a `ThreadSnapshot`-based validator (using existing schema definitions). Pass this validator to `storage.load_snapshot(validator=...)`. If the storage layer returns a quarantined state (indicated by returning empty threads/revision 0 and potentially a flag, or by checking if a corrupt file exists \u0014 follow the ERD-delta: 'quarantine reads yield `{threads: [], revision: 0, quarantined: true}`'), construct the response with `quarantined: true`. Otherwise, return the standard `ThreadsListResponse` with `quarantined: false` (or omit if false, per schema). Ensure the response model includes the optional `quarantined` boolean field.\n\nAcceptance condition: GET /api/v1/threads passes validator to storage; returns `quarantined: true` in response when snapshot is invalid/quarantined; returns normal list otherwise.",
+      "contracts": [
+        "src.api.threads",
+        "route:GET /api/v1/threads",
+        "schema:ThreadsListResponse",
+        "schema:ThreadSnapshot"
+      ],
+      "depends_on": [
+        "T1"
+      ],
+      "file": "src/api/threads.py",
+      "id": "T2",
+      "tests": [
+        "tests/test_persistence_revisions.py::test_each_accepted_delete_advances_revision",
+        "tests/test_persistence_revisions.py::test_each_accepted_put_advances_revision",
+        "tests/test_persistence_revisions.py::test_two_concurrent_same_revision_puts_have_one_winner",
+        "tests/test_threads_api.py::test_delete_clears_snapshot",
+        "tests/test_threads_api.py::test_get_reports_quarantine_after_corrupt_snapshot",
+        "tests/test_threads_api.py::test_get_with_no_saved_data_returns_empty",
+        "tests/test_threads_api.py::test_optional_fields_default",
+        "tests/test_threads_api.py::test_put_invalid_role_rejected",
+        "tests/test_threads_api.py::test_put_malformed_payload_is_422_and_preserves_stored",
+        "tests/test_threads_api.py::test_put_then_get_roundtrips",
+        "tests/test_websearch_api.py::test_put_threads_roundtrips_sources"
+      ]
+    },
+    {
+      "brief": "Implementation constraints: Vanilla JS; no frameworks; use existing `fetch` wrappers; do NOT change model selector logic or chat surface rendering.\n\nBehavioral specification: Modify the initial hydration logic (likely in `app.js` or a shared init function). On failed GET `/api/v1/threads`, write exactly `history unavailable \u0014 retrying` to the element with testid `history-status`. Implement an automatic retry loop (e.g., `setTimeout` or `setInterval`) that re-attempts the GET. Do NOT create replacement state (empty threads) while revision is unknown. On successful retry, install threads and revision, clear the warning text from `history-status`, and enable subsequent mutations. Ensure later PUTs adopt the response revision.\n\nAcceptance condition: Failed initial GET shows exact warning text in `history-status`; retries automatically; success clears warning and installs state; no empty state created during failure.",
+      "contracts": [
+        "ui:history-status"
+      ],
+      "depends_on": [],
+      "file": "src/static/app.js",
+      "id": "T3",
+      "tests": []
+    },
+    {
+      "brief": "Implementation constraints: Vanilla JS; use existing revisioned PUT queue; do NOT use DELETE `/api/v1/threads` for single-thread deletion; do NOT change rename or search logic.\n\nBehavioral specification: Modify the thread deletion handler. When a user confirms deletion of a single thread, remove that thread from the local state and enqueue the resulting survivor snapshot via the ordered revisioned PUT queue (same mechanism as other mutations). NEVER call the clear-all DELETE route for single-thread deletion. Ensure survivors persist correctly. Hydration status (`history-status`) is owned by `app.js` (T3), so do not modify it here unless necessary for consistency (ERD says 'hydration alone owns history-status').\n\nAcceptance condition: Deleting one thread uses PUT queue with survivors; does not use DELETE route; reload shows all survivors except deleted one.",
+      "contracts": [
+        "ui:thread-delete-btn",
+        "ui:delete-confirm-modal",
+        "ui:delete-confirm",
+        "ui:delete-cancel",
+        "ui:thread-item",
+        "ui:save-status"
+      ],
+      "depends_on": [
+        "T1",
+        "T2",
+        "T3"
+      ],
+      "file": "src/static/threads.js",
+      "id": "T4",
+      "tests": [
+        "tests/test_data_safety_ui.py::test_delete_one_thread_survives_reload[chromium]",
+        "tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving[chromium]"
+      ]
+    }
+  ],
+  "version": 2
+}
