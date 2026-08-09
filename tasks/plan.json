@@ -1,9 +1,9 @@
 {
-  "version": 5,
-  "erd_version": 93,
+  "version": 6,
+  "erd_version": 94,
   "tasks": [
     {
-      "brief": "Implementation constraints: `src/services/storage.py`. Keep the exact signature `def load_versioned_snapshot(validator=None) -> tuple[list[dict], int]`. Do NOT add a path parameter; the data path is read inside via `_data_path()`. `save_versioned_snapshot`, `load_snapshot`, `save_snapshot`, `quarantine_files()`, and `SnapshotConflict` are unchanged.\n\nBehavioral specification: Inside `load_versioned_snapshot`, replace the current quarantine mechanism (`_quarantine_file`, which renames to `.quarantine`) so that every quarantine path in this function:\n1. Renames the primary file to exactly `f\"{path}.corrupt-{stamp}\"` where `stamp = time.strftime(\"%Y%m%d-%H%M%S\")` (the `time` module is already imported), matching the `*.corrupt-*` glob `quarantine_files()` lists.\n2. Renames BEFORE returning, and returns `([], 0)` after the rename.\n3. Logs `logger.warning` with primary/corrupt/error in the message when the rename itself fails (pattern already present), and still returns `([], 0)`.\n\nThe quarantine paths are: unreadable JSON (`json.JSONDecodeError`/`ValueError`/`OSError` on parse); the validator raising `ValueError`; the validator returning `False` (add this case \u2014 currently only the exception path exists); and an unreadable non-dict, non-list shape.\n\nThe validator is called exactly once with the WHOLE parsed document (`validator(data)` \u2014 a dict envelope `{\"revision\": N, \"threads\": [...]}` or a legacy list). Do not slice or pre-validate in this function.\n\nThe `corrupt-` rename must appear within the first 30 lines of the function body (a frozen smoke check greps 30 lines after the `def` line).\n\nAcceptance: the storage smoke check is green and `quarantine_files()` finds a file whose name starts with `threads.json.corrupt-` after a schema-invalid snapshot is loaded.",
+      "brief": "Implementation constraints: `src/services/storage.py`. Keep the exact signature `def load_versioned_snapshot(validator=None) -> tuple[list[dict], int]`. Do NOT add a path parameter. The data path is read inside the function via `_data_path()`. `save_versioned_snapshot`, `load_snapshot`, `save_snapshot`, `quarantine_files()`, and `SnapshotConflict` are unchanged.\n\nBehavioral specification: Inside `load_versioned_snapshot`, the current implementation renames the primary to `f\"{path}.corrupt-{stamp}\"` on every quarantine path (unreadable JSON, validator raising, validator returning False). Keep that behavior. The validator is called exactly once with the WHOLE parsed document (`validator(data)`). If the current implementation already satisfies all of this, reply with exactly `=== NO CHANGES ===`.\n\nThe `corrupt-` rename must appear within the first 30 lines of the function body.\n\nAcceptance: the storage smoke check is green and `quarantine_files()` finds a file whose name starts with `threads.json.corrupt-` after a schema-invalid snapshot is loaded.",
       "contracts": [
         "src.services.storage",
         "src.services.storage:load_versioned_snapshot"
@@ -14,12 +14,19 @@
       "tests": []
     },
     {
-      "brief": "Implementation constraints: FastAPI route handlers in `src/api/threads.py`. Use existing models `ThreadsListResponse`, `ThreadsPayload`, `ThreadsRevisionPrecondition`, `ThreadSnapshot`. Import `load_versioned_snapshot` and `save_versioned_snapshot` from `src.services.storage`. Do not change the PUT or DELETE handler logic.\n\nBehavioral specification:\n1. In the GET `/api/v1/threads` handler, define a module-level helper `def _validate_snapshot_document(document) -> bool` that:\n   a. If `document` is a dict envelope, selects the `threads` list (`document.get(\"threads\")`); if it is not a list, raises `ValueError`.\n   b. If `document` is a list, uses it directly.\n   c. Applies `ThreadSnapshot.model_validate(item)` to EVERY item in the list \u2014 this raises pydantic `ValidationError` (a `ValueError` subclass) when an item's shape is invalid, including nested message roles such as `role: \"system\"` that `ThreadSnapshot` rejects.\n   d. Returns `True` only when every item validates.\n2. Call `threads, revision = load_versioned_snapshot(validator=_validate_snapshot_document)`. NEVER pass `ThreadSnapshot.model_validate` itself as the validator argument \u2014 the storage layer calls it with the WHOLE document, so the envelope dict would always fail validation and quarantine every load.\n3. Compute `quarantined = bool(quarantine_files())` \u2014 never derive it from the `([], 0)` return.\n4. Return `ThreadsListResponse(threads=threads, revision=revision, quarantined=quarantined)`.\n\nAcceptance: with a schema-invalid snapshot present, GET returns `{\"threads\": [], \"revision\": 0, \"quarantined\": true}` and the primary file is moved to exactly one `*.corrupt-*` file byte-for-byte.",
+      "brief": "Implementation constraints: FastAPI route handlers in `src/api/threads.py`. Use existing models `ThreadsListResponse`, `ThreadsPayload`, `ThreadsRevisionPrecondition`, `ThreadSnapshot`. Import `load_versioned_snapshot`, `save_versioned_snapshot`, `quarantine_files` from `src.services.storage`.\n\nBehavioral specification:\n1. GET `/api/v1/threads`: Define module-level helper `def _validate_snapshot_document(document) -> bool` that selects the `threads` list from a dict envelope or uses a list directly, applies `ThreadSnapshot.model_validate(item)` to EVERY item, and returns `True` only when every item validates. Call `threads, revision = load_versioned_snapshot(validator=_validate_snapshot_document)`. Compute `quarantined = bool(quarantine_files())`. Return `ThreadsListResponse(threads=threads, revision=revision, quarantined=quarantined)`.\n2. PUT `/api/v1/threads`: Validate every message role is `\"user\"` or `\"assistant\"` (else 422). Serialize with `[t.model_dump(exclude_none=True) for t in payload.threads]`. Re-validate serialized items with `ThreadSnapshot(**item)` (else 422). Call `new_revision = save_versioned_snapshot(serialized, payload.revision)` (handle `SnapshotConflict` with 409). Return `{\"status\": \"ok\", \"revision\": new_revision}`.\n3. DELETE `/api/v1/threads`: Unchanged.\n\nAcceptance: GET returns `{\"threads\": [], \"revision\": 0, \"quarantined\": true}` with a schema-invalid snapshot. All persistence and PUT-roundtrip oracles pass.",
       "contracts": [
         "src.api.threads",
         "route:GET /api/v1/threads",
+        "route:PUT /api/v1/threads",
+        "route:DELETE /api/v1/threads",
+        "schema:ThreadSnapshot",
+        "schema:ThreadsPayload",
         "schema:ThreadsListResponse",
-        "schema:ThreadSnapshot"
+        "schema:ThreadsRevisionPrecondition",
+        "schema:ThreadsMutationResponse",
+        "schema:RevisionConflictResponse",
+        "error:409-revision-conflict"
       ],
       "depends_on": [
         "T1"
@@ -44,12 +51,11 @@
       ]
     },
     {
-      "brief": "Implementation constraints: `src/static/app.js`. The element with `id=\"status-history\"` / `data-testid=\"history-status\"` already exists in `index.html`. Do not touch the PUT/DELETE queue code in `threads.js`.\n\nBehavioral specification \u2014 replace the current initial-load `fetch` chain (the `.then`/`.catch` at the bottom of the app boot):\n1. Issue GET `/api/v1/threads` for hydration.\n2. On failure (network error or non-ok status), set the `history-status` element's text to exactly `history unavailable \u2014 retrying` and retry the GET automatically (a short `setTimeout` loop is fine). Do NOT call `Threads.createThread()` on failure \u2014 revision is unknown, so creating replacement state could destroy survivors.\n3. On success: clear the warning (set `history-status` text to `\"\"`), install the revision FIRST via the existing `Threads.setHydratedRevision(data.revision != null ? data.revision : 0)` before any mutation can enqueue, then hydrate threads into the UI (existing logic: populate `TC.threads`, render the newest thread, render the sidebar; if there are no threads, `Threads.createThread()` as today).\n4. Keep the retry loop running until a GET succeeds; each retry must originate from app.js code (a frozen UI oracle detects hydration GETs by the caller stack containing `/static/app.js`).\n\nThe literal string `history unavailable \u2014 retrying` must appear in this file (frozen smoke check).\n\nAcceptance: after a failed initial GET the `history-status` element shows `history unavailable \u2014 retrying`; after the retry succeeds the warning is cleared, the seeded thread renders, and a subsequent new-thread mutation PUTs with the hydrated revision.",
+      "brief": "Implementation constraints: `src/static/app.js`. The element with `data-testid=\"history-status\"` exists in `index.html`. Do not touch the PUT/DELETE queue code in `threads.js`.\n\nBehavioral specification: Replace the current initial-load `fetch` chain:\n1. Issue GET `/api/v1/threads` for hydration.\n2. On failure, set `history-status` text to exactly `history unavailable \u2014 retrying` and retry automatically via `setTimeout`. Do NOT call `Threads.createThread()` on failure.\n3. On success: clear the warning, install the revision FIRST via `Threads.setHydratedRevision(data.revision != null ? data.revision : 0)`, then hydrate threads into the UI (populate `TC.threads`, render newest thread, render sidebar; if no threads, `Threads.createThread()`).\n4. Keep the retry loop running until a GET succeeds.\n\nThe literal string `history unavailable \u2014 retrying` must appear in this file.\n\nAcceptance: After a failed initial GET the `history-status` element shows the warning; after retry succeeds the warning is cleared, the seeded thread renders, and a subsequent mutation PUTs with the hydrated revision.",
       "contracts": [
         "ui:history-status"
       ],
       "depends_on": [
-        "T1",
         "T2",
         "T4"
       ],
@@ -60,16 +66,17 @@
       ]
     },
     {
-      "brief": "Implementation constraints: `src/static/threads.js`. Do not change the PUT queue, the DELETE route handler's use, or any other behavior.\n\nBehavioral specification: confirming a single row deletion (`deleteThread(id)`) must remove only that thread and enqueue a revisioned PUT whose payload is the complete survivor snapshot via the existing `_enqueueMutation('PUT', { threads: _captureSnapshot() })` \u2014 never the clear-all DELETE route. If the file already satisfies this, reply with exactly `=== NO CHANGES ===`.\n\nAcceptance: deleting one of three threads issues one PUT (status 200, not a DELETE), and after a reload only the two survivors render and persist.",
+      "brief": "Implementation constraints: `src/static/threads.js`. Do not change the PUT queue, the DELETE route handler's use, or any other behavior.\n\nBehavioral specification: Confirming a single row deletion (`deleteThread(id)`) must remove only that thread and enqueue a revisioned PUT whose payload is the complete survivor snapshot via the existing `_enqueueMutation('PUT', { threads: _captureSnapshot() })` \u2014 never the clear-all DELETE route. If the file already satisfies this, reply with exactly `=== NO CHANGES ===`.\n\nAcceptance: Deleting one of three threads issues one PUT (status 200, not a DELETE), and after a reload only the two survivors render and persist.",
       "contracts": [
         "ui:thread-item",
         "ui:delete-confirm-modal",
         "ui:delete-confirm",
         "ui:delete-cancel",
-        "ui:thread-delete-btn",
-        "ui:save-status"
+        "ui:thread-delete-btn"
       ],
-      "depends_on": [],
+      "depends_on": [
+        "T2"
+      ],
       "file": "src/static/threads.js",
       "id": "T4",
       "tests": [
