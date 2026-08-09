@@ -67,7 +67,7 @@ def _validate_snapshot_document(document) -> bool:
 def get_threads():
     threads, revision = load_versioned_snapshot(validator=_validate_snapshot_document)
     quarantined = bool(quarantine_files())
-    return ThreadsListResponse(threads=threads, revision=revision, quarantined=quarantined).model_dump(exclude_none=True)
+    return ThreadsListResponse(threads=threads, revision=revision, quarantined=quarantined)
 
 
 @router.put("/api/v1/threads")
@@ -77,7 +77,7 @@ def put_threads(payload: ThreadsPayload):
             if msg.role not in ("user", "assistant"):
                 return JSONResponse(
                     status_code=422,
-                    content={"detail": f"Invalid message role: {msg.role}"},
+                    content={"detail": "Invalid role"},
                 )
     serialized = [t.model_dump(exclude_none=True) for t in payload.threads]
     for item in serialized:
@@ -86,7 +86,7 @@ def put_threads(payload: ThreadsPayload):
         except Exception:
             return JSONResponse(
                 status_code=422,
-                content={"detail": "Re-validation failed"},
+                content={"detail": "Malformed payload"},
             )
     try:
         new_revision = save_versioned_snapshot(serialized, payload.revision)
