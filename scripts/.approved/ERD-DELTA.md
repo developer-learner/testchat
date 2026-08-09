@@ -1,4 +1,4 @@
-# ERD-DELTA — spec v94 validator correction: conversation data safety
+# ERD-DELTA — spec v95 hydration-retry correction: conversation data safety
 
 This milestone repairs the three persistence defects identified in the
 2026-08-08 audit. It is intentionally limited to exact-one deletion,
@@ -154,12 +154,20 @@ Implementation constraints: `src/static/app.js`. The element with
 Behavioral specification — replace the current initial-load `fetch`
 chain (the `.then`/`.catch` at the bottom of the app boot):
 
-1. Issue GET `/api/v1/threads` for hydration.
-2. On failure (network error or non-ok status), set the `history-status`
-   element's text to exactly `history unavailable — retrying` and retry the
-   GET automatically (a short `setTimeout` loop is fine). Do NOT call
-   `Threads.createThread()` on failure — revision is unknown, so creating
-   replacement state could destroy survivors.
+1. Issue GET `/api/v1/threads` for hydration. The retry loop is a
+   self-scheduling function: at the START of EVERY iteration, BEFORE issuing
+   the fetch, write the warning text to the `history-status` element. This
+   re-asserts the warning on every retry even if something else overwrites
+   the element in between (a standalone script-eval GET in `threads.js` that
+   backs the load-path quarantine indicator races this code and overwrites
+   the element with `""` when no quarantine is present — the re-assert on
+   the next retry tick is what keeps the warning visible while hydration
+   keeps failing).
+2. On failure (network error or non-ok status), the catch keeps the warning
+   text exactly `history unavailable — retrying` (already written at the top
+   of this iteration) and schedules the next retry via a short `setTimeout`
+   loop. Do NOT call `Threads.createThread()` on failure — revision is
+   unknown, so creating replacement state could destroy survivors.
 3. On success: clear the warning (set `history-status` text to `""`),
    install the revision FIRST via the existing
    `Threads.setHydratedRevision(data.revision != null ? data.revision : 0)`
