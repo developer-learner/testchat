@@ -49,24 +49,23 @@ class ThreadsRevisionPrecondition(BaseModel):
     revision: int = Field(ge=0)
 
 
-def _validate_thread_snapshot(data: dict) -> bool:
-    try:
-        ThreadSnapshot(**data)
-        return True
-    except Exception:
-        return False
-
-
-def _validate_snapshot(data: list[dict]) -> bool:
-    for item in data:
-        if not _validate_thread_snapshot(item):
-            return False
+def _validate_snapshot_document(document) -> bool:
+    if isinstance(document, dict):
+        threads = document.get("threads")
+        if not isinstance(threads, list):
+            raise ValueError("threads is not a list")
+    elif isinstance(document, list):
+        threads = document
+    else:
+        raise ValueError("document is not a dict or list")
+    for item in threads:
+        ThreadSnapshot.model_validate(item)
     return True
 
 
 @router.get("/api/v1/threads")
 def get_threads():
-    threads, revision = load_versioned_snapshot(validator=ThreadSnapshot.model_validate)
+    threads, revision = load_versioned_snapshot(validator=_validate_snapshot_document)
     quarantined = bool(quarantine_files())
     return ThreadsListResponse(threads=threads, revision=revision, quarantined=quarantined)
 
