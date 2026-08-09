@@ -83,11 +83,8 @@ def load_versioned_snapshot(validator=None) -> tuple[list[dict], int]:
         if validator is not None:
             try:
                 result = validator(data)
-            except (ValueError, Exception) as exc:
-                if isinstance(result, ValueError):
-                    logger.warning("Snapshot validation failed: %s", result)
-                else:
-                    logger.warning("Snapshot validation failed with unexpected error: %s", result)
+            except (ValueError, Exception):
+                logger.warning("Snapshot validation failed")
                 stamp = time.strftime("%Y%m%d-%H%M%S")
                 corrupt_path = f"{path}.corrupt-{stamp}"
                 try:
