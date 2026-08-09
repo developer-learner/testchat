@@ -1,4 +1,4 @@
-# ERD-DELTA — spec v91 seam correction: conversation data safety
+# ERD-DELTA — spec v92 validator correction: conversation data safety
 
 This milestone repairs the three persistence defects identified in the
 2026-08-08 audit. It is intentionally limited to exact-one deletion,
@@ -36,19 +36,18 @@ weakening those behaviors.
 
 ## Changed files
 
-* `src/static/threads.js` — AC-156/157/158: post-delete survivors are
-  enqueued via the ordered revisioned PUT; never DELETE `/api/v1/threads`;
-  hydration alone owns `history-status`.
-* `src/static/app.js` — AC-158/159: on failed GET write exact text and
-  retry until success; a success installs threads + revision before mutation;
-  later PUTs adopt response revision.
-* `src/services/storage.py` — AC-160: the sole validated-read seam is
-  `load_versioned_snapshot(validator=None) -> (list, revision)`. Under lock it
-  applies the callback; JSON/shape failure is quarantined and returns `([], 0)`.
-* `src/api/threads.py` — GET passes its `ThreadSnapshot` validator only to
-  `load_versioned_snapshot`, unpacks `(threads, revision)`, and derives
-  `quarantined` only from `bool(quarantine_files())`, never from `([], 0)`;
-  thus healthy empty storage remains false and invalid state is not served.
+* `src/static/threads.js` — AC-156/157/158: ordered PUT persists survivors;
+  never DELETE `/api/v1/threads`; hydration owns `history-status`.
+* `src/static/app.js` — AC-158/159: failed GET warns/retries; success installs
+  threads + revision before mutation; later PUTs adopt response revision.
+* `src/services/storage.py` — `load_versioned_snapshot(validator=None)` passes
+  the WHOLE parsed document (envelope dict or legacy list) once. False/raise
+  moves the primary exactly to `<primary>.corrupt-<timestamp>` and returns
+  `([], 0)`; valid reads keep revision.
+* `src/api/threads.py` — GET's wrapper selects `document["threads"]` for an
+  envelope or the legacy list, then applies `ThreadSnapshot.model_validate` to
+  EVERY item, including nested roles. Never pass that method directly. Unpack
+  the versioned result; `quarantined = bool(quarantine_files())`, never `([], 0)`.
 
 DAG: `src/api/threads.py` depends on `src/services/storage.py`; keep T2 atomic.
 The browser files remain orderable, with app.js acceptance assuming threads.js
@@ -66,6 +65,6 @@ Now-approved node IDs pin exactly:
   -> `src/static/app.js` (AC-158/159).
 
 Tests and mappings are unchanged. The backend oracle distinguishes healthy
-empty storage (`quarantined: false`) from schema quarantine. The delete oracle
-hovers its row; the hydration oracle counts only `app.js` GETs. Existing
-`src/static/app.js` smoke still requires `history unavailable — retrying`.
+empty storage (`quarantined: false`) from schema quarantine and pins the
+`threads.json.corrupt-*` name. Storage smoke requires the versioned validator
+signature plus `corrupt-`; existing app/API smokes remain unchanged.
