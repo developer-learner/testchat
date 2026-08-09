@@ -524,9 +524,12 @@
       // Initial load — retry loop until GET /api/v1/threads succeeds
       (function retryInitialLoad() {
         fetch('/api/v1/threads')
-          .then(function (response) { return response.json(); })
+          .then(function (response) {
+            if (!response.ok) throw new Error('non-ok status');
+            return response.json();
+          })
           .then(function (data) {
-            var historyStatus = document.getElementById('history-status');
+            var historyStatus = document.querySelector('[data-testid="history-status"]');
             if (historyStatus) historyStatus.textContent = '';
             // ERD-DELTA v73: hydrate the persistence owner with the server's
             // revision BEFORE any mutation can enqueue (createThread calls
@@ -551,9 +554,9 @@
             }
           })
           .catch(function () {
-            var historyStatus = document.getElementById('history-status');
+            var historyStatus = document.querySelector('[data-testid="history-status"]');
             if (historyStatus) historyStatus.textContent = 'history unavailable — retrying';
-            setTimeout(retryInitialLoad, 2000);
+            setTimeout(retryInitialLoad, 1000);
           });
       })();
       window.Catalog.fetchModels();
