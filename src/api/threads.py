@@ -73,7 +73,7 @@ def get_threads():
 @router.put("/api/v1/threads")
 def put_threads(payload: ThreadsPayload):
     try:
-        new_revision = save_versioned_snapshot(payload.threads, payload.revision)
+        new_revision = save_versioned_snapshot([t.model_dump() for t in payload.threads], payload.revision)
     except SnapshotConflict as exc:
         return JSONResponse(
             status_code=409,
