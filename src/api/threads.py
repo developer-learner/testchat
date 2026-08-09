@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from src.services.storage import (
     SnapshotConflict,
     load_versioned_snapshot,
+    quarantine_files,
     save_versioned_snapshot,
 )
 
@@ -65,10 +66,9 @@ def _validate_snapshot(data: list[dict]) -> bool:
 
 @router.get("/api/v1/threads")
 def get_threads():
-    threads, revision = load_versioned_snapshot(validator=_validate_snapshot)
-    if threads == [] and revision == 0:
-        return ThreadsListResponse(threads=[], revision=0, quarantined=True)
-    return ThreadsListResponse(threads=threads, revision=revision, quarantined=False)
+    threads, revision = load_versioned_snapshot(validator=ThreadSnapshot.model_validate)
+    quarantined = bool(quarantine_files())
+    return ThreadsListResponse(threads=threads, revision=revision, quarantined=quarantined)
 
 
 @router.put("/api/v1/threads")
