@@ -1,12 +1,13 @@
 {
-  "version": 3,
-  "erd_version": 90,
+  "version": 4,
+  "erd_version": 91,
   "tasks": [
     {
-      "brief": "Implementation constraints: synchronous file I/O under threading lock; use `json` and `os` modules; do not change backup rotation logic.\n\nBehavioral specification: Modify `load_snapshot()` in `src/services/storage.py`. Accept an optional `validator` callable argument. Inside the existing lock context, after reading the raw JSON bytes but before returning, attempt to validate the parsed object using the provided `validator` if present. If validation fails (raises ValueError or returns False), move the primary data file to a quarantine path named `<primary>.corrupt-<timestamp>` (using `os.rename` or equivalent atomic move) and return `([], 0)` immediately. Do not overwrite the corrupt file. If validation succeeds or no validator is provided, proceed with existing logic.\n\nAcceptance condition: `load_snapshot` accepts a `validator` kwarg; invalid JSON/shape triggers quarantine rename and returns empty list with revision 0; valid data proceeds normally.",
+      "brief": "Implementation constraints: synchronous file I/O under threading lock; use `json` and `os` modules; do not use external ORMs. \n\nBehavioral specification: Add `load_versioned_snapshot(validator=None) -> (list, int)` to `src/services/storage.py`. Under the existing threading lock, attempt to read and parse the primary snapshot file. If `validator` is provided, call it on the parsed object. If parsing fails (JSONDecodeError) or validation fails (ValueError/ValidationError), move the corrupt file to a quarantine location (e.g., append `.quarantine`) and return `([], 0)`. If successful, return `(threads, revision)`. Ensure `save_versioned_snapshot` increments revision and writes atomically.\n\nAcceptance condition: `grep -q 'def load_versioned_snapshot(validator' src/services/storage.py` succeeds. Valid JSON with invalid schema is quarantined and returns empty list/zero revision.",
       "contracts": [
         "src.services.storage",
-        "src.services.storage:load_snapshot"
+        "src.services.storage:load_versioned_snapshot",
+        "src.services.storage:save_versioned_snapshot"
       ],
       "depends_on": [],
       "file": "src/services/storage.py",
@@ -14,13 +15,14 @@
       "tests": []
     },
     {
-      "brief": "Implementation constraints: FastAPI route handler; use Pydantic models from existing imports; synchronous handler.\n\nBehavioral specification: Modify `src/api/threads.py`. (1) GET /api/v1/threads: Import or define a validator function that checks if the loaded snapshot conforms to `ThreadSnapshot` schema. Pass this validator to `storage.load_snapshot(validator=...)`. If `load_snapshot` returns `([], 0)` due to quarantine, return a `ThreadsListResponse` with `threads: []`, `revision: 0`, and `quarantined: true`. Otherwise, return the standard response with `quarantined: false`. (2) PUT /api/v1/threads: Enforce `revision` precondition; reject invalid roles (422); reject malformed payloads (422) preserving stored state; advance revision on success; clear snapshot on delete. (3) DELETE /api/v1/threads: Clear snapshot and advance revision.\n\nAcceptance condition: GET returns quarantined flag when invalid; PUT validates revision/role/payload and advances revision; DELETE clears snapshot and advances revision.",
+      "brief": "Implementation constraints: FastAPI route handler; synchronous service calls; use Pydantic models from existing imports; do not use async/await for service layer.\n\nBehavioral specification: Modify `GET /api/v1/threads` in `src/api/threads.py`. Call `load_versioned_snapshot` passing the `ThreadSnapshot` model validator. Unpack `(threads, revision)`. Derive `quarantined` strictly from `bool(quarantine_files())` (checking for existence of quarantine files), NOT from the return value of `load_versioned_snapshot`. Return `ThreadsListResponse` with `threads`, `revision`, and `quarantined`. Ensure healthy empty storage returns `quarantined: false`. Implement PUT validation: reject invalid roles (422), reject malformed payloads (422, preserve stored), enforce revision preconditions (409 on stale, 422 on missing), and handle concurrent same-revision puts (one winner). Ensure each accepted PUT/DELETE advances revision.\n\nAcceptance condition: `grep -q 'quarantined' src/api/threads.py && grep -q 'validator' src/api/threads.py` succeeds. GET returns quarantined=true only when quarantine files exist. PUT validates roles, payloads, and revisions correctly. DELETE clears snapshot and advances revision.",
       "contracts": [
         "src.api.threads",
         "route:GET /api/v1/threads",
         "route:PUT /api/v1/threads",
         "route:DELETE /api/v1/threads",
         "schema:ThreadsListResponse",
+        "schema:ThreadSnapshot",
         "schema:ThreadsPayload",
         "schema:ThreadsRevisionPrecondition",
         "schema:ThreadsMutationResponse",
@@ -34,15 +36,15 @@
       "id": "T2",
       "tests": [
         "tests/test_data_safety_storage.py::test_valid_json_with_invalid_thread_schema_is_quarantined",
-        "tests/test_threads_api.py::test_get_reports_quarantine_after_corrupt_snapshot",
-        "tests/test_threads_api.py::test_get_with_no_saved_data_returns_empty",
-        "tests/test_threads_api.py::test_optional_fields_default",
         "tests/test_persistence_revisions.py::test_each_accepted_delete_advances_revision",
         "tests/test_persistence_revisions.py::test_each_accepted_put_advances_revision",
         "tests/test_persistence_revisions.py::test_put_without_revision_is_422_and_writes_nothing",
         "tests/test_persistence_revisions.py::test_stale_put_leaves_primary_and_backup_unchanged",
         "tests/test_persistence_revisions.py::test_two_concurrent_same_revision_puts_have_one_winner",
         "tests/test_threads_api.py::test_delete_clears_snapshot",
+        "tests/test_threads_api.py::test_get_reports_quarantine_after_corrupt_snapshot",
+        "tests/test_threads_api.py::test_get_with_no_saved_data_returns_empty",
+        "tests/test_threads_api.py::test_optional_fields_default",
         "tests/test_threads_api.py::test_put_invalid_role_rejected",
         "tests/test_threads_api.py::test_put_malformed_payload_is_422_and_preserves_stored",
         "tests/test_threads_api.py::test_put_then_get_roundtrips",
@@ -50,12 +52,11 @@
       ]
     },
     {
-      "brief": "Implementation constraints: Vanilla JS; async/await for fetch; no external libraries; modify existing `app.js` hydration logic.\n\nBehavioral specification: In `src/static/app.js`, modify the initial hydration (GET `/api/v1/threads`) logic. On failure (network error or non-200 status), write the exact text `history unavailable \u2014 retrying` to the element with testid `history-status`. Retry the GET request automatically (e.g., in a loop or recursive function) until it succeeds. Do not create replacement state or allow mutations while revision is unknown. On success, install the threads and revision into the app state, clear the `history-status` text, and enable subsequent mutations. Ensure later PUTs adopt the revision from the response.\n\nAcceptance condition: Failed initial GET shows exact warning text and retries; successful retry installs state and clears warning; mutations only proceed after successful hydration.",
+      "brief": "Implementation constraints: Vanilla JS; async/await for fetch; no external libraries; DOM manipulation via standard APIs.\n\nBehavioral specification: Modify initial hydration in `src/static/app.js`. On failed GET `/api/v1/threads`, write exact text `history unavailable \u2014 retrying` to element `#history-status`. Retry the GET automatically (e.g., exponential backoff or fixed interval) until success. On success, install threads and revision into state before allowing any mutations. Clear the warning text from `#history-status`. Subsequent PUTs must adopt the revision from the response.\n\nAcceptance condition: `grep -q 'history unavailable \u2014 retrying' src/static/app.js` succeeds. Hydration failure shows warning and retries; success clears warning and enables mutations.",
       "contracts": [
         "ui:history-status"
       ],
       "depends_on": [
-        "T1",
         "T2",
         "T4"
       ],
@@ -66,13 +67,16 @@
       ]
     },
     {
-      "brief": "Implementation constraints: Vanilla JS; async/await for fetch; no external libraries; modify existing `threads.js` delete and status logic.\n\nBehavioral specification: In `src/static/threads.js`, modify the thread deletion logic. When a user confirms deletion of a single thread, do NOT call `DELETE /api/v1/threads`. Instead, remove the thread from the local state and enqueue a revisioned `PUT /api/v1/threads` with the remaining threads to persist the survivor snapshot. Ensure the `history-status` element is owned exclusively by hydration logic (do not write to it during delete). The delete action should update the UI immediately and rely on the PUT response to confirm persistence.\n\nAcceptance condition: Deleting one thread sends a PUT with survivors, not a DELETE; reload shows all survivors; `history-status` is not modified by delete.",
+      "brief": "Implementation constraints: Vanilla JS; async/await for fetch; no external libraries; DOM manipulation via standard APIs.\n\nBehavioral specification: Modify thread deletion in `src/static/threads.js`. When a user confirms deletion of a single thread, remove it from the local state and enqueue a revisioned PUT to `/api/v1/threads` with the updated threads list and current revision. NEVER call DELETE `/api/v1/threads` for single-thread deletion. Ensure survivors persist through reload. Hydration status is owned by `app.js`.\n\nAcceptance condition: No calls to DELETE `/api/v1/threads` in deletion path. Single thread deletion uses PUT with revision. Survivors persist after reload.",
       "contracts": [
         "ui:thread-delete-btn",
         "ui:delete-confirm",
-        "route:PUT /api/v1/threads"
+        "route:PUT /api/v1/threads",
+        "schema:ThreadsPayload"
       ],
-      "depends_on": [],
+      "depends_on": [
+        "T2"
+      ],
       "file": "src/static/threads.js",
       "id": "T4",
       "tests": [
