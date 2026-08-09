@@ -460,8 +460,8 @@ function addSources(bubble, sources, notice) {
         TC.currentController.abort();
       }
       TC.threads = TC.threads.filter(function (t) { return t.id !== id; });
-      // ERD-DELTA v73: enqueue a DELETE with its own snapshot captured at call time
-      _enqueueMutation('DELETE', { threads: _captureSnapshot() });
+      // Enqueue a revisioned PUT with the survivor snapshot to persist the change.
+      _enqueueMutation('PUT', { threads: _captureSnapshot() });
       if (TC.activeThreadId === id) {
         if (TC.threads.length) {
           // AC-122/123: fall back to the NEWEST remaining thread — the row the
