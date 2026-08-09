@@ -19,6 +19,10 @@ class SnapshotConflict(Exception):
         self.current_revision = current_revision
 
 
+class SnapshotUnavailableError(Exception):
+    pass
+
+
 def _data_path() -> str:
     return os.environ.get("TESTCHAT_DATA", DEFAULT_PATH)
 
@@ -79,6 +83,7 @@ def load_versioned_snapshot(validator=None) -> tuple[list[dict], int]:
                     "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
                     path, corrupt_path, rename_exc,
                 )
+                raise SnapshotUnavailableError from rename_exc
             return [], 0
         if validator is not None:
             try:
@@ -94,6 +99,7 @@ def load_versioned_snapshot(validator=None) -> tuple[list[dict], int]:
                         "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
                         path, corrupt_path, rename_exc,
                     )
+                    raise SnapshotUnavailableError from rename_exc
                 return [], 0
             if result is False:
                 stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -105,6 +111,7 @@ def load_versioned_snapshot(validator=None) -> tuple[list[dict], int]:
                         "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
                         path, corrupt_path, rename_exc,
                     )
+                    raise SnapshotUnavailableError from rename_exc
                 return [], 0
         if isinstance(data, list):
             # Legacy raw list — treat as revision 0.
@@ -128,6 +135,7 @@ def load_versioned_snapshot(validator=None) -> tuple[list[dict], int]:
                 "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
                 path, corrupt_path, rename_exc,
             )
+            raise SnapshotUnavailableError from rename_exc
         return [], 0
 
 
