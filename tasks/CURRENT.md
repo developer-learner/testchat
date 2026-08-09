@@ -821,3 +821,7 @@ mechanical proof — the constraint-2 verifier checked mounts/network but
 never the process user. Check 6 now asserts non-root at every
 verify-sandbox-in-vm run. BACKLOG.md item retired with the correction
 recorded.
+
+## Results
+
+  Delta-mapped frozen tests green against spec v98 — feature done (verdict scope: mapped tests only, D-112). Feature built and validated.
