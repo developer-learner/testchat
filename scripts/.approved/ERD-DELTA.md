@@ -1,4 +1,4 @@
-# ERD-DELTA — spec v95 hydration-retry correction: conversation data safety
+# ERD-DELTA — spec v96 hydration-retry correction: conversation data safety
 
 This milestone repairs the three persistence defects identified in the
 2026-08-08 audit. It is intentionally limited to exact-one deletion,
@@ -93,57 +93,46 @@ snapshot is loaded.
 
 Implementation constraints: FastAPI route handlers in `src/api/threads.py`.
 Use the existing models `ThreadsListResponse`, `ThreadsPayload`,
-`ThreadsRevisionPrecondition`, `ThreadSnapshot`. Import
+`ThreadsRevisionPrecondition`, `ThreadSnapshot`; import
 `load_versioned_snapshot` and `save_versioned_snapshot` from
 `src.services.storage`.
 
-Behavioral specification:
+In the GET `/api/v1/threads` handler, define a module-level helper
+`def _validate_snapshot_document(document) -> bool`: for a dict envelope
+select `document.get("threads")` (raise `ValueError` if not a list); for
+a list use it directly. Apply `ThreadSnapshot.model_validate(item)` to
+EVERY item — a pydantic `ValidationError` (a `ValueError` subclass) is
+raised when an item's shape is invalid, including nested message roles
+such as `role: "system"`. End with an explicit `return True`.
+Call `threads, revision = load_versioned_snapshot(validator=_validate_snapshot_document)`.
+NEVER pass `ThreadSnapshot.model_validate` itself — storage calls the
+validator with the WHOLE document, so the envelope would always fail and
+quarantine every load.
+`quarantined = bool(quarantine_files())` — never from `([], 0)`.
+Return `ThreadsListResponse(threads=threads, revision=revision, quarantined=quarantined)`.
 
-1. In the GET `/api/v1/threads` handler, define a module-level helper
-   `def _validate_snapshot_document(document) -> bool` that:
-   a. If `document` is a dict envelope, selects the `threads` list
-      (`document.get("threads")`); if it is not a list, raises `ValueError`.
-   b. If `document` is a list, uses it directly.
-   c. Applies `ThreadSnapshot.model_validate(item)` to EVERY item in the
-      list — this raises pydantic `ValidationError` (a `ValueError`
-      subclass) when an item's shape is invalid, including nested message
-      roles such as `role: "system"` that `ThreadSnapshot` rejects.
-   d. Returns `True` only when every item validates (end the function with
-      an explicit `return True`).
-2. Call `threads, revision = load_versioned_snapshot(validator=_validate_snapshot_document)`.
-   NEVER pass `ThreadSnapshot.model_validate` itself as the validator
-   argument — the storage layer calls it with the WHOLE document, so the
-   envelope dict would always fail validation and quarantine every load.
-3. Compute `quarantined = bool(quarantine_files())` — never derive it from
-   the `([], 0)` return.
-4. Return `ThreadsListResponse(threads=threads, revision=revision, quarantined=quarantined)`.
+PUT must be RESTORED (a prior attempt dropped the serialization step and
+422 checks, breaking frozen persistence and sources-roundtrip oracles):
 
-The PUT handler must be RESTORED to exactly this behavior (a prior attempt
-dropped the serialization step and the 422 checks, breaking the frozen
-persistence and sources-roundtrip oracles):
-
-1. Validate every message role in the payload: if any `message.role` is not
-   `"user"` or `"assistant"`, return `JSONResponse(status_code=422,
-   content={"detail": "Invalid role"})`.
+1. If any `message.role` is not `"user"` or `"assistant"`, return 422
+   `JSONResponse(content={"detail": "Invalid role"})`.
 2. Serialize with `[t.model_dump(exclude_none=True) for t in payload.threads]`
-   — the `exclude_none=True` is REQUIRED: stored messages must NOT carry a
-   `sources: None` key when the message had no web sources (a frozen oracle
-   asserts `'sources' not in message`).
-3. Re-validate the serialized items with `ThreadSnapshot(**item)`; on
-   exception return `JSONResponse(status_code=422, content={"detail":
-   "Malformed payload"})`.
+   — REQUIRED: stored messages must NOT carry `sources: None` when the
+   message had no web sources (frozen oracle: `'sources' not in message`).
+3. Re-validate with `ThreadSnapshot(**item)`; on exception return 422
+   `JSONResponse(content={"detail": "Malformed payload"})`.
 4. Call `new_revision = save_versioned_snapshot(serialized, payload.revision)`
-   — pass the serialized list of dicts, never raw pydantic models. On
-   `SnapshotConflict` return the existing 409 `RevisionConflictResponse`.
+   — pass the list of dicts, never raw pydantic models. On `SnapshotConflict`
+   return the existing 409 `RevisionConflictResponse`.
 5. Return `{"status": "ok", "revision": new_revision}`.
 
-The DELETE handler is unchanged: `save_versioned_snapshot([], body.revision)`
-with the existing 422/409 responses.
+DELETE unchanged: `save_versioned_snapshot([], body.revision)` with the
+existing 422/409 responses.
 
 Acceptance: with a schema-invalid snapshot present, GET returns
 `{"threads": [], "revision": 0, "quarantined": true}` and the primary file is
-moved to exactly one `*.corrupt-*` file byte-for-byte. All frozen persistence
-and PUT-roundtrip oracles pass.
+moved to exactly one `*.corrupt-*` file byte-for-byte; frozen persistence and
+PUT-roundtrip oracles pass.
 
 ### T3 — src/static/app.js (AC-158/159, hydration)
 
