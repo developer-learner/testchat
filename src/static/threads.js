@@ -605,15 +605,4 @@ function addSources(bubble, sources, notice) {
   };
 })();
 
-// AC-80/81: load-path failure visibility — ask the backend whether the
-// saved history was quarantined at load. Runs at script eval (scripts sit
-// at the end of <body>, DOM is parsed); file-existence flag makes the
-// race with app.js's own hydrate GET harmless.
-fetch('/api/v1/threads')
-  .then(function (res) { return res.json(); })
-  .then(function (data) {
-    document.getElementById('status-history').textContent =
-      data.quarantined ? 'history unreadable (backup kept)' : '';
-  })
-  .catch(function () { /* best-effort indicator: an unreachable backend
-    already surfaces through the app's own load path */ });
+
