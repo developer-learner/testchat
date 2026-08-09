@@ -79,7 +79,7 @@ def put_threads(payload: ThreadsPayload):
                     status_code=422,
                     content={"detail": f"Invalid message role: {msg.role}"},
                 )
-    serialized = [t.model_dump(exclude_none=True) for t in payload.threads]
+    serialized = [t.model_dump(exclude_none=True, exclude_defaults=True) for t in payload.threads]
     for item in serialized:
         try:
             ThreadSnapshot(**item)
