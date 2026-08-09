@@ -1,4 +1,4 @@
-# ERD-DELTA — spec v88: conversation data safety
+# ERD-DELTA — spec v90 correction: conversation data safety
 
 This milestone repairs the three persistence defects identified in the
 2026-08-08 audit. It is intentionally limited to exact-one deletion,
@@ -56,13 +56,17 @@ hydration-status ownership.
 
 ## Test-to-file mapping
 
-No v88 `contracts.test_mapping` keys: D-107 allows pinning known node-IDs
-only. Browser tests get D-64 placement; the EM must place the quarantine
-node-id test downstream of storage, at the threads API task. After v88
-collects those node-IDs, the follow-up freeze pins:
-backend (storage) [node test] -> `src/api/threads.py`;
-browser delete-test -> `src/static/threads.js`;
-browser hydration-test -> `src/static/app.js`.
-No existing test is changed; the three delta tests are red against the v87
-tree (D-75); no new route, DOM surface, or external capture is added.
-=== END FILE ===
+Now-approved node IDs pin exactly:
+
+* `tests/test_data_safety_storage.py::test_valid_json_with_invalid_thread_schema_is_quarantined`
+  -> `src/api/threads.py` (AC-160; after storage).
+* `tests/test_data_safety_ui.py::test_delete_one_thread_survives_reload[chromium]`
+  -> `src/static/threads.js` (AC-156/157).
+* `tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving[chromium]`
+  -> `src/static/app.js` (AC-158/159).
+
+The delete oracle hovers its owning `thread-item` before clicking the hidden
+row control. The hydration oracle counts only GETs called from `app.js`, not
+the independent indicator GET. A red-only `src/static/app.js` smoke check
+requires the exact `history unavailable — retrying` token. The storage-test
+bytes and all product acceptance criteria remain unchanged.

@@ -64,7 +64,9 @@ def test_delete_one_thread_survives_reload(page: Page, app_url: str) -> None:
 
     page.goto(app_url)
     expect(page.get_by_test_id("thread-item")).to_have_count(3)
-    page.get_by_test_id("thread-delete-btn").nth(1).click()
+    owning_row = page.get_by_test_id("thread-item").nth(1)
+    owning_row.hover()
+    owning_row.get_by_test_id("thread-delete-btn").click()
     page.get_by_test_id("delete-confirm").click()
     mutation = page.evaluate("window.__tcMutationFinished")
     page.reload()
@@ -90,19 +92,21 @@ def test_hydration_failure_warns_retries_and_recovers_saving(
         """
         (function () {
           var nativeFetch = window.fetch.bind(window);
-          var state = {gets: 0, puts: 0};
+          var state = {hydrationGets: 0, puts: 0};
           state.release = new Promise(function (resolve) { state.releaseRetry = resolve; });
           state.putSeen = new Promise(function (resolve) { state.resolvePut = resolve; });
           window.__tcHydration = state;
           window.fetch = function (input, init) {
             var url = typeof input === 'string' ? input : input.url;
             var method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
-            if (url.endsWith('/api/v1/threads') && method === 'GET') {
-              state.gets += 1;
-              if (state.gets <= 2) {
+            var caller = (new Error()).stack || '';
+            var isHydration = caller.indexOf('/static/app.js') !== -1;
+            if (url.endsWith('/api/v1/threads') && method === 'GET' && isHydration) {
+              state.hydrationGets += 1;
+              if (state.hydrationGets === 1) {
                 return Promise.reject(new TypeError('synthetic hydration outage'));
               }
-              if (state.gets === 3) {
+              if (state.hydrationGets === 2) {
                 return state.release.then(function () { return nativeFetch(input, init); });
               }
             }
@@ -135,7 +139,7 @@ def test_hydration_failure_warns_retries_and_recovers_saving(
 
     assert (
         persisted,
-        page.evaluate("window.__tcHydration.gets") >= 3,
+        page.evaluate("window.__tcHydration.hydrationGets") >= 2,
         len(stored["threads"]),
         stored["threads"][0]["title"],
     ) == ({"method": "PUT", "status": 200}, True, 2, "saved before outage")

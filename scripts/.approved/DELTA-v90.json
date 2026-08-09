@@ -1,0 +1,13 @@
+{
+  "changed_contract_ids": [],
+  "changed_tests": [
+    "tests/test_data_safety_ui.py::test_delete_one_thread_survives_reload[chromium]",
+    "tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving[chromium]"
+  ],
+  "changed_files": [
+    "src/static/app.js",
+    "src/static/threads.js",
+    "src/services/storage.py",
+    "src/api/threads.py"
+  ]
+}
