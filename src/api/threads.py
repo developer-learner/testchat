@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from src.services.storage import (
     SnapshotConflict,
+    SnapshotUnavailableError,
     load_versioned_snapshot,
     quarantine_files,
     save_versioned_snapshot,
@@ -65,7 +66,10 @@ def _validate_snapshot_document(document) -> bool:
 
 @router.get("/api/v1/threads")
 def get_threads():
-    threads, revision = load_versioned_snapshot(validator=_validate_snapshot_document)
+    try:
+        threads, revision = load_versioned_snapshot(validator=_validate_snapshot_document)
+    except SnapshotUnavailableError:
+        return JSONResponse({"detail": "snapshot unavailable"}, status_code=503)
     quarantined = bool(quarantine_files())
     return ThreadsListResponse(threads=threads, revision=revision, quarantined=quarantined).model_dump(exclude_none=True)
 
