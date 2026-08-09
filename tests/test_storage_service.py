@@ -167,3 +167,48 @@ def test_env_path_is_read_at_call_time(tmp_path, monkeypatch):
     assert load_snapshot() == []          # b.json: nothing saved yet
     monkeypatch.setenv("TESTCHAT_DATA", str(a))
     assert load_snapshot() == SAMPLE      # a.json still intact
+
+
+# AC-161 [v99 — a quarantine rename failure is surfaced, never reported
+# healthy-empty: broken storage must read as unavailable, not as an empty
+# history, or the browser treats corruption as a clean slate]
+def test_quarantine_rename_failure_is_unavailable(tmp_path, monkeypatch):
+    path = _use(tmp_path, monkeypatch)
+
+    def _validator(data):
+        if not isinstance(data, dict):
+            raise ValueError("no envelope")
+        threads = data.get("threads")
+        if not isinstance(threads, list):
+            raise ValueError("threads not a list")
+        return all(
+            isinstance(t, dict) and t.get("role") != "system" for t in threads
+        )
+
+    def _failing_rename(src, dst):
+        raise OSError("simulated quarantine rename failure")
+
+    monkeypatch.setattr(storage_mod.os, "rename", _failing_rename)
+
+    # unreadable JSON
+    path.write_text("{not valid json!!")
+    with pytest.raises(storage_mod.SnapshotUnavailableError):
+        storage_mod.load_versioned_snapshot()
+
+    # validator raises
+    path.write_text('{"revision": 0, "threads": "nope"}')
+    with pytest.raises(storage_mod.SnapshotUnavailableError):
+        storage_mod.load_versioned_snapshot(validator=_validator)
+
+    # validator returns False
+    path.write_text('{"revision": 0, "threads": [{"role": "system"}]}')
+    with pytest.raises(storage_mod.SnapshotUnavailableError):
+        storage_mod.load_versioned_snapshot(validator=_validator)
+
+    # unreadable shape
+    path.write_text('"just a string"')
+    with pytest.raises(storage_mod.SnapshotUnavailableError):
+        storage_mod.load_versioned_snapshot()
+
+    # the corrupt primary was never silently moved — it stays put
+    assert path.exists()
