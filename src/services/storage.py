@@ -48,7 +48,19 @@ def _extract_threads(data: dict) -> list[dict]:
     return threads
 
 
-def load_versioned_snapshot() -> tuple[list[dict], int]:
+def _quarantine_file(path: str) -> None:
+    """Move a corrupt file to a quarantine location by appending .quarantine."""
+    quarantine_path = f"{path}.quarantine"
+    try:
+        os.rename(path, quarantine_path)
+    except OSError as rename_exc:
+        logger.warning(
+            "Could not quarantine corrupt snapshot: primary=%s quarantine=%s error=%s",
+            path, quarantine_path, rename_exc,
+        )
+
+
+def load_versioned_snapshot(validator=None) -> tuple[list[dict], int]:
     path = _data_path()
     with _lock:
         try:
@@ -58,16 +70,18 @@ def load_versioned_snapshot() -> tuple[list[dict], int]:
             return [], 0
         except (json.JSONDecodeError, ValueError, OSError):
             # Corrupt primary — quarantine and load empty.
-            stamp = time.strftime("%Y%m%d-%H%M%S")
-            corrupt_path = f"{path}.corrupt-{stamp}"
-            try:
-                os.rename(path, corrupt_path)
-            except OSError as rename_exc:
-                logger.warning(
-                    "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
-                    path, corrupt_path, rename_exc,
-                )
+            _quarantine_file(path)
             return [], 0
+        if validator is not None:
+            try:
+                validator(data)
+            except (ValueError, Exception) as exc:
+                if isinstance(exc, ValueError):
+                    logger.warning("Snapshot validation failed: %s", exc)
+                else:
+                    logger.warning("Snapshot validation failed with unexpected error: %s", exc)
+                _quarantine_file(path)
+                return [], 0
         if isinstance(data, list):
             # Legacy raw list — treat as revision 0.
             return data, 0
@@ -81,16 +95,7 @@ def load_versioned_snapshot() -> tuple[list[dict], int]:
             # Legacy raw list (no revision key) — treat as revision 0.
             return _extract_threads(data), 0
         # Unreadable shape — quarantine and load empty.
-        stamp = time.strftime("%Y%m%d-%H%M%S")
-        corrupt_path = f"{path}.corrupt-{stamp}"
-        try:
-            shutil.copy2(path, corrupt_path)
-            os.unlink(path)
-        except OSError as exc:
-            logger.warning(
-                "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
-                path, corrupt_path, exc,
-            )
+        _quarantine_file(path)
         return [], 0
 
 
