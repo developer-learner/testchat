@@ -1,4 +1,4 @@
-# ERD-DELTA — spec v97 hydration-retry correction: conversation data safety
+# ERD-DELTA — spec v98 hydration-retry correction: conversation data safety
 
 This milestone repairs the three persistence defects identified in the
 2026-08-08 audit. It is intentionally limited to exact-one deletion,
@@ -92,10 +92,14 @@ snapshot is loaded.
 ### T2 — src/api/threads.py (AC-160, GET wrapper; response shape)
 
 Implementation constraints: FastAPI route handlers in `src/api/threads.py`.
-Use the existing models `ThreadsListResponse`, `ThreadsPayload`,
+This task owns all three `/api/v1/threads` route contracts (`route:GET`,
+`route:PUT`, `route:DELETE`), plus the persistence and PUT-roundtrip oracles
+that exercise them (`tests/test_persistence_revisions.py`,
+`tests/test_websearch_api.py::test_put_threads_roundtrips_sources`,
+`tests/test_threads_api.py`). None of those routes or oracles belong to
+any other task. Use the existing models `ThreadsListResponse`, `ThreadsPayload`,
 `ThreadsRevisionPrecondition`, `ThreadSnapshot`; import
-`load_versioned_snapshot` and `save_versioned_snapshot` from
-`src.services.storage`.
+`load_versioned_snapshot` and `save_versioned_snapshot` from `src.services.storage`.
 
 In the GET `/api/v1/threads` handler, define a module-level helper
 `def _validate_snapshot_document(document) -> bool`: for a dict envelope
@@ -109,7 +113,7 @@ NEVER pass `ThreadSnapshot.model_validate` itself — storage calls the
 validator with the WHOLE document, so the envelope would always fail and
 quarantine every load.
 `quarantined = bool(quarantine_files())` — never from `([], 0)`.
-Return `ThreadsListResponse(threads=threads, revision=revision, quarantined=quarantined).model_dump(exclude_none=True)` — the response MUST be dumped with `exclude_none=True`: stored messages without `sources` must stay without that key in the wire JSON (a frozen oracle asserts `'sources' not in message`).
+Return `ThreadsListResponse(threads=threads, revision=revision, quarantined=quarantined).model_dump(exclude_none=True)` — the response MUST be dumped with `exclude_none=True`: stored messages without `sources` must stay without that key in the wire JSON (frozen oracle: `'sources' not in message`).
 
 The PUT and DELETE handlers must be left EXACTLY as they are (role 422s,
 `model_dump(exclude_none=True)` serialization, `ThreadSnapshot(**item)`
@@ -122,7 +126,6 @@ Acceptance: GET returns `{"threads": [], "revision": 0, "quarantined": true}`
 for a schema-invalid snapshot (moved to exactly one `*.corrupt-*` file
 byte-for-byte); frozen persistence, revision-conflict, and PUT-roundtrip
 oracles all pass.
-
 ### T3 — src/static/app.js (AC-158/159, hydration)
 
 Implementation constraints: `src/static/app.js`. The element with
@@ -167,7 +170,9 @@ with the hydrated revision.
 ### T4 — src/static/threads.js (AC-156/157, delete verb)
 
 Implementation constraints: `src/static/threads.js`. Do not change the PUT
-queue, the DELETE route handler's use, or any other behavior.
+queue, the DELETE route handler's use, or any other behavior. This task does
+NOT own `route:PUT /api/v1/threads` or any backend route — those belong to
+the threads.py task; do not claim them.
 
 Behavioral specification: confirming a single row deletion
 (`deleteThread(id)`) must remove only that thread and enqueue a revisioned
