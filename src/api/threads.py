@@ -72,26 +72,8 @@ def get_threads():
 
 @router.put("/api/v1/threads")
 def put_threads(payload: ThreadsPayload):
-    # Validate all threads have valid structure before attempting save
-    for thread in payload.threads:
-        for message in thread.messages:
-            if message.role not in ("user", "assistant"):
-                return JSONResponse(
-                    status_code=422,
-                    content={"detail": "Invalid role"},
-                )
-    # Validate payload is well-formed by re-serializing
     try:
-        serialized = [t.model_dump(exclude_none=True) for t in payload.threads]
-        for item in serialized:
-            ThreadSnapshot(**item)
-    except Exception:
-        return JSONResponse(
-            status_code=422,
-            content={"detail": "Malformed payload"},
-        )
-    try:
-        new_revision = save_versioned_snapshot(serialized, payload.revision)
+        new_revision = save_versioned_snapshot(payload.threads, payload.revision)
     except SnapshotConflict as exc:
         return JSONResponse(
             status_code=409,
