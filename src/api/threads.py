@@ -84,8 +84,11 @@ def put_threads(payload: ThreadsPayload):
             return JSONResponse(content={"detail": "Malformed payload"}, status_code=422)
     try:
         new_revision = save_versioned_snapshot(serialized, payload.revision)
-    except SnapshotConflict:
-        return JSONResponse(content={"detail": "Revision conflict"}, status_code=409)
+    except SnapshotConflict as exc:
+        return JSONResponse(
+            status_code=409,
+            content={"error": "revision_conflict", "current_revision": exc.current_revision},
+        )
     return {"status": "ok", "revision": new_revision}
 
 
