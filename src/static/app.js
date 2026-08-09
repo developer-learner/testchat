@@ -521,35 +521,41 @@
         pollStatus: pollStatus
       };
 
-      // Initial load
-      fetch('/api/v1/threads')
-        .then(function (response) { return response.json(); })
-        .then(function (data) {
-          // ERD-DELTA v73: hydrate the persistence owner with the server's
-          // revision BEFORE any mutation can enqueue (createThread calls
-          // persistThreads, which enqueues a PUT that reads _hydratedRevision).
-          Threads.setHydratedRevision(data.revision != null ? data.revision : 0);
-          if (data.threads && data.threads.length > 0) {
-            TC.threads = data.threads;
-            TC.threadCounter = 0;
-            for (var i = 0; i < TC.threads.length; i++) {
-              if (TC.threads[i].id > TC.threadCounter) TC.threadCounter = TC.threads[i].id;
+      // Initial load — retry loop until GET /api/v1/threads succeeds
+      (function retryInitialLoad() {
+        fetch('/api/v1/threads')
+          .then(function (response) { return response.json(); })
+          .then(function (data) {
+            var historyStatus = document.getElementById('history-status');
+            if (historyStatus) historyStatus.textContent = '';
+            // ERD-DELTA v73: hydrate the persistence owner with the server's
+            // revision BEFORE any mutation can enqueue (createThread calls
+            // persistThreads, which enqueues a PUT that reads _hydratedRevision).
+            Threads.setHydratedRevision(data.revision != null ? data.revision : 0);
+            if (data.threads && data.threads.length > 0) {
+              TC.threads = data.threads;
+              TC.threadCounter = 0;
+              for (var i = 0; i < TC.threads.length; i++) {
+                if (TC.threads[i].id > TC.threadCounter) TC.threadCounter = TC.threads[i].id;
+              }
+              // AC-123: open the NEWEST thread — the one the sidebar renders at
+              // the top. threads[] is oldest-first, so that is the last element,
+              // not the first. No last-opened pin is restored.
+              var newest = TC.threads[TC.threads.length - 1];
+              TC.activeThreadId = newest.id;
+              Threads.renderThreadMessages(newest);
+              Threads.restoreThreadModelState(newest);
+              Threads.renderSidebar();
+            } else {
+              Threads.createThread();
             }
-            // AC-123: open the NEWEST thread — the one the sidebar renders at
-            // the top. threads[] is oldest-first, so that is the last element,
-            // not the first. No last-opened pin is restored.
-            var newest = TC.threads[TC.threads.length - 1];
-            TC.activeThreadId = newest.id;
-            Threads.renderThreadMessages(newest);
-            Threads.restoreThreadModelState(newest);
-            Threads.renderSidebar();
-          } else {
-            Threads.createThread();
-          }
-        })
-        .catch(function () {
-          Threads.createThread();
-        });
+          })
+          .catch(function () {
+            var historyStatus = document.getElementById('history-status');
+            if (historyStatus) historyStatus.textContent = 'history unavailable — retrying';
+            setTimeout(retryInitialLoad, 2000);
+          });
+      })();
       window.Catalog.fetchModels();
       input.focus();
     })();
