@@ -5722,8 +5722,10 @@ def test_refreeze_rejects_whole_world_mock(freezable_repo):
     halt the freeze."""
     (freezable_repo / "scripts" / ".approved" / "incoming" / "tests"
      / "test_delta.py").write_text(
-        "import httpx\n"
         "from unittest.mock import MagicMock\n"
+        "\n"
+        "import httpx\n"
+        "\n"
         "\n"
         "def test_delta():\n"
         "    httpx.get = MagicMock(return_value=MagicMock(status_code=200))\n"
@@ -5743,8 +5745,10 @@ def test_refreeze_allows_carried_whole_world_mock(freezable_repo):
     scoped to delta-touched tests, D-128 amend, and a hard halt on old
     content would freeze the pipeline)."""
     (freezable_repo / "tests" / "test_carried.py").write_text(
-        "import httpx\n"
         "from unittest.mock import MagicMock\n"
+        "\n"
+        "import httpx\n"
+        "\n"
         "\n"
         "def test_carried():\n"
         "    httpx.get = MagicMock(return_value=MagicMock(status_code=200))\n"
@@ -5791,8 +5795,10 @@ def test_refreeze_accepts_url_aware_httpx_mock(freezable_repo):
     the requested URL)."""
     (freezable_repo / "scripts" / ".approved" / "incoming" / "tests"
      / "test_delta.py").write_text(
-        "import httpx\n"
         "from unittest.mock import MagicMock\n"
+        "\n"
+        "import httpx\n"
+        "\n"
         "\n"
         "def fake_get(url, *args, **kwargs):\n"
         "    if url.endswith('/ready'):\n"
