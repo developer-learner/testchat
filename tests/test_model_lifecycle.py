@@ -263,3 +263,68 @@ def test_concurrent_loads_spawn_at_most_one_server(monkeypatch):
 
     assert all(not t.is_alive() for t in threads), "a concurrent load hung"
     assert spawn_count["n"] == 1, f"duplicate servers spawned: {spawn_count['n']}"
+
+
+# ---------------------------------------------------------------------------
+# T2 (2026-08-10 direct-fix regression) — the identity sidecar. The container
+# cannot run the real run-server.sh on :8000, so the mechanics are proven
+# hermetically: a `sh -c "exec ..."` spawn reproduces the argv-rename that
+# defeats _pid_is_model_server (the live process no longer names the launch
+# script). After the in-memory handle is dropped (an app restart), unload must
+# still positively identify and terminate the server via the recorded
+# PID+start-time; a foreign process on the port stays refused (AC-163).
+# ---------------------------------------------------------------------------
+
+
+def test_unload_after_restart_terminates_sidecar_recorded_server(
+    script_model, monkeypatch, tmp_path
+):
+    model_id = "deepseek-v4-flash"
+    port = script_model(model_id)
+    base = f"http://127.0.0.1:{port}"
+    entry = dict(models_mod.SCRIPT_MODELS[model_id])
+    # exec so the served process replaces the shell but keeps the Popen PID;
+    # its argv is `python -m http.server <port>`, which never names a launch
+    # script — _pid_is_model_server alone cannot identify it.
+    entry["command"] = ["sh", "-c", f"exec {sys.executable} -m http.server {port}"]
+    entry["ready_url"] = base + "/"  # http.server answers 200 on /
+    monkeypatch.setitem(models_mod.SCRIPT_MODELS, model_id, entry)
+    monkeypatch.setattr(models_mod, "_SIDECAR_DIR", str(tmp_path))
+
+    try:
+        assert models_mod.load_script_model(model_id)["status"] == "loaded"
+        assert (tmp_path / f"{model_id}.json").exists(), "sidecar not recorded"
+        assert models_mod._find_listening_pid(port) is not None
+
+        # simulate an app restart: the in-memory handle is gone, sidecar persists
+        models_mod._script_processes.clear()
+        models_mod._nemotron_process = None
+
+        result = models_mod.unload_script_model(model_id)
+        assert result["status"] == "unloaded", result
+        assert _wait_until(lambda: not _reachable(port)), "server was not terminated"
+        assert not (tmp_path / f"{model_id}.json").exists(), "sidecar not cleaned up"
+    finally:
+        leftover = models_mod._find_listening_pid(port)
+        if leftover is not None:
+            models_mod._terminate_pid(leftover)
+
+
+def test_unload_after_restart_still_refuses_a_foreign_process(
+    script_model, monkeypatch, tmp_path
+):
+    """The sidecar must not weaken AC-163: with no matching record, a live but
+    unidentified process on the port is still refused."""
+    model_id = "deepseek-v4-flash"
+    port = script_model(model_id)
+    monkeypatch.setattr(models_mod, "_SIDECAR_DIR", str(tmp_path))
+    foreign = subprocess.Popen([sys.executable, "-m", "http.server", str(port)])
+    try:
+        assert _wait_until(lambda: _reachable(port)), "foreign server never came up"
+        result = models_mod.unload_script_model(model_id)
+        assert result["status"] == "error", result
+        assert _reachable(port), "AC-163: an unidentified process must never be terminated"
+    finally:
+        if foreign.poll() is None:
+            foreign.kill()
+            foreign.wait(timeout=5)

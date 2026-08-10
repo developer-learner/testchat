@@ -1,6 +1,7 @@
 """Model management service for LM Studio and script-run local model servers."""
 
 import functools
+import json
 import logging
 import os
 import signal
@@ -89,6 +90,71 @@ def _pid_is_model_server(pid: int, entry: dict) -> bool:
         if os.path.basename(token) == target:
             return True
     return False
+
+
+# Sidecar records survive an app restart (which drops the in-memory process
+# handles) so unload can still positively identify a server this app spawned.
+# They live on disk under a stable, env-overridable dir (mirrors storage.py's
+# TESTCHAT_DATA convention) and hold the PID + process start-time recorded at
+# spawn. This closes the gap where a run-server.sh wrapper exec's into the real
+# server: the live process's argv no longer names the launch script, so
+# _pid_is_model_server cannot match it — but the recorded PID+start-time can.
+_SIDECAR_DIR = os.environ.get('TESTCHAT_SIDECAR_DIR', 'data/model-sidecars')
+_SIDECAR_START_TIME_TOLERANCE_SECONDS = 1.0
+
+
+def _sidecar_path(model_id: str) -> str:
+    return os.path.join(_SIDECAR_DIR, f'{model_id}.json')
+
+
+def _write_sidecar(model_id: str, process: subprocess.Popen, port: int | None) -> None:
+    """Persist the spawn record. Best-effort: a failure here must never fail the
+    load — unload keeps its _pid_is_model_server cmdline fallback."""
+    try:
+        pid = process.pid
+        start_time = psutil.Process(pid).create_time()
+        os.makedirs(_SIDECAR_DIR, exist_ok=True)
+        record = {'pid': pid, 'start_time': start_time, 'model_id': model_id, 'port': port}
+        path = _sidecar_path(model_id)
+        tmp = f'{path}.tmp'
+        with open(tmp, 'w', encoding='utf-8') as handle:
+            json.dump(record, handle)
+        os.replace(tmp, path)
+    except Exception:
+        logger.warning('Could not persist sidecar for %s', model_id, exc_info=True)
+
+
+def _read_sidecar(model_id: str) -> dict | None:
+    try:
+        with open(_sidecar_path(model_id), encoding='utf-8') as handle:
+            record = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def _remove_sidecar(model_id: str) -> None:
+    try:
+        os.remove(_sidecar_path(model_id))
+    except OSError:
+        pass  # already gone — nothing to clean up
+
+
+def _sidecar_identifies(pid: int, model_id: str) -> bool:
+    """Positive ID via the sidecar: the live process on the port is the exact
+    one we recorded (same PID, same start-time). The start-time guards against
+    PID reuse after a crash left a stale record behind."""
+    record = _read_sidecar(model_id)
+    if not record or record.get('pid') != pid:
+        return False
+    recorded = record.get('start_time')
+    if not isinstance(recorded, (int, float)):
+        return False
+    try:
+        actual = psutil.Process(pid).create_time()
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return False
+    return abs(actual - recorded) < _SIDECAR_START_TIME_TOLERANCE_SECONDS
 
 
 # Registry of script-run models. `command` is the argv to launch the server;
@@ -234,6 +300,7 @@ def load_script_model(model_id: str) -> dict:
         try:
             response = httpx.get(entry['ready_url'], timeout=5)
             if response.status_code == 200:
+                _write_sidecar(model_id, process, urlparse(entry['ready_url']).port)
                 return {'status': 'loaded'}
         except Exception:
             # ready-poll: connection errors are expected until the server
@@ -260,11 +327,16 @@ def unload_script_model(model_id: str) -> dict:
     if process is not None:
         _terminate_process(process)
     else:
-        # No tracked handle — discover the server by its listening port and
-        # attempt termination (AC-102).
+        # No tracked handle (e.g. the app restarted) — discover the server by
+        # its listening port and terminate it only on positive identification:
+        # the sidecar record (PID + start-time, survives the exec that renames
+        # a run-server.sh server's argv) OR the cmdline-basename fallback.
+        # AC-163: an unidentified process is never terminated.
         port = urlparse(entry['ready_url']).port
         pid = _find_listening_pid(port)
-        if pid is not None and not _pid_is_model_server(pid, entry):
+        if pid is not None and not (
+            _sidecar_identifies(pid, model_id) or _pid_is_model_server(pid, entry)
+        ):
             return {'status': 'error', 'message': f'{model_id} port {port} is held by an unidentified process (pid {pid}); refusing to terminate'}
         if pid is not None:
             _terminate_pid(pid)
@@ -274,6 +346,7 @@ def unload_script_model(model_id: str) -> dict:
     if _responds_ready(entry['ready_url']) or _find_listening_pid(port) is not None:
         return {'status': 'error', 'message': f'{model_id} still reachable'}
 
+    _remove_sidecar(model_id)
     _set_process(model_id, None)
     return {'status': 'unloaded'}
 
