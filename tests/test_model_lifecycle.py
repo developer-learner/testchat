@@ -145,6 +145,11 @@ def _reset_script_model_state():
     models_mod._nemotron_process = None
     models_mod._script_processes.clear()
     yield
+    # T1 teardown: unload every registry entry so a server the load route
+    # spawned is terminated (identified via cmdline or sidecar; AC-163 still
+    # refuses anything unidentified) instead of leaking past handle-clearing.
+    for model_id in list(models_mod.SCRIPT_MODELS):
+        models_mod.unload_script_model(model_id)
     models_mod._nemotron_process = None
     models_mod._script_processes.clear()
 
