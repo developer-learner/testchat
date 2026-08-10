@@ -1,6 +1,2 @@
-# .template-version — fleet identity (D-33): the template this project was born from.
-# bootstrap.sh stamps ref= at instantiation (the template's HEAD SHA at birth);
-# scripts/update-template.sh --stamp retrofits a child created without it.
-# In the template repository itself, ref stays UNSTAMPED and drift checks skip.
-repo=developer-learner/sw-dev-blueprint
-ref=e9c247359011ad07f00b81be4f44407308fa2024
+developer-learner/sw-dev-blueprint
+a0f6e358ef04cbb475928021b51abf8fa07e25c2
