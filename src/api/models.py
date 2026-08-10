@@ -52,14 +52,19 @@ NemotronLoadResponse = ScriptModelLoadResponse
 NemotronUnloadResponse = ScriptModelUnloadResponse
 
 
+# These list endpoints run blocking readiness probes (list_models hits LM Studio
+# and each script model's ready_url with a ~2s httpx timeout). As `async def`
+# that blocking ran on the event loop and stalled every concurrent request up to
+# ~2s per unreachable model; as plain `def` FastAPI runs them in the threadpool,
+# off the loop — the same fix class as the AC-165 load/unload endpoints.
 @router.get("/models")
-async def get_models() -> ModelsListResponse:
+def get_models() -> ModelsListResponse:
     models = list_models()
     return ModelsListResponse(models=[ModelInfo(**m) for m in models])
 
 
 @router.get('/models/catalog')
-async def get_model_catalog() -> ModelCatalogResponse:
+def get_model_catalog() -> ModelCatalogResponse:
     return ModelCatalogResponse(models=[CatalogEntry(**m) for m in list_model_catalog()])
 
 
