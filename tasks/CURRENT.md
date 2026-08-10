@@ -5,6 +5,17 @@
 
 ---
 
+## State at 2026-08-09 — data-safety milestone complete at spec v99; PM-review P1s closed in-delta; model-management bundle queued
+
+- **`[success] spec v99` (`077acab`)** — full frozen suite ALL PASS (282s, 202 node-ids); the PM-review flaky quarantine-warning UI test (AC-80) is now deterministic. Branch 50 commits ahead of origin/main.
+- **What v99 closed (both delta-scoped P1s from the 2026-08-09 PM review of v98):**
+  - AC-161 quarantine-failure visibility: `load_versioned_snapshot` raises `SnapshotUnavailableError` when the quarantine rename fails (all four paths, `7690a45`); GET `/api/v1/threads` maps it to `503 {"detail": "snapshot unavailable"}` (`cdf76f8`) — broken storage is never reported as healthy-empty.
+  - AC-162 single-owner hydration: app.js renders `history unreadable (backup kept)` from `data.quarantined` (`5194fb4`); the racing script-eval writer in threads.js is removed (`a71e3c1`).
+  - New frozen test `tests/test_storage_service.py::test_quarantine_rename_failure_is_unavailable` (all four quarantine paths; went red pre-implementation). Its `test_mapping` pin is deferred to the next delta (check-spec-delta requires frozen node-ids; v88→v94 precedent).
+- **Remaining PM-review findings (next milestone — model-management bundle, est. 60-90 min):** `src/api/models.py:84-93` async endpoints block on synchronous startup/shutdown polling; `src/api/models.py:79-81` unload returns 200 on failure; `src/services/models.py:220-226` port-based PID inference can kill an unrelated process; `src/static/chrome.js:124-129` settings dialog hides failed saves (P2). Out-of-delta: CSRF, source-URL validation, accessibility, doc drift.
+
+---
+
 ## State at 2026-08-08 (session end — 2) — hygiene batch done, CEO memos never drafted, stop confirmed
 
 - Both repos clean and IN SYNC: testchat HEAD `d0ac352` (backlog: AC-48 audit DONE), template HEAD `1f7d1c4` (drift clean).
