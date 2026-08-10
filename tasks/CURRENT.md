@@ -21,6 +21,18 @@
 
 ---
 
+## State at 2026-08-10 — CI fully green across the fleet; control plane back in sync with the restored blueprint
+
+- **First green CI in repo history:** testchat `selftest` ✓, `test` ✓, `check-drift` ✓ (run 31350596301, push `8608abe`); blueprint `e9c2473` (`CI` ✓ + `check-drift` ✓). Local drift check: `in sync with template@e9c247359011` (rc=0).
+- **Blueprint restoration:** the previous birth ref `d2e869ac` was force-pushed out of the blueprint's history (check-drift: "not our ref"). D-131 control-plane content it carried (tpm-lint.sh, validate-plan.py D-131 resolution, D-131 selftests) is restored as blueprint commit `e9c2473`, which also fixes the blueprint's own ruff-0.16 fixture bug. testchat had been ahead of its template; both repos now agree at `e9c2473`.
+- **Three commits on top of the halt-closure notes** (testchat, pushed, `origin/main` = `8608abe`):
+  - `f569528` — the two direct-fix regression tests are now PINNED in `scripts/.approved/frozen-manifest` (INV-1 bookkeeping). Test-touching commits no longer need `--no-verify`; a future refreeze will still re-stamp them.
+  - `916347c` — S6 selftest fixtures reordered for ruff 0.16's default isort select (I001 was failing the D-67 staged-test lint); `.manifest-template` regenerated. 318/318 selftests green under ruff 0.15.15 (host) and 0.16.2 (CI venv).
+  - `8608abe` — `.template-version` repinned to `e9c247359011…` + `.manifest-project` regenerated (control-plane-tamper gate requires the regen in the same commit).
+- **Working-tree incident (no damage):** a half-popped stash ("stale plan.json from interrupted M35 run") had also carried halted-run versions of `src/services/models.py` + `tests/test_model_lifecycle.py` + `tests/test_models_api.py` and silently overwrote the committed `7bfc622` fix in the working tree. Caught via `git status` before anything was committed; restored from HEAD; contaminated stash dropped. `origin/main` was never affected.
+
+---
+
 ## State at 2026-08-09 — data-safety milestone complete at spec v99; PM-review P1s closed in-delta; model-management bundle queued
 
 - **`[success] spec v99` (`077acab`)** — full frozen suite ALL PASS (282s, 202 node-ids); the PM-review flaky quarantine-warning UI test (AC-80) is now deterministic. Branch 50 commits ahead of origin/main.
