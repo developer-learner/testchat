@@ -5,6 +5,22 @@
 
 ---
 
+## State at 2026-08-09 — model-management bundle shipped as a CEO-directed direct fix; pipeline halt formally closed
+
+- **CEO ruling (this session):** the Lima VM + EM/coder + sandbox are for milestone feature runs ONLY, not ad-hoc bug fixes. The model-management bundle went through the pipeline only because it was inherited as a spec-v100 milestone; that was the conductor's mistake. Bug fixes now go direct — no refreeze/orchestrate — unless the CEO explicitly asks for the milestone path.
+- **HALT CLOSED:** the orchestrate halt (escalations/T2 — coder strikes, caps exhausted) is formally resolved as "spec became a direct fix". The `.pipeline-state/` run state and `.tpm/outbox/` staging were removed; the escalation record is archived in git history (`6aa4351` tree).
+- **Shipped as ONE commit** `7bfc622` (pushed, `origin/main` force-updated from the milestone-churn `6aa4351` to the clean `15c1ee1` base + this commit — the refreeze v100/v101/v102, plan, T1/T2 commits are gone from the remote):
+  - AC-163: unload terminates only a positively identified model server (identity token = last NON-NUMERIC token of the entry command, basename-matched against any cmdline token). The previous `command[-1]` rule false-positived on the fixture convention `[python, -c, <src>, <port>]` — a foreign `python -m http.server <port>` matched. Proven live: the AC-163 gate now refuses to kill the real `omlx-server` on host port 8000 (`DEEPSEEK_READY_URL`), which the v99 code would have killed during nemotron-load eviction.
+  - AC-164: failed unload → 503 (not 200).
+  - AC-165: load/unload endpoints are sync (threadpool) — event loop never blocks.
+  - AC-166: failed settings save keeps the modal open + shows "Save failed — your changes were not applied." (`settings-status` in index.html/chrome.js).
+  - Regression tests `tests/test_model_lifecycle.py` + `tests/test_ui_settings.py` ride the same commit (direct-fix mode — no refreeze).
+- **Verification:** full frozen suite **205/205 green on the host** (5m05s) under `DS4_URL=http://127.0.0.1:1` isolation (dead port — matches the sandbox condition). WITHOUT the override, the two nemotron-load tests fail on this host: a live `omlx-server` on 8000 makes the eviction pass see deepseek-v4-flash "loaded", and the AC-163 gate correctly refuses to terminate the unidentified process → `could not evict` → 503. In the sandbox (no live servers) both are green. Not a defect; the sandbox and the isolated host agree.
+- **Frozen-manifest note (future refreeze):** `test_model_lifecycle.py` / `test_ui_settings.py` are committed but NOT in the v99 `frozen-manifest` (INV-1 — the phase-gate rejected the commit; bypassed with `--no-verify` per CEO direction, M33 live-fix precedent, recorded in the commit message). The next real milestone freeze (`refreeze.sh`) will re-stage tests/ and adopt them; until then, any test-touching commit gets the same INV-1 rejection (expected).
+- **Frozen spec stays v99** — `scripts/.approved/` reverted to the v99 state; the v102 spec lives only in git history. `tasks/plan.json` at base; tree clean; nothing unpushed.
+
+---
+
 ## State at 2026-08-09 — data-safety milestone complete at spec v99; PM-review P1s closed in-delta; model-management bundle queued
 
 - **`[success] spec v99` (`077acab`)** — full frozen suite ALL PASS (282s, 202 node-ids); the PM-review flaky quarantine-warning UI test (AC-80) is now deterministic. Branch 50 commits ahead of origin/main.
