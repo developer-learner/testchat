@@ -829,3 +829,7 @@ recorded.
 ## Results
 
   Delta-mapped frozen tests green against spec v99 — feature done (verdict scope: mapped tests only, D-112). Feature built and validated.
+
+## Results
+
+  Full frozen TPM suite green against spec v99 (on-demand regression check, D-112). Feature built and validated.
