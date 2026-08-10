@@ -1,10 +1,14 @@
 """Model management service for LM Studio and script-run local model servers."""
 
+import functools
 import logging
 import os
 import signal
 import subprocess
+import threading
 import time
+from collections.abc import Callable
+from typing import TypeVar
 from urllib.parse import urlparse
 
 import httpx
@@ -121,6 +125,23 @@ _script_processes: dict[str, subprocess.Popen | None] = {}
 # Back-compat alias used by tests and src/api/status.py; kept in sync below.
 _nemotron_process: subprocess.Popen | None = None
 
+# Load/unload mutate shared process state and must not interleave: FastAPI runs
+# the sync load/unload endpoints in a threadpool, so two concurrent loads could
+# both pass the ready-check and spawn duplicate servers. An RLock serializes the
+# whole mutation path; it is reentrant because load's eviction pass calls unload.
+_load_lock = threading.RLock()
+
+_F = TypeVar('_F', bound=Callable[..., dict])
+
+
+def _synchronized(fn: _F) -> _F:
+    @functools.wraps(fn)
+    def wrapper(*args: object, **kwargs: object) -> dict:
+        with _load_lock:
+            return fn(*args, **kwargs)
+
+    return wrapper  # type: ignore[return-value]
+
 
 def get_script_model(model_id: str) -> dict | None:
     return SCRIPT_MODELS.get(model_id)
@@ -183,6 +204,7 @@ def _unload_other_script_models(model_id: str) -> None:
                 raise RuntimeError(f'failed to evict {other_id}')
 
 
+@_synchronized
 def load_script_model(model_id: str) -> dict:
     entry = SCRIPT_MODELS[model_id]
 
@@ -227,6 +249,7 @@ def load_script_model(model_id: str) -> dict:
     return {'status': 'error', 'message': f'timeout waiting for {model_id} to become ready'}
 
 
+@_synchronized
 def unload_script_model(model_id: str) -> dict:
     entry = SCRIPT_MODELS[model_id]
     # A tracked process is terminated even when its HTTP side is unresponsive:
