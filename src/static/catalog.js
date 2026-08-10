@@ -9,6 +9,32 @@ window.Catalog = (function () {
   var TC = window.TC;
   var previousModelValue = null;
 
+  // P2-8: per-thread model selection, persisted client-side. The server also
+  // stores thread.model, but only once a send/create/rename/delete PUTs the
+  // thread — a bare model switch (no send) was lost on reload. This
+  // localStorage map (threadId -> modelId) records every selection immediately
+  // and is the authority when restoring the active thread's model on reload.
+  var THREAD_MODEL_STORE_KEY = 'testchat-thread-models';
+
+  function readThreadModelStore() {
+    try { return JSON.parse(localStorage.getItem(THREAD_MODEL_STORE_KEY)) || {}; }
+    catch (e) { return {}; }
+  }
+
+  function storeThreadModel(threadId, model) {
+    if (threadId == null) return;
+    try {
+      var map = readThreadModelStore();
+      if (model) { map[String(threadId)] = model; } else { delete map[String(threadId)]; }
+      localStorage.setItem(THREAD_MODEL_STORE_KEY, JSON.stringify(map));
+    } catch (e) { /* private mode / quota — best-effort; server persistence still applies */ }
+  }
+
+  function storedThreadModel(threadId) {
+    if (threadId == null) return '';
+    return readThreadModelStore()[String(threadId)] || '';
+  }
+
   var modelSelect = document.getElementById('model-select');
   var ejectModelBtn = document.getElementById('eject-model-btn');
   var loadConfirmModal = document.getElementById('load-confirm-modal');
@@ -48,11 +74,14 @@ window.Catalog = (function () {
         var lmModels = lmData.models || [];
         var catalogModels = catalogData ? (catalogData.models || []) : [];
         var options = [];
+        // script:false — LM Studio models (from /api/v1/models) are not the
+        // app's to unload; only /api/v1/models/catalog entries are script
+        // models the eject button can act on (P2-9).
         for (var i = 0; i < lmModels.length; i++) {
-          options.push({ id: lmModels[i].id, loaded: true });
+          options.push({ id: lmModels[i].id, loaded: true, script: false });
         }
         for (var j = 0; j < catalogModels.length; j++) {
-          options.push({ id: catalogModels[j].id, loaded: catalogModels[j].loaded === true });
+          options.push({ id: catalogModels[j].id, loaded: catalogModels[j].loaded === true, script: true });
         }
         populateModelOptions(options);
       })
@@ -61,7 +90,7 @@ window.Catalog = (function () {
           var lmModels = lmData.models || [];
           var options = [];
           for (var i = 0; i < lmModels.length; i++) {
-            options.push({ id: lmModels[i].id, loaded: true });
+            options.push({ id: lmModels[i].id, loaded: true, script: false });
           }
           populateModelOptions(options);
         }).catch(function () {
@@ -74,13 +103,24 @@ window.Catalog = (function () {
     var previous = modelSelect.value;
     if (!previous) {
       var activeThread = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
-      if (activeThread && activeThread.model) previous = activeThread.model;
+      // P2-8: the client-side store wins on restore — it captures bare switches
+      // the server round-trip never persisted. Reconcile thread.model so the
+      // rest of the app (and a later restoreThreadModelState) agrees.
+      var stored = storedThreadModel(TC.activeThreadId);
+      if (stored) {
+        previous = stored;
+        if (activeThread) activeThread.model = stored;
+      } else if (activeThread && activeThread.model) {
+        previous = activeThread.model;
+      }
     }
     modelSelect.innerHTML = '';
 
+    // P2-9: eject acts only on script-model servers; an LM Studio model being
+    // loaded (script:false) must never light the button.
     TC.scriptModelLoaded = false;
     for (var c = 0; c < models.length; c++) {
-      if (models[c].loaded === true) { TC.scriptModelLoaded = true; break; }
+      if (models[c].script === true && models[c].loaded === true) { TC.scriptModelLoaded = true; break; }
     }
     ejectModelBtn.disabled = !TC.scriptModelLoaded;
     ejectModelBtn.hidden = !TC.scriptModelLoaded;
@@ -100,7 +140,6 @@ window.Catalog = (function () {
       o.value = id;
       o.dataset.loaded = loaded ? 'true' : 'false';
       var prefix = loaded ? '🟢 ' : '○ ';
-      if (id === previous) prefix = '✓ ' + prefix;
       o.textContent = prefix + id;
       modelSelect.appendChild(o);
     }
@@ -196,7 +235,9 @@ window.Catalog = (function () {
   var ejectHideTimer = null;
   modelSelect.addEventListener('focus', function () {
     previousModelValue = modelSelect.value;
-    ejectModelBtn.hidden = false;
+    // P2-9: focusing the selector must not reveal eject unless a script model
+    // is actually loaded — LM Studio models are not the app's to unload.
+    if (TC.scriptModelLoaded) ejectModelBtn.hidden = false;
     if (ejectHideTimer) { clearTimeout(ejectHideTimer); ejectHideTimer = null; }
   });
   modelSelect.addEventListener('blur', function () {
@@ -254,6 +295,7 @@ window.Catalog = (function () {
             if (!response.ok) throw new Error('Failed to load model');
             clearInterval(interval);
             previousModelValue = id;
+            storeThreadModel(TC.activeThreadId, id);
             refreshModels();
           })
           .catch(function (err) {
@@ -274,12 +316,15 @@ window.Catalog = (function () {
       previousModelValue = modelSelect.value;
       var thread = TC.threads.find(function (t) { return t.id === TC.activeThreadId; });
       if (thread) thread.model = modelSelect.value;
+      storeThreadModel(TC.activeThreadId, modelSelect.value);
       pollStatus();
     }
   });
 
   return {
     fetchModels: fetchModels,
-    refreshModels: refreshModels
+    refreshModels: refreshModels,
+    storedThreadModel: storedThreadModel,
+    storeThreadModel: storeThreadModel
   };
 })();
