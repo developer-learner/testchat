@@ -61,6 +61,25 @@ Runtime config is via environment variables read in `src/services/llm.py`:
 `LLM_ENDPOINT` (default `http://localhost:1234/v1/chat/completions`, i.e. LM
 Studio), `LLM_MODEL`, `LLM_SYSTEM_PROMPT`, `LLM_TIMEOUT_SECONDS`.
 
+### Adding another local LLM (one-time config, no code, no milestone)
+
+The chat core is wrapper-agnostic: anything serving an OpenAI-compatible
+`/v1/chat/completions` (Ollama 11434, LM Studio 1234, llama.cpp 8080,
+vLLM, the script-model servers 8600/8000/8005, custom GitHub runtimes
+serving that shape) works with zero code change. Procedure:
+
+1. Confirm the wrapper is running and answers `GET <base>/v1/models` (the
+   readiness contract the loader itself probes).
+2. Set `LLM_ENDPOINT=<base>/v1/chat/completions` and
+   `LLM_MODEL=<model name the wrapper recognizes>`.
+3. Restart the app; verify with one chat request to `/api/v1/chat`.
+
+The script-model loader (`src/services/models.py`) is only process
+lifecycle (spawn / ready-probe / terminate) on top of that universal
+contract — a model loaded via the loader and one launched by the wrapper's
+own command line are equivalent for chat. A wrapper serving a NON-OpenAI
+API is the only case that needs real code (a shim), never a milestone.
+
 ---
 
 ## Application Architecture
