@@ -10,10 +10,10 @@ A minimal browser-based chat UI for local LLMs. FastAPI backend serves a chat pa
 
 | Milestone | What it adds | Status |
 |-----------|-------------|--------|
-| M1 | Echo chat — canned responses, full stack wired | in-dev |
-| M2 | Live LLM — real HTTP call to local endpoint | planned |
-| M3 | Streaming — SSE token-by-token | planned |
-| M4 | Conversation history — full context to LLM | planned |
+| M1 | Echo chat — canned responses, full stack wired | done |
+| M2 | Live LLM — real HTTP call to local endpoint | done |
+| M3 | Streaming — SSE token-by-token | done |
+| M4 | Conversation history — full context to LLM | done |
 
 ---
 
@@ -42,7 +42,7 @@ testchat/
 │   ├── api/
 │   │   └── chat.py          # POST /api/v1/chat route
 │   ├── services/
-│   │   └── echo.py          # Echo responder (M1), LLM client (M2+)
+│   │   └── llm.py           # OpenAI-compatible streaming LLM client
 │   └── static/
 │       └── index.html       # Chat UI
 ├── tests/                   # TPM-authored, frozen
