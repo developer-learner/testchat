@@ -162,7 +162,14 @@ window.Threads = (function () {
 
   function restoreThreadModelState(thread) {
     var ms = el('model-select');
-    ms.value = thread.model || '';
+    // P2-8: prefer the client-side per-thread store — it captures bare model
+    // switches the server round-trip never persisted (a switch with no send).
+    // This restore point runs on reload AFTER hydration sets activeThreadId, so
+    // it wins the race against the catalog populate; fall back to the
+    // server-hydrated thread.model when the store has nothing for this thread.
+    var stored = (window.Catalog && window.Catalog.storedThreadModel)
+      ? window.Catalog.storedThreadModel(thread.id) : '';
+    ms.value = stored || thread.model || '';
     ms.classList.toggle('select-empty', !ms.value);
   }
 
