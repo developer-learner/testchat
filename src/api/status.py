@@ -73,7 +73,10 @@ def _script_model_rss_gb(model_id: str) -> float:
         return 0.0
     try:
         out = subprocess.run(
-            ["ps", "-o", "rss=", "-p", str(pid)], capture_output=True, text=True, timeout=2
+            ["ps", "-o", "rss=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=2,
         )
         return int(out.stdout.strip()) / 1024**2
     except Exception:
@@ -100,7 +103,13 @@ def _loadable_gb() -> float:
             if "page size of" in line:
                 page_size = int(line.split("page size of")[1].split()[0])
                 continue
-            for key in ("Pages free:", "Pages speculative:", "Pages purgeable:", "File-backed pages:", "Pages wired down:"):
+            for key in (
+                "Pages free:",
+                "Pages speculative:",
+                "Pages purgeable:",
+                "File-backed pages:",
+                "Pages wired down:",
+            ):
                 if line.startswith(key):
                     pages[key] = int(line.split(":")[1].strip().rstrip("."))
 
@@ -110,12 +119,17 @@ def _loadable_gb() -> float:
         file_backed = pages.get("File-backed pages:", 0)
         wired_down = pages.get("Pages wired down:", 0)
 
-        reclaimable_gb = (free + speculative + purgeable + file_backed) * page_size / 1024**3
+        reclaimable_gb = (
+            (free + speculative + purgeable + file_backed) * page_size / 1024**3
+        )
         wired_gb = wired_down * page_size / 1024**3
 
         try:
             out = subprocess.run(
-                ["sysctl", "-n", "iogpu.wired_limit_mb"], capture_output=True, text=True, timeout=2
+                ["sysctl", "-n", "iogpu.wired_limit_mb"],
+                capture_output=True,
+                text=True,
+                timeout=2,
             )
             limit_mb = int(out.stdout.strip())
             if limit_mb > 0:

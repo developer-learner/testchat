@@ -20,7 +20,9 @@ router = APIRouter(prefix="/api/v1")
 
 class ModelInfo(BaseModel):
     id: str
-    source: Literal["lmstudio", "nemotron", "deepseek-v4-flash", "deepseek-v4-flash-0731"]
+    source: Literal[
+        "lmstudio", "nemotron", "deepseek-v4-flash", "deepseek-v4-flash-0731"
+    ]
 
 
 class ModelsListResponse(BaseModel):
@@ -39,7 +41,7 @@ class ScriptModelUnloadResponse(BaseModel):
 
 class CatalogEntry(BaseModel):
     id: str
-    source: Literal['nemotron', 'deepseek-v4-flash', 'deepseek-v4-flash-0731']
+    source: Literal["nemotron", "deepseek-v4-flash", "deepseek-v4-flash-0731"]
     loaded: bool
 
 
@@ -63,9 +65,11 @@ def get_models() -> ModelsListResponse:
     return ModelsListResponse(models=[ModelInfo(**m) for m in models])
 
 
-@router.get('/models/catalog')
+@router.get("/models/catalog")
 def get_model_catalog() -> ModelCatalogResponse:
-    return ModelCatalogResponse(models=[CatalogEntry(**m) for m in list_model_catalog()])
+    return ModelCatalogResponse(
+        models=[CatalogEntry(**m) for m in list_model_catalog()]
+    )
 
 
 def _require_script_model(model_id: str) -> None:
@@ -85,7 +89,8 @@ def _unload_response(model_id: str) -> Response:
     result = unload_script_model(model_id)
     status_code = 503 if result["status"] == "error" else 200
     return JSONResponse(
-        status_code=status_code, content=ScriptModelUnloadResponse(**result).model_dump()
+        status_code=status_code,
+        content=ScriptModelUnloadResponse(**result).model_dump(),
     )
 
 
@@ -95,7 +100,9 @@ def load_script_model_endpoint(model_id: str) -> Response:
     return _load_response(model_id)
 
 
-@router.post("/script-models/{model_id}/unload", response_model=ScriptModelUnloadResponse)
+@router.post(
+    "/script-models/{model_id}/unload", response_model=ScriptModelUnloadResponse
+)
 def unload_script_model_endpoint(model_id: str) -> Response:
     _require_script_model(model_id)
     return _unload_response(model_id)

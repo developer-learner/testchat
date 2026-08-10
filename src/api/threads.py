@@ -67,11 +67,15 @@ def _validate_snapshot_document(document) -> bool:
 @router.get("/api/v1/threads")
 def get_threads():
     try:
-        threads, revision = load_versioned_snapshot(validator=_validate_snapshot_document)
+        threads, revision = load_versioned_snapshot(
+            validator=_validate_snapshot_document
+        )
     except SnapshotUnavailableError:
         return JSONResponse({"detail": "snapshot unavailable"}, status_code=503)
     quarantined = bool(quarantine_files())
-    return ThreadsListResponse(threads=threads, revision=revision, quarantined=quarantined).model_dump(exclude_none=True)
+    return ThreadsListResponse(
+        threads=threads, revision=revision, quarantined=quarantined
+    ).model_dump(exclude_none=True)
 
 
 @router.put("/api/v1/threads")
@@ -85,13 +89,18 @@ def put_threads(payload: ThreadsPayload):
         try:
             ThreadSnapshot(**item)
         except Exception:
-            return JSONResponse(content={"detail": "Malformed payload"}, status_code=422)
+            return JSONResponse(
+                content={"detail": "Malformed payload"}, status_code=422
+            )
     try:
         new_revision = save_versioned_snapshot(serialized, payload.revision)
     except SnapshotConflict as exc:
         return JSONResponse(
             status_code=409,
-            content={"error": "revision_conflict", "current_revision": exc.current_revision},
+            content={
+                "error": "revision_conflict",
+                "current_revision": exc.current_revision,
+            },
         )
     return {"status": "ok", "revision": new_revision}
 
@@ -108,6 +117,9 @@ def delete_threads(body: ThreadsRevisionPrecondition | None = None):
     except SnapshotConflict as exc:
         return JSONResponse(
             status_code=409,
-            content={"error": "revision_conflict", "current_revision": exc.current_revision},
+            content={
+                "error": "revision_conflict",
+                "current_revision": exc.current_revision,
+            },
         )
     return {"status": "ok", "revision": new_revision}

@@ -44,4 +44,8 @@ async def serve_index() -> HTMLResponse:
     return HTMLResponse(content=_INDEX.read_text())
 
 
-app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
+app.mount(
+    "/static",
+    StaticFiles(directory=str(Path(__file__).parent / "static")),
+    name="static",
+)

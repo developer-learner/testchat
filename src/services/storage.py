@@ -60,7 +60,9 @@ def _quarantine_file(path: str) -> None:
     except OSError as rename_exc:
         logger.warning(
             "Could not quarantine corrupt snapshot: primary=%s quarantine=%s error=%s",
-            path, quarantine_path, rename_exc,
+            path,
+            quarantine_path,
+            rename_exc,
         )
 
 
@@ -81,7 +83,9 @@ def load_versioned_snapshot(validator=None) -> tuple[list[dict], int]:
             except OSError as rename_exc:
                 logger.warning(
                     "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
-                    path, corrupt_path, rename_exc,
+                    path,
+                    corrupt_path,
+                    rename_exc,
                 )
                 raise SnapshotUnavailableError from rename_exc
             return [], 0
@@ -97,7 +101,9 @@ def load_versioned_snapshot(validator=None) -> tuple[list[dict], int]:
                 except OSError as rename_exc:
                     logger.warning(
                         "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
-                        path, corrupt_path, rename_exc,
+                        path,
+                        corrupt_path,
+                        rename_exc,
                     )
                     raise SnapshotUnavailableError from rename_exc
                 return [], 0
@@ -109,7 +115,9 @@ def load_versioned_snapshot(validator=None) -> tuple[list[dict], int]:
                 except OSError as rename_exc:
                     logger.warning(
                         "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
-                        path, corrupt_path, rename_exc,
+                        path,
+                        corrupt_path,
+                        rename_exc,
                     )
                     raise SnapshotUnavailableError from rename_exc
                 return [], 0
@@ -133,7 +141,9 @@ def load_versioned_snapshot(validator=None) -> tuple[list[dict], int]:
         except OSError as rename_exc:
             logger.warning(
                 "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
-                path, corrupt_path, rename_exc,
+                path,
+                corrupt_path,
+                rename_exc,
             )
             raise SnapshotUnavailableError from rename_exc
         return [], 0
@@ -155,7 +165,9 @@ def load_snapshot(validator=None) -> list[dict]:
             except OSError as rename_exc:
                 logger.warning(
                     "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
-                    path, corrupt_path, rename_exc,
+                    path,
+                    corrupt_path,
+                    rename_exc,
                 )
             return []
         try:
@@ -168,7 +180,9 @@ def load_snapshot(validator=None) -> list[dict]:
             except OSError as rename_exc:
                 logger.warning(
                     "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
-                    path, corrupt_path, rename_exc,
+                    path,
+                    corrupt_path,
+                    rename_exc,
                 )
             return []
         if validator is not None:
@@ -182,7 +196,9 @@ def load_snapshot(validator=None) -> list[dict]:
                 except OSError as rename_exc:
                     logger.warning(
                         "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
-                        path, corrupt_path, rename_exc,
+                        path,
+                        corrupt_path,
+                        rename_exc,
                     )
                 return []
             if result is False:
@@ -193,7 +209,9 @@ def load_snapshot(validator=None) -> list[dict]:
                 except OSError as rename_exc:
                     logger.warning(
                         "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
-                        path, corrupt_path, rename_exc,
+                        path,
+                        corrupt_path,
+                        rename_exc,
                     )
                 return []
     threads, _revision = load_versioned_snapshot()
@@ -226,7 +244,9 @@ def _save_versioned_snapshot_locked(threads: list[dict], expected_revision: int)
             except OSError as exc:
                 logger.warning(
                     "Could not back up snapshot: primary=%s backup=%s error=%s",
-                    path, bak_path, exc,
+                    path,
+                    bak_path,
+                    exc,
                 )
                 raise
         os.replace(tmp_path, path)
@@ -235,7 +255,9 @@ def _save_versioned_snapshot_locked(threads: list[dict], expected_revision: int)
             os.unlink(tmp_path)
         except OSError as cleanup_exc:
             logger.warning(
-                "temp cleanup failed: temp=%s error=%s", tmp_path, cleanup_exc,
+                "temp cleanup failed: temp=%s error=%s",
+                tmp_path,
+                cleanup_exc,
             )
         raise
     return new_revision
@@ -262,8 +284,7 @@ def quarantine_files() -> list[str]:
     parent, name = os.path.split(_data_path())
     try:
         return sorted(
-            f for f in os.listdir(parent or ".")
-            if f.startswith(name + ".corrupt-")
+            f for f in os.listdir(parent or ".") if f.startswith(name + ".corrupt-")
         )
     except OSError:
         return []  # no data directory yet means nothing is quarantined
