@@ -27,7 +27,15 @@ def search_web(query: str) -> list[dict]:
 
     endpoint = os.environ.get('TAVILY_ENDPOINT', DEFAULT_ENDPOINT)
     api_key = os.environ.get('TAVILY_API_KEY', '')
-    timeout = float(os.environ.get('TAVILY_TIMEOUT_SECONDS', '10'))
+    # A malformed TAVILY_TIMEOUT_SECONDS must degrade like any other search
+    # failure (WebSearchError → the caller's notice), not raise a bare
+    # ValueError that escapes the stream's WebSearchError handler.
+    raw_timeout = os.environ.get('TAVILY_TIMEOUT_SECONDS', '10')
+    try:
+        timeout = float(raw_timeout)
+    except (TypeError, ValueError) as exc:
+        logger.warning('Invalid TAVILY_TIMEOUT_SECONDS %r: %s', raw_timeout, exc)
+        raise WebSearchError(f'invalid TAVILY_TIMEOUT_SECONDS: {raw_timeout!r}') from exc
 
     payload = json.dumps({'query': query, 'max_results': MAX_SOURCES}).encode('utf-8')
     req = urllib.request.Request(
