@@ -103,8 +103,13 @@ window.Chrome = (function () {
   var settingsToggle = document.getElementById('settings-toggle');
   var settingsModal = document.getElementById('settings-modal');
   var systemPromptInput = document.getElementById('system-prompt-input');
+  var settingsStatus = document.getElementById('settings-status');
 
   function openSettings() {
+    if (settingsStatus) {
+      settingsStatus.textContent = '';
+      settingsStatus.hidden = true;
+    }
     fetch('/api/v1/settings')
       .then(function (r) { return r.json(); })
       .then(function (d) { systemPromptInput.value = d.system_prompt || ''; })
@@ -126,8 +131,21 @@ window.Chrome = (function () {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ system_prompt: systemPromptInput.value })
-    }).then(closeSettings).catch(closeSettings);
+    }).then(function (r) {
+      if (r.ok) {
+        closeSettings();
+      } else {
+        showSettingsSaveFailure();
+      }
+    }).catch(showSettingsSaveFailure);
   });
+
+  function showSettingsSaveFailure() {
+    if (settingsStatus) {
+      settingsStatus.textContent = 'Save failed — your changes were not applied.';
+      settingsStatus.hidden = false;
+    }
+  }
   settingsModal.addEventListener('click', function (e) {
     if (e.target === settingsModal) closeSettings();
   });

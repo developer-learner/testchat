@@ -67,6 +67,26 @@ def _terminate_pid(pid: int) -> None:
         # Process already exited — safe to ignore.
         pass
 
+
+def _pid_is_model_server(pid: int, entry: dict) -> bool:
+    """Return True if the process cmdline matches the model server entry."""
+    try:
+        cmdline = psutil.Process(pid).cmdline()
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return False
+    target = None
+    for token in reversed(entry['command']):
+        if not token.isdigit():
+            target = os.path.basename(token)
+            break
+    if target is None:
+        return False
+    for token in cmdline:
+        if os.path.basename(token) == target:
+            return True
+    return False
+
+
 # Registry of script-run models. `command` is the argv to launch the server;
 # `ready_timeout_attr` names the module-level timeout constant so tests can
 # monkeypatch e.g. NEMOTRON_READY_TIMEOUT_SECONDS and be observed at call time.
@@ -219,14 +239,16 @@ def unload_script_model(model_id: str) -> dict:
     else:
         # No tracked handle — discover the server by its listening port and
         # attempt termination (AC-102).
-        if _responds_ready(entry['ready_url']):
-            port = urlparse(entry['ready_url']).port
-            pid = _find_listening_pid(port)
-            if pid is not None:
-                _terminate_pid(pid)
+        port = urlparse(entry['ready_url']).port
+        pid = _find_listening_pid(port)
+        if pid is not None and not _pid_is_model_server(pid, entry):
+            return {'status': 'error', 'message': f'{model_id} port {port} is held by an unidentified process (pid {pid}); refusing to terminate'}
+        if pid is not None:
+            _terminate_pid(pid)
 
     # Re-check reachability after termination attempt.
-    if _responds_ready(entry['ready_url']):
+    port = urlparse(entry['ready_url']).port
+    if _responds_ready(entry['ready_url']) or _find_listening_pid(port) is not None:
         return {'status': 'error', 'message': f'{model_id} still reachable'}
 
     _set_process(model_id, None)

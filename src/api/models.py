@@ -78,26 +78,29 @@ def _load_response(model_id: str) -> Response:
 
 def _unload_response(model_id: str) -> Response:
     result = unload_script_model(model_id)
-    return JSONResponse(status_code=200, content=ScriptModelUnloadResponse(**result).model_dump())
+    status_code = 503 if result["status"] == "error" else 200
+    return JSONResponse(
+        status_code=status_code, content=ScriptModelUnloadResponse(**result).model_dump()
+    )
 
 
 @router.post("/script-models/{model_id}/load", response_model=ScriptModelLoadResponse)
-async def load_script_model_endpoint(model_id: str) -> Response:
+def load_script_model_endpoint(model_id: str) -> Response:
     _require_script_model(model_id)
     return _load_response(model_id)
 
 
 @router.post("/script-models/{model_id}/unload", response_model=ScriptModelUnloadResponse)
-async def unload_script_model_endpoint(model_id: str) -> Response:
+def unload_script_model_endpoint(model_id: str) -> Response:
     _require_script_model(model_id)
     return _unload_response(model_id)
 
 
 @router.post("/nemotron/load", response_model=ScriptModelLoadResponse)
-async def load_nemotron_model() -> Response:
+def load_nemotron_model() -> Response:
     return _load_response("nemotron")
 
 
 @router.post("/nemotron/unload", response_model=ScriptModelUnloadResponse)
-async def unload_nemotron_model() -> Response:
+def unload_nemotron_model() -> Response:
     return _unload_response("nemotron")
