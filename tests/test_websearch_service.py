@@ -153,3 +153,18 @@ def test_prompt_forbids_full_width_citations():
     assert "specific" in lowered or "recent" in lowered
     # explicitly reject the Chinese full-width marker in the emitted prompt
     assert "【" not in prompt and "】" not in prompt  # 【 】
+
+
+# ---------------------------------------------------------------------------
+# T5 (2026-08-10 direct-fix regression) — a malformed TAVILY_TIMEOUT_SECONDS
+# must degrade like any other search failure (WebSearchError → the caller's
+# notice), not raise a bare ValueError that escapes chat.py's WebSearchError
+# handler and kills the whole SSE stream.
+# ---------------------------------------------------------------------------
+
+
+def test_malformed_timeout_env_raises_websearch_error(monkeypatch):
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    monkeypatch.setenv("TAVILY_TIMEOUT_SECONDS", "not-a-number")
+    with pytest.raises(WebSearchError):
+        search_web("q")

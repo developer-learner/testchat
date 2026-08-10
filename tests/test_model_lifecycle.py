@@ -174,3 +174,68 @@ def test_load_does_not_block_other_requests(client, script_model):
     assert len(responses) == 1
     assert responses[0].status_code == 200
     assert responses[0].json()["status"] == "loaded"
+
+
+# ---------------------------------------------------------------------------
+# T3 (2026-08-10 direct-fix regression) — FastAPI runs the sync load/unload
+# endpoints in a threadpool, so two concurrent load calls could both pass the
+# ready-check before either spawned and launch duplicate servers. The mutation
+# path is now serialized by a reentrant lock; concurrent loads must spawn at
+# most one server.
+# ---------------------------------------------------------------------------
+
+
+def test_concurrent_loads_spawn_at_most_one_server(monkeypatch):
+    model_id = "deepseek-v4-flash"
+    ready_url = models_mod.SCRIPT_MODELS[model_id]["ready_url"]
+    spawned = {"ready": False}
+    spawn_count = {"n": 0}
+    count_lock = threading.Lock()
+
+    def fake_responds_ready(url):
+        # Only this model is ever "up"; the not-yet-up answer is slowed so a
+        # genuine check->spawn race would be exposed if the path were unlocked.
+        if url != ready_url:
+            return False
+        if spawned["ready"]:
+            return True
+        time.sleep(0.1)
+        return False
+
+    class _FakeProc:
+        def poll(self):
+            return None
+
+        def send_signal(self, sig):
+            pass
+
+        def wait(self, timeout=None):
+            return 0
+
+        def kill(self):
+            pass
+
+    def fake_popen(cmd, *args, **kwargs):
+        with count_lock:
+            spawn_count["n"] += 1
+        spawned["ready"] = True
+        return _FakeProc()
+
+    class _ReadyResp:
+        status_code = 200
+
+    monkeypatch.setattr(models_mod, "_responds_ready", fake_responds_ready)
+    monkeypatch.setattr(models_mod.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(models_mod.httpx, "get", lambda *a, **k: _ReadyResp())
+
+    threads = [
+        threading.Thread(target=lambda: models_mod.load_script_model(model_id))
+        for _ in range(5)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+
+    assert all(not t.is_alive() for t in threads), "a concurrent load hung"
+    assert spawn_count["n"] == 1, f"duplicate servers spawned: {spawn_count['n']}"

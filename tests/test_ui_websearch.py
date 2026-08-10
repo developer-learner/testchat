@@ -109,3 +109,54 @@ def test_full_width_citation_markers_render_as_plain_brackets(
     expect(reply).to_contain_text("[4]")
     expect(reply).not_to_contain_text("【")
     expect(reply).not_to_contain_text("】")
+
+
+# T5/P2-7 (2026-08-10 direct-fix regression) — source URLs are untrusted; a
+# javascript:/data: scheme must be neutralized (no navigable href) so a
+# malicious source cannot inject a scripted link, while safe http(s) sources
+# keep their href. Seeded via the locked PUT route because the conftest stub
+# only ever returns safe example URLs.
+def test_source_link_rejects_dangerous_url_scheme(page: Page, app_url: str) -> None:
+    import json
+    import urllib.request
+
+    payload = {
+        "threads": [
+            {
+                "id": 1,
+                "title": "xss",
+                "model": "",
+                "locked": False,
+                "messages": [
+                    {"role": "user", "content": "hi", "ts": 1.0, "model": ""},
+                    {
+                        "role": "assistant",
+                        "content": "see sources",
+                        "ts": 2.0,
+                        "model": "m",
+                        "sources": [
+                            {"title": "evil", "url": "javascript:alert(1)"},
+                            {"title": "ok", "url": "https://example.org/one"},
+                        ],
+                    },
+                ],
+            }
+        ]
+    }
+    with urllib.request.urlopen(f"{app_url}/api/v1/threads", timeout=5) as response:
+        payload["revision"] = json.loads(response.read())["revision"]
+    req = urllib.request.Request(
+        f"{app_url}/api/v1/threads",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="PUT",
+    )
+    urllib.request.urlopen(req, timeout=5).read()
+    page.goto(app_url)
+    page.get_by_test_id("thread-item").filter(has_text="xss").click()
+    links = page.get_by_test_id("source-link")
+    expect(links).to_have_count(2)
+    # the dangerous source renders but is not navigable (no href attribute)
+    assert links.nth(0).get_attribute("href") is None
+    # the safe source keeps its href
+    expect(links.nth(1)).to_have_attribute("href", "https://example.org/one")
