@@ -8,7 +8,9 @@ import urllib.request
 
 StreamChunk = tuple[str, ...]
 
-FALLBACK_REPLY = "The language model is currently unavailable. Please try again in a moment."
+FALLBACK_REPLY = (
+    "The language model is currently unavailable. Please try again in a moment."
+)
 
 
 def stream_reply(

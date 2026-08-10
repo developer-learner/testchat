@@ -1139,3 +1139,52 @@ def test_message_input_placeholder_states_shortcuts(
     assert placeholder is not None, "message-input needs a placeholder"
     assert "Ctrl+Enter to send" in placeholder, placeholder
     assert "Enter for newline" in placeholder, placeholder
+
+
+# =============================================================================
+# Review remediation (2026-08-10, direct-lane D-132) — frontend correctness
+# =============================================================================
+
+
+# P2-8 [the per-thread model selection is persisted client-side (localStorage)
+# and restored on reload — even with no intervening send. The M32 promise
+# (per-thread sticky model survives reload) previously held only once a send
+# had PUT the thread to the server; a bare switch was lost on reload.]
+def test_thread_model_selection_persists_across_reload_without_send(
+    page: Page, app_url: str
+) -> None:
+    page.goto(app_url)
+    select = page.get_by_test_id("model-select")
+    expect(select).to_have_value("alpha-model")  # default loaded model
+    # Bare switch to another loaded model — no message is ever sent, so nothing
+    # PUTs the thread. Only the client-side store can carry this across reload.
+    select.select_option("beta-model")
+    expect(select).to_have_value("beta-model")
+    page.reload()
+    expect(select).to_have_value("beta-model")
+
+
+# P2-9 [the eject (⏏) button unloads a loaded SCRIPT-model server; LM Studio
+# models are not the app's to unload. When only LM Studio models are loaded
+# and no script model is, the button must not render — not at rest, and not
+# when the selector is focused.]
+def test_eject_button_hidden_when_only_lmstudio_models_loaded(
+    page: Page, app_url: str
+) -> None:
+    # Catalog reports a script model that is NOT loaded — so the only loaded
+    # models are the LM Studio ones from /api/v1/models (alpha/beta/…).
+    page.route(
+        "**/api/v1/models/catalog",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"models":[{"id":"nemotron","source":"nemotron","loaded":false}]}',
+        ),
+    )
+    page.goto(app_url)
+    select = page.get_by_test_id("model-select")
+    expect(select).to_have_value("alpha-model")  # LM Studio model, loaded
+    eject = page.get_by_test_id("eject-model-btn")
+    expect(eject).to_be_hidden()          # at rest: no script model loaded
+    select.focus()
+    expect(eject).to_be_hidden()          # focusing the selector must not reveal it

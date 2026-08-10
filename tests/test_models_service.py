@@ -100,7 +100,16 @@ def script_model(monkeypatch):
     """Repoints a registry entry at a test-local port and command.
 
     Returns a callable: (model_id, command_src=None) -> port.
+
+    T1 (2026-08-10): every not-yet-configured registry entry is also repointed
+    at a fixture-owned, unbound port. The load path probes the other entries'
+    ready_urls while evicting, and those default to the real production ports
+    (nemotron :8600, ds4 :8000, ds4-0731 :8005); a live local server must be
+    invisible to the suite and never probed or killed by it. Entries configured
+    by an earlier call in the same test keep their port, so the mutual-exclusion
+    path still discovers the test's own spawned server (AC-104).
     """
+    configured: set[str] = set()
 
     def _configure(model_id: str, command_src: str = _SERVER_SRC) -> int:
         port = _free_port()
@@ -116,6 +125,18 @@ def script_model(monkeypatch):
             # is_nemotron_loaded(), which reads this constant rather than the
             # registry entry.
             monkeypatch.setattr(models_mod, "NEMOTRON_READY_URL", entry["ready_url"])
+        configured.add(model_id)
+        for other_id, other in list(models_mod.SCRIPT_MODELS.items()):
+            if other_id in configured:
+                continue
+            other_port = _free_port()
+            other_base = f"http://127.0.0.1:{other_port}"
+            isolated = dict(other)
+            isolated["base_url"] = other_base
+            isolated["ready_url"] = other_base + "/v1/models"
+            isolated["chat_endpoint"] = other_base + "/v1/chat/completions"
+            isolated["command"] = [sys.executable, "-c", _SERVER_SRC, str(other_port)]
+            monkeypatch.setitem(models_mod.SCRIPT_MODELS, other_id, isolated)
         return port
 
     return _configure
@@ -126,6 +147,11 @@ def _reset_script_model_state():
     models_mod._nemotron_process = None
     models_mod._script_processes.clear()
     yield
+    # T1 teardown: unload every registry entry so a server the load route
+    # spawned is terminated (identified via cmdline or sidecar; AC-163 still
+    # refuses anything unidentified) instead of leaking past handle-clearing.
+    for model_id in list(models_mod.SCRIPT_MODELS):
+        models_mod.unload_script_model(model_id)
     models_mod._nemotron_process = None
     models_mod._script_processes.clear()
 

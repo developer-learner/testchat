@@ -6,13 +6,17 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from src.api.chat import router as chat_router
-from src.api.models import router as models_router
-from src.api.settings import router as settings_router
-from src.api.status import router as status_router
-from src.api.threads import router as threads_router
+# Load .env BEFORE importing the routers. src/services/models.py reads
+# NEMOTRON_URL / DS4_URL / DS4_0731_URL at import time (module-level), so the
+# values must already be in os.environ when that import runs — calling
+# load_dotenv() after the imports would be too late for those config reads.
+load_dotenv()
 
-load_dotenv()  # repo convention: runtime config via .env (TAVILY_API_KEY etc.)
+from src.api.chat import router as chat_router  # noqa: E402
+from src.api.models import router as models_router  # noqa: E402
+from src.api.settings import router as settings_router  # noqa: E402
+from src.api.status import router as status_router  # noqa: E402
+from src.api.threads import router as threads_router  # noqa: E402
 
 app = FastAPI()
 
@@ -40,4 +44,8 @@ async def serve_index() -> HTMLResponse:
     return HTMLResponse(content=_INDEX.read_text())
 
 
-app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
+app.mount(
+    "/static",
+    StaticFiles(directory=str(Path(__file__).parent / "static")),
+    name="static",
+)

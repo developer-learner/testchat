@@ -15,6 +15,17 @@ let threadSearchQuery = '';
 let hitElements = [];
 let hitIndex = 0;
 
+// Web-search source URLs are external, untrusted input. Only plain http(s)
+// absolute URLs are navigable; anything else (javascript:, data:, vbscript:,
+// …) is neutralized so a malicious source cannot inject a scripted link.
+// Control chars/whitespace are stripped first because browsers ignore them
+// when resolving a scheme (e.g. "java\tscript:").
+function _safeHttpHref(url) {
+  if (typeof url !== 'string') return '';
+  var cleaned = url.replace(/[\u0000-\u0020]+/g, '');
+  return /^https?:\/\//i.test(cleaned) ? url : '';
+}
+
 // ERD-DELTA v73: authoritative hydrated revision, ordered persist queue, conflict latch
 var _hydratedRevision = null;       // set by app.js during startup hydration via window.Threads.setHydratedRevision()
 var _persistQueue = [];             // ordered queue of { type: 'PUT'|'DELETE', snapshot: ... }
@@ -151,7 +162,14 @@ window.Threads = (function () {
 
   function restoreThreadModelState(thread) {
     var ms = el('model-select');
-    ms.value = thread.model || '';
+    // P2-8: prefer the client-side per-thread store — it captures bare model
+    // switches the server round-trip never persisted (a switch with no send).
+    // This restore point runs on reload AFTER hydration sets activeThreadId, so
+    // it wins the race against the catalog populate; fall back to the
+    // server-hydrated thread.model when the store has nothing for this thread.
+    var stored = (window.Catalog && window.Catalog.storedThreadModel)
+      ? window.Catalog.storedThreadModel(thread.id) : '';
+    ms.value = stored || thread.model || '';
     ms.classList.toggle('select-empty', !ms.value);
   }
 
@@ -206,10 +224,20 @@ function addSources(bubble, sources, notice) {
     var a = document.createElement('a');
     a.className = 'source-link';
     a.setAttribute('data-testid', 'source-link');
-    a.href = sources[i].url;
+    var safeHref = _safeHttpHref(sources[i].url);
+    if (safeHref) {
+      a.href = safeHref;
+    }
     a.target = '_blank';
     a.rel = 'noopener';
     a.textContent = '[' + (i + 1) + '] ' + (sources[i].title || sources[i].url);
+    // Defense in depth: block navigation at click time too, in case the href
+    // was tampered with after render.
+    a.addEventListener('click', function (ev) {
+      if (!_safeHttpHref(this.getAttribute('href') || '')) {
+        ev.preventDefault();
+      }
+    });
     box.appendChild(a);
   }
   bubble.appendChild(box);

@@ -24,6 +24,7 @@ The fixture touches the app only for tests that actually use it.
 """
 import json
 import os
+import socket
 import subprocess
 import sys
 import tempfile
@@ -36,9 +37,27 @@ from pathlib import Path
 
 import pytest
 
-STUB_PORT = 8971
-APP_PORT = 8972
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# T8 (2026-08-10): the stub/app-under-test ports were fixed constants
+# (8971/8972); a suite running next to a real service holding either port
+# (or two suites running concurrently) collided. Ports are now drawn from a
+# session-unique allocator at fixture setup.
+_allocated_ports: set[int] = set()
+_ports_lock = threading.Lock()
+
+
+def _allocate_port() -> int:
+    """Draw a free loopback port, unique within this test session."""
+    with _ports_lock:
+        while True:
+            with socket.socket() as s:
+                s.bind(("127.0.0.1", 0))
+                port = s.getsockname()[1]
+            if port not in _allocated_ports:
+                _allocated_ports.add(port)
+                return port
+
 
 # shape: capture lmstudio-models.json (fields the backend reads). Two real
 # choices so selection-stability is observable, plus a refresh-N stamp model
@@ -180,11 +199,12 @@ def _wait_ready(url: str, attempts: int = 100) -> None:
 
 @pytest.fixture(scope="session")
 def llm_stub():
-    server = ThreadingHTTPServer(("127.0.0.1", STUB_PORT), _StubHandler)
+    port = _allocate_port()
+    server = ThreadingHTTPServer(("127.0.0.1", port), _StubHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    _wait_ready(f"http://127.0.0.1:{STUB_PORT}/api/v1/models")
-    yield f"http://127.0.0.1:{STUB_PORT}"
+    _wait_ready(f"http://127.0.0.1:{port}/api/v1/models")
+    yield f"http://127.0.0.1:{port}"
     server.shutdown()
 
 
@@ -198,9 +218,10 @@ def app_data_path():
 @pytest.fixture(scope="session")
 def app_url(llm_stub, app_data_path):
     data_path = app_data_path
+    port = _allocate_port()
     proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "src.main:app",
-         "--host", "127.0.0.1", "--port", str(APP_PORT), "--log-level", "warning"],
+         "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"],
         cwd=REPO_ROOT,
         env={
             **os.environ,
@@ -214,8 +235,8 @@ def app_url(llm_stub, app_data_path):
         },
     )
     try:
-        _wait_ready(f"http://127.0.0.1:{APP_PORT}/")
-        yield f"http://127.0.0.1:{APP_PORT}"
+        _wait_ready(f"http://127.0.0.1:{port}/")
+        yield f"http://127.0.0.1:{port}"
     finally:
         proc.terminate()
         try:
