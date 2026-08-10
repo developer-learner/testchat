@@ -140,7 +140,6 @@ window.Catalog = (function () {
       o.value = id;
       o.dataset.loaded = loaded ? 'true' : 'false';
       var prefix = loaded ? '🟢 ' : '○ ';
-      if (id === previous) prefix = '✓ ' + prefix;
       o.textContent = prefix + id;
       modelSelect.appendChild(o);
     }
