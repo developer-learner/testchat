@@ -91,3 +91,16 @@ refreeze for INV-4").
 - Post-merge drift incident (worktree left on `claude/lane2-t7-t6-t8`;
   one commit landed there, push rejected) — recovered by reset + recommit
   on `main`. No content lost; no force-push.
+- **Lane-1 hermetic-env model corrected post-closeout** (lane
+  self-verified): toolchains NOT pre-installed (entry runs
+  `pip install -r requirements.txt`); browser toolchain is container
+  Chromium build 1194 vs pinned `playwright==1.61.0` (wants build 1228,
+  proxy blocks download) — lane runs playwright 1.56.0, so Playwright
+  drafts are behaviorally accurate but not byte-identical; the phase-gate
+  hook is NOT wired in the lane (`core.hooksPath` unset) — the lane
+  reproduced gate checks by hand (regen-manifest.sh, check-test-surface.py,
+  manifest diffing); third blind-spot category named: harness-only limits
+  (T4's `TestClient` per-request loop made a stable suite-RED
+  unachievable — fix shipped with in-isolation RED/GREEN and an explicit
+  "confirm on host" flag). Allocation blurb updated; see CLAUDE.md
+  correction log.
