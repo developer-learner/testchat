@@ -35,6 +35,7 @@ CHECK_SURFACE = SCRIPTS / "check-test-surface.py"
 APPLY_BLOCKS = SCRIPTS / "apply-edit-blocks.py"
 COMPLETION_LEDGER = SCRIPTS / "completion-ledger.py"
 FLAKE_LEDGER = SCRIPTS / "flake-ledger.py"
+REFREEZE_DELTA = SCRIPTS / "refreeze_delta.py"
 
 # refreeze_delta is underscore-named precisely so its delta computation (and the
 # D-116 relabel guard inside it) can be imported and unit-tested directly.
@@ -1520,6 +1521,82 @@ def test_swallow_other_filetype_ignored(tmp_path):
     assert r.returncode == 0
 
 
+# --- check-swallowed-errors.py: per-change scoping (audit 2026-08-11 item 2) -
+# The gate examined the ENTIRE edited file, so a pre-existing swallow the coder
+# never touched could block a task whose change lands elsewhere. Findings are
+# now scoped to the delta's changed region (git diff <base> -> working tree,
+# base HEAD), with a whole-file fallback whenever there is no tracked baseline
+# (never weakens a finding in a changed region — only reports more).
+
+# A file with a pre-existing bare-except swallow at line 3 (committed, left
+# untouched) and, after the coder's edit, a NEW swallow at line 9.
+_SWALLOW_BASE = "try:\n    a()\nexcept OSError:\n    pass\n\ndef g():\n    return 1\n"
+_SWALLOW_EDIT = ("try:\n    a()\nexcept OSError:\n    pass\n\ndef g():\n"
+                 "    try:\n        b()\n    except OSError:\n        pass\n")
+
+
+def _git_repo_with_edit(tmp_path, name, baseline, edited):
+    """Init a repo, commit `baseline` as `name`, then overwrite it with
+    `edited` (the coder's uncommitted working-tree change)."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "t@t"],
+                   check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "t"],
+                   check=True)
+    (tmp_path / name).write_text(baseline)
+    subprocess.run(["git", "-C", str(tmp_path), "add", name], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "base"],
+                   check=True)
+    (tmp_path / name).write_text(edited)
+    return tmp_path
+
+
+def _run_swallow_in(repo, *args):
+    return subprocess.run(
+        [sys.executable, str(CHECK_SWALLOW), *args],
+        cwd=repo, capture_output=True, text=True,
+    )
+
+
+def test_scoped_swallow_reports_only_changed_region(tmp_path):
+    """The NEW swallow (line 9, in the coder's changed hunk) is reported; the
+    pre-existing swallow (line 3, unchanged) no longer blocks the task."""
+    repo = _git_repo_with_edit(tmp_path, "m.py", _SWALLOW_BASE, _SWALLOW_EDIT)
+    r = _run_swallow_in(repo, "m.py")
+    assert r.returncode == 1, r.stdout
+    assert "m.py:9:" in r.stdout          # changed region — never weakened
+    assert "m.py:3:" not in r.stdout      # unchanged region — dropped
+
+
+def test_scoped_swallow_no_scope_reports_whole_file(tmp_path):
+    """--no-scope restores the whole-file behavior: both swallows reported."""
+    repo = _git_repo_with_edit(tmp_path, "m.py", _SWALLOW_BASE, _SWALLOW_EDIT)
+    r = _run_swallow_in(repo, "--no-scope", "m.py")
+    assert r.returncode == 1
+    assert "m.py:3:" in r.stdout and "m.py:9:" in r.stdout
+
+
+def test_scoped_swallow_untracked_file_reports_whole_file(tmp_path):
+    """No tracked baseline (untracked file) -> whole-file fallback, so a swallow
+    is never silently dropped when the change region can't be computed."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / "n.py").write_text(_SWALLOW_EDIT)  # never committed
+    r = _run_swallow_in(tmp_path, "n.py")
+    assert r.returncode == 1
+    assert "n.py:3:" in r.stdout and "n.py:9:" in r.stdout
+
+
+def test_scoped_swallow_explicit_changed_lines(tmp_path):
+    """--changed-lines scopes without git: a finding whose span intersects the
+    given range is kept; a range excluding every finding drops them all."""
+    repo = _git_repo_with_edit(tmp_path, "m.py", _SWALLOW_BASE, _SWALLOW_EDIT)
+    kept = _run_swallow_in(repo, "--changed-lines", "m.py=6-10", "m.py")
+    assert kept.returncode == 1 and "m.py:9:" in kept.stdout
+    assert "m.py:3:" not in kept.stdout
+    dropped = _run_swallow_in(repo, "--changed-lines", "m.py=1-2", "m.py")
+    assert dropped.returncode == 0, dropped.stdout
+
+
 # --- consult_em: D-71 diagnosis hardening (bash, via drive-consult.sh) -------
 # The M23 incident this covers: the EM's one production diagnosis came back
 # schema-invalid (empty task_id) and the run dead-ended with no retry. D-71
@@ -2456,6 +2533,18 @@ def test_phase_gate_gitignored_bytecode_does_not_trip(frozen_repo):
 # staging validation (including the REMOVED check) but applies nothing —
 # so we can test the freeze door without a real interactive terminal.
 REFREEZE = SCRIPTS / "refreeze.sh"
+
+
+def _PIN_ROW(name):
+    """A two-line mapping row pinning `tests/test_delta.py::<name>` to
+    src/app.py — the fixture's staged delta test file (item-1 pin gate:
+    every added/modified test function needs an owning-file pin)."""
+    return (
+        f"* `tests/test_delta.py::{name}`\n"
+        "  -> `src/app.py`\n"
+    )
+
+
 VALID_ERD_DELTA = (
     "# Current milestone\n\n"
     "## Changed acceptance criteria\n\n"
@@ -2467,7 +2556,7 @@ VALID_ERD_DELTA = (
     "- src/api/chat.py\n"
     "- src/api/models.py\n\n"
     "## Test-to-file mapping\n\n"
-    "No new mapping.\n"
+    + _PIN_ROW("test_param")
 )
 
 
@@ -2762,6 +2851,211 @@ def test_decorator_change_counts_as_function_change():
         "tests/test_a.py", old_src, new_src)
     assert fams == {"tests/test_a.py::test_first"}
     assert infra is False
+
+
+# --- Item 1: freeze-time owning-file pin gate --------------------------------
+# testchat v99: the genuinely new AC-161 oracle rode no test_mapping pin, the
+# file-granular milestone slice emptied its task, and the default verdict
+# could pass without running it. The gate REQUIRES every new/modified test
+# function to carry an owning-file pin at freeze time (contracts.test_mapping
+# or the ERD-DELTA '## Test-to-file mapping' section); infra fallbacks and
+# carried tests stay grandfathered. These pin the gate on its producer.
+
+_ERD_MAPPING = (
+    "## Test-to-file mapping\n"
+    "\n"
+    "Now-approved node IDs pin exactly:\n"
+    "\n"
+    "* `tests/test_a.py::test_second`\n"
+    "  -> `src/api/a.py` (AC-1; after storage).\n"
+    "* `tests/test_a.py::test_third[chromium]`\n"
+    "  -> `src/static/a.js`\n"
+    "* `tests/test_a.py::test_unpinned_row`\n"
+    "  -> (no owner named)\n"
+)
+
+
+def test_erd_pins_parse_two_line_rows():
+    pins = refreeze_delta._erd_pins(_ERD_MAPPING)
+    assert pins == {
+        "tests/test_a.py::test_second": "src/api/a.py",
+        "tests/test_a.py::test_third[chromium]": "src/static/a.js",
+    }
+
+
+def test_new_function_without_pin_fails_gate():
+    old_src = _src_a_v1()
+    new_src = old_src + "\ndef test_added():\n    assert True\n"
+    bad = refreeze_delta.pin_gate_violations(
+        changed_files=["tests/test_a.py"],
+        old_sources={"tests/test_a.py": old_src},
+        new_sources={"tests/test_a.py": new_src},
+        test_mapping={},
+        erd_delta="",
+    )
+    assert bad == ["tests/test_a.py::test_added"], bad
+
+
+def test_modified_function_without_pin_fails_gate():
+    old_src = _src_a_v1()
+    new_src = old_src.replace("    assert True\n", "    assert False\n", 1)
+    bad = refreeze_delta.pin_gate_violations(
+        changed_files=["tests/test_a.py"],
+        old_sources={"tests/test_a.py": old_src},
+        new_sources={"tests/test_a.py": new_src},
+        test_mapping={},
+        erd_delta="",
+    )
+    assert bad == ["tests/test_a.py::test_first"], bad
+
+
+def test_new_function_pinned_in_test_mapping_passes():
+    old_src = _src_a_v1()
+    new_src = old_src + "\ndef test_added():\n    assert True\n"
+    bad = refreeze_delta.pin_gate_violations(
+        changed_files=["tests/test_a.py"],
+        old_sources={"tests/test_a.py": old_src},
+        new_sources={"tests/test_a.py": new_src},
+        test_mapping={"tests/test_a.py::test_added": "src/services/a.py"},
+        erd_delta="",
+    )
+    assert bad == [], bad
+
+
+def test_new_function_pinned_in_erd_mapping_passes():
+    """The exact v99 hole closed: a NEW test pinned ONLY in the delta's
+    '## Test-to-file mapping' section (never in test_mapping) must satisfy
+    the gate — that is the placement the milestone slice drops otherwise."""
+    old_src = _src_a_v1()
+    new_src = old_src + "\ndef test_added():\n    assert True\n"
+    erd = _ERD_MAPPING + (
+        "* `tests/test_a.py::test_added`\n"
+        "  -> `src/services/a.py` (AC-161; NEW this delta).\n"
+    )
+    bad = refreeze_delta.pin_gate_violations(
+        changed_files=["tests/test_a.py"],
+        old_sources={"tests/test_a.py": old_src},
+        new_sources={"tests/test_a.py": new_src},
+        test_mapping={},
+        erd_delta=erd,
+    )
+    assert bad == [], bad
+
+
+def test_parametrized_pin_satisfies_bare_family():
+    """Pins match at family granularity: the family the diff produces is
+    bare (`test_third`), the pin may be parametrized (`test_third[chromium]`)
+    — and the reverse direction too."""
+    old_src = _src_a_v1()
+    new_src = old_src.replace(
+        "def test_third():\n",
+        "@pytest.mark.parametrize('x', [1])\ndef test_third():\n", 1)
+    bad = refreeze_delta.pin_gate_violations(
+        changed_files=["tests/test_a.py"],
+        old_sources={"tests/test_a.py": old_src},
+        new_sources={"tests/test_a.py": new_src},
+        test_mapping={},
+        erd_delta=_ERD_MAPPING,
+    )
+    assert bad == [], bad
+
+
+def test_brand_new_file_gates_every_function():
+    """A brand-new test file has no old source: every test function in it is
+    newly added, so every one must be pinned — a new file of 3 tests with 2
+    pins must fail naming the unpinned third."""
+    new_src = _src_a_v1()
+    bad = refreeze_delta.pin_gate_violations(
+        changed_files=["tests/test_a.py"],
+        old_sources={},
+        new_sources={"tests/test_a.py": new_src},
+        test_mapping={
+            "tests/test_a.py::test_first": "src/services/a.py",
+            "tests/test_a.py::test_second": "src/api/a.py",
+        },
+        erd_delta="",
+    )
+    assert bad == ["tests/test_a.py::test_third"], bad
+
+
+def test_infra_change_is_grandfathered():
+    """A content-bearing change outside every test function (fixture, helper)
+    falls back to file-level scope — the tests themselves did not change, so
+    the pin gate must NOT demand pins for them (S6/D-128 lesson: a hard halt
+    on untouched content freezes the pipeline)."""
+    old_src = (
+        "@pytest.fixture\n"
+        "def f():\n"
+        "    return 1\n"
+        "\n"
+        + _src_a_v1()
+    )
+    new_src = old_src.replace("    return 1\n", "    return 2\n", 1)
+    bad = refreeze_delta.pin_gate_violations(
+        changed_files=["tests/test_a.py"],
+        old_sources={"tests/test_a.py": old_src},
+        new_sources={"tests/test_a.py": new_src},
+        test_mapping={},
+        erd_delta="",
+    )
+    assert bad == [], bad
+
+
+def test_removed_file_gates_nothing():
+    """A file that only disappears this delta has no living tests to pin."""
+    bad = refreeze_delta.pin_gate_violations(
+        changed_files=["tests/test_gone.py"],
+        old_sources={"tests/test_gone.py": _src_a_v1()},
+        new_sources={},
+        test_mapping={},
+        erd_delta="",
+    )
+    assert bad == [], bad
+
+
+def test_pin_gate_cli_exits_1_with_unpinned_listing(tmp_path):
+    """The CLI contract refreeze.sh calls: exit 1 on unpinned families with
+    the family names on stderr; the listing must include the file path."""
+    old = tmp_path / "tests"
+    old.mkdir()
+    (old / "test_a.py").write_text(_src_a_v1())
+    new = tmp_path / "in"
+    (new / "tests").mkdir(parents=True)
+    (new / "tests" / "test_a.py").write_text(
+        _src_a_v1() + "\ndef test_added():\n    assert True\n")
+    proc = subprocess.run(
+        [sys.executable, str(REFREEZE_DELTA), "pin-gate",
+         "--old-root", str(tmp_path), "--new-root", str(new),
+         "--test-mapping", str(new / "contracts.json"),
+         "--erd-delta", str(new / "ERD-DELTA.md"),
+         "tests/test_a.py"],
+        cwd=tmp_path, capture_output=True, text=True,
+    )
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "test_added" in proc.stderr, proc.stderr
+    assert "test_a.py" in proc.stderr, proc.stderr
+    assert "PIN GATE FAIL" in proc.stderr, proc.stderr
+
+
+def test_pin_gate_cli_exits_0_when_pinned(tmp_path):
+    old = tmp_path / "tests"
+    old.mkdir()
+    (old / "test_a.py").write_text(_src_a_v1())
+    new = tmp_path / "in"
+    (new / "tests").mkdir(parents=True)
+    (new / "tests" / "test_a.py").write_text(
+        _src_a_v1() + "\ndef test_added():\n    assert True\n")
+    (new / "contracts.json").write_text(json.dumps({
+        "test_mapping": {"tests/test_a.py::test_added": "src/services/a.py"},
+    }))
+    proc = subprocess.run(
+        [sys.executable, str(REFREEZE_DELTA), "pin-gate",
+         "--old-root", str(tmp_path), "--new-root", str(new),
+         "--test-mapping", str(new / "contracts.json"),
+         "tests/test_a.py"],
+        cwd=tmp_path, capture_output=True, text=True,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
 # --- validate-plan.py --spec-preflight (D-78) --------------------------------
@@ -3554,7 +3848,8 @@ def test_plan_gate_brief_overflow_names_erd_mass(tmp_path):
 def refreeze_scripts(repo):
     for name in ("validate-plan.py", "check-test-surface.py",
                  "check-swallowed-errors.py", "check-spec-delta.py",
-                 "check-ac-postconditions.py", "check-test-direction.py"):
+                 "check-ac-postconditions.py", "check-test-direction.py",
+                 "refreeze_delta.py"):
         (repo / "scripts" / name).write_bytes((SCRIPTS / name).read_bytes())
     (repo / "scripts" / ".approved" / "incoming"
      / "ERD-DELTA.md").write_text(VALID_ERD_DELTA)
@@ -3830,6 +4125,191 @@ def test_run_tests_mypy_gate_green_runs_pytest(tmp_path):
     assert "FINAL_TESTS_RC=0" in r.stdout, r.stdout
     args = arg_log.read_text().splitlines()
     assert args[0] == "--rw" and "pytest" in args, args
+
+
+# --- run_tests mypy type gate: per-change scoping (audit 2026-08-11 item 2) --
+# The whole-tree `mypy src/` on every acceptance run let a type error in a file
+# the task never touched block its verdict. A targeted run (node-ids passed)
+# now scopes mypy to the active delta's changed source files; the full-suite
+# regression check (no node-ids) and a src-free delta keep the whole-tree
+# check. drive-runtime.sh calls run_tests with no args and sets no
+# ACTIVE_DELTA_FILES, so it cannot reach the scoped path — this focused driver
+# extracts the SAME run_tests (anti-drift) and drives it with a delta range +
+# node-ids. mypy is a sandbox-only tool (it does not exist on the dev host —
+# the correction-log class of a template selftest growing a transitive tool
+# dependency without CI installs), so the stub FAKES the mypy outcome via
+# SANDBOX_MYPY_RC exactly like the drive-runtime stub; the arg log still pins
+# EXACTLY which targets the gate selected, which is the scoping contract
+# (a regression that leaked src/z.py into a scoped call changes the arg line
+# and fails these tests).
+
+_SCOPED_STUB = (
+    "#!/usr/bin/env bash\n"
+    "[ -z \"${SANDBOX_ARG_LOG:-}\" ] || printf '%s\\n' \"$@\" >> \"$SANDBOX_ARG_LOG\"\n"
+    "case \" $* \" in\n"
+    "  *\" -- mypy \"*)\n"
+    "    exit \"${SANDBOX_MYPY_RC:-0}\" ;;\n"
+    "esac\n"
+    "[ -z \"${SANDBOX_REPORT_SOURCE:-}\" ] || cp \"$SANDBOX_REPORT_SOURCE\" .cache/test-report.json\n"
+    "exit \"${SANDBOX_STUB_RC:-0}\"\n"
+)
+
+_SCOPED_DRIVER = (
+    "set -euo pipefail\n"
+    "cd \"__WORK__\"\n"
+    "mark() { :; }\n"
+    "ACTIVE_DELTA_FILES=(__ACTIVE__)\n"
+    "DELTA_SCOPED=1\n"
+    "eval \"$(sed -n '/^run_tests() {/,/^}/p' \"__ORCH__\")\"\n"
+    "run_tests __IDS__\n"
+    "echo \"FINAL_TESTS_RC=$TESTS_RC\"\n"
+    "echo \"FINAL_FAILING=$FAILING\"\n"
+)
+
+_MYPY_CLEAN_SRC = "def f(x: int) -> int:\n    return x\n"
+_MYPY_ERR_SRC = 'x: int = "not an int"\n'
+
+
+def _drive_scoped_run_tests(tmp_path, *, src_files, deltas, node_ids,
+                            mypy_rc=0):
+    """Invoke the real run_tests with a scoped delta range. src_files:
+    {relpath: source}; deltas: list of delta dicts (written as delta-N.json and
+    passed as ACTIVE_DELTA_FILES); node_ids: run_tests args ([] = full-suite);
+    mypy_rc: the faked mypy outcome (0 green / 1 red — mypy is a sandbox-only
+    tool and does not exist on the dev host). Returns (CompletedProcess,
+    arg_log Path). The arg log holds every sandbox call IN ORDER: on a mypy-red
+    run that is only the mypy invocation (pytest never launches — targets
+    assertable); on a green run it is the mypy line followed by the pytest
+    invocation."""
+    work = tmp_path
+    (work / "scripts").mkdir(parents=True, exist_ok=True)
+    (work / ".cache").mkdir(exist_ok=True)
+    stub = work / "scripts" / "sandbox-run.sh"
+    stub.write_text(_SCOPED_STUB)
+    stub.chmod(0o755)
+    for rel, body in src_files.items():
+        p = work / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(body)
+    delta_paths = []
+    for i, d in enumerate(deltas):
+        dp = work / f"delta-{i}.json"
+        dp.write_text(json.dumps(d))
+        delta_paths.append(str(dp))
+    report = work / "pass-report.json"
+    report.write_text(json.dumps({
+        "summary": {"total": 1, "passed": 1},
+        "tests": [{"nodeid": "tests/test_a.py::t", "outcome": "passed"}],
+        "collectors": [],
+    }))
+    arg_log = work / "args.log"
+    driver = (_SCOPED_DRIVER
+              .replace("__WORK__", str(work))
+              .replace("__ACTIVE__", " ".join(f'"{p}"' for p in delta_paths))
+              .replace("__ORCH__", str(ORCHESTRATE))
+              .replace("__IDS__", " ".join(f'"{n}"' for n in node_ids)))
+    env = {**os.environ, "SANDBOX_REPORT_SOURCE": str(report),
+           "SANDBOX_ARG_LOG": str(arg_log), "SANDBOX_STUB_RC": "0",
+           "SANDBOX_MYPY_RC": str(mypy_rc)}
+    r = subprocess.run(["bash", "-c", driver], capture_output=True, text=True,
+                       env=env)
+    return r, arg_log
+
+
+def _mypy_call_line(arg_log):
+    return arg_log.read_text().splitlines()
+
+
+def test_scoped_mypy_ignores_unrelated_error(tmp_path):
+    """Headline: a targeted run type-checks only the delta's changed source
+    file. src/z.py carries a (stubbed red) type error but the delta touches
+    only src/a.py, so the gate stays GREEN — the unrelated error no longer
+    blocks the verdict. (Whole-tree `mypy src/` would have gone red on
+    src/z.py.) The arg log pins the scoping: mypy is invoked with src/a.py
+    exactly, never src/ or src/z.py."""
+    r, arg_log = _drive_scoped_run_tests(
+        tmp_path,
+        src_files={"src/a.py": _MYPY_CLEAN_SRC, "src/z.py": _MYPY_ERR_SRC},
+        deltas=[{"changed_files": ["src/a.py"]}],
+        node_ids=["tests/test_a.py::t"],
+        mypy_rc=0,
+    )
+    assert "FINAL_TESTS_RC=0" in r.stdout, (r.stdout, r.stderr)
+    lines = _mypy_call_line(arg_log)
+    assert lines[:5] == [
+        "--", "mypy", "--explicit-package-bases",
+        "--cache-dir=/tmp/mypy-cache", "src/a.py"], lines
+    assert "pytest" in lines, lines
+
+
+def test_scoped_mypy_error_in_scoped_file_fails_closed(tmp_path):
+    """D-129 preserved: a type error in a file the delta DOES touch still fails
+    the verdict, with mypy targeting exactly that file (never src/)."""
+    r, arg_log = _drive_scoped_run_tests(
+        tmp_path,
+        src_files={"src/a.py": _MYPY_CLEAN_SRC, "src/z.py": _MYPY_ERR_SRC},
+        deltas=[{"changed_files": ["src/z.py"]}],
+        node_ids=["tests/test_a.py::t"],
+        mypy_rc=1,
+    )
+    assert "FINAL_TESTS_RC=1" in r.stdout, (r.stdout, r.stderr)
+    assert "FINAL_FAILING=mypy:src/z.py" in r.stdout, r.stdout
+    assert _mypy_call_line(arg_log) == [
+        "--", "mypy", "--explicit-package-bases",
+        "--cache-dir=/tmp/mypy-cache", "src/z.py"], _mypy_call_line(arg_log)
+
+
+def test_scoped_mypy_full_suite_checks_whole_tree(tmp_path):
+    """The full-suite regression check (run_tests with no node-ids) keeps the
+    whole-tree `src/` check: src/z.py's error is caught and labelled mypy:src,
+    exactly as before the scoping change."""
+    r, arg_log = _drive_scoped_run_tests(
+        tmp_path,
+        src_files={"src/a.py": _MYPY_CLEAN_SRC, "src/z.py": _MYPY_ERR_SRC},
+        deltas=[{"changed_files": ["src/a.py"]}],
+        node_ids=[],
+        mypy_rc=1,
+    )
+    assert "FINAL_TESTS_RC=1" in r.stdout, (r.stdout, r.stderr)
+    assert "FINAL_FAILING=mypy:src" in r.stdout, r.stdout
+    assert _mypy_call_line(arg_log) == [
+        "--", "mypy", "--explicit-package-bases",
+        "--cache-dir=/tmp/mypy-cache", "src/"], _mypy_call_line(arg_log)
+
+
+def test_scoped_mypy_no_src_change_falls_back_to_whole_tree(tmp_path):
+    """Fail-closed default: a delta that changed no src/*.py (only a test file)
+    yields an empty scope, so the gate falls back to the whole-tree `src/`
+    check rather than skipping — src/z.py's error is still caught."""
+    r, arg_log = _drive_scoped_run_tests(
+        tmp_path,
+        src_files={"src/a.py": _MYPY_CLEAN_SRC, "src/z.py": _MYPY_ERR_SRC},
+        deltas=[{"changed_files": ["tests/test_a.py"]}],
+        node_ids=["tests/test_a.py::t"],
+        mypy_rc=1,
+    )
+    assert "FINAL_TESTS_RC=1" in r.stdout, (r.stdout, r.stderr)
+    assert "FINAL_FAILING=mypy:src" in r.stdout, r.stdout
+    assert _mypy_call_line(arg_log)[-1] == "src/", _mypy_call_line(arg_log)
+
+
+def test_scoped_mypy_unions_changed_src_across_deltas(tmp_path):
+    """A multi-delta range (a re-freeze spanning versions) type-checks the
+    UNION of changed source files, deduped and in first-seen order."""
+    r, arg_log = _drive_scoped_run_tests(
+        tmp_path,
+        src_files={"src/a.py": _MYPY_CLEAN_SRC, "src/z.py": _MYPY_ERR_SRC},
+        deltas=[{"changed_files": ["src/a.py"]},
+                {"changed_files": ["src/z.py", "src/a.py"]}],
+        node_ids=["tests/test_a.py::t"],
+        mypy_rc=1,
+    )
+    assert "FINAL_TESTS_RC=1" in r.stdout, (r.stdout, r.stderr)
+    assert "FINAL_FAILING=mypy:src/a.py,src/z.py" in r.stdout, r.stdout
+    assert _mypy_call_line(arg_log) == [
+        "--", "mypy", "--explicit-package-bases",
+        "--cache-dir=/tmp/mypy-cache", "src/a.py", "src/z.py"], \
+        _mypy_call_line(arg_log)
 
 
 def _run_with_json_report(tmp_path, report):
@@ -5029,6 +5509,8 @@ def test_refreeze_smoke_check_must_be_red_on_unchanged_tree(freezable_repo):
     incoming = freezable_repo / "scripts" / ".approved" / "incoming" / "tests"
     (incoming / "test_delta.py").write_text(
         "def test_red_probe():\n    assert False\n")
+    (freezable_repo / "scripts" / ".approved" / "incoming"
+     / "ERD-DELTA.md").write_text(VALID_ERD_DELTA + _PIN_ROW("test_red_probe"))
     r = _stage_contracts_smoke(
         freezable_repo,
         "grep -q 'def preexisting' src/app.py")
@@ -5972,7 +6454,7 @@ def test_refreeze_accepts_ac_with_postcondition(freezable_repo):
         "## Changed acceptance criteria\n\nAC-50\n\n"
         "## Superseded acceptance criteria\n\nNone.\n\n"
         "## Changed files\n\n- src/app.py\n\n"
-        "## Test-to-file mapping\n\nNo new mapping.\n"
+        "## Test-to-file mapping\n\n" + _PIN_ROW("test_param")
     )
     r = _run_refreeze_diff(freezable_repo)
     assert r.returncode == 0, (r.stdout, r.stderr)
@@ -6072,6 +6554,8 @@ def test_refreeze_accepts_url_aware_httpx_mock(freezable_repo):
         "    monkeypatch.setattr(httpx, 'get', fake_get)\n"
         "    assert True\n"
     )
+    (freezable_repo / "scripts" / ".approved" / "incoming"
+     / "ERD-DELTA.md").write_text(VALID_ERD_DELTA + _PIN_ROW("test_delta"))
     r = _run_refreeze_diff(freezable_repo)
     assert r.returncode == 0, (r.stdout, r.stderr)
     assert "S6" not in r.stdout + r.stderr
