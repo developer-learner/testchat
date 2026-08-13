@@ -68,7 +68,7 @@ jobs:
         if: steps.guard.outputs.run == 'yes'
         run: |
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio pytest-cov pytest-json-report ruff mypy respx
+          pip install pytest pytest-asyncio pytest-cov pytest-json-report pytest-xdist ruff mypy respx
       - name: Lint
         if: steps.guard.outputs.run == 'yes'
         run: ruff check src/
@@ -111,9 +111,19 @@ jobs:
         # Clearing 80 is not a CI-config change — it needs real coverage, and
         # under INV-1 no agent may author tests: it takes a TPM spec + refreeze.
         # Standing gap for that milestone: status.py at 38% (61 of 99 stmts).
+        #
+        # -n auto --dist=loadfile: pytest-xdist parallelizes across the runner's
+        # cores. loadfile keeps every test in one file on a single worker, so
+        # module-scoped conftest fixtures (server-per-file, session temp data)
+        # are not rebuilt across workers and file-local test ordering holds. The
+        # conftest port allocator is per-process, so each worker self-allocates
+        # loopback ports with no cross-worker collision. pytest-json-report and
+        # pytest-cov are both xdist-aware: workers stream results to the
+        # coordinator, which writes the single merged report + combined coverage
+        # (--cov-fail-under stays 79, unchanged — parallelism must not weaken it).
         run: |
           mkdir -p .cache
-          pytest --cov=src --cov-report=term-missing --cov-fail-under=79 --json-report --json-report-file=.cache/test-report.json
+          pytest -n auto --dist=loadfile --cov=src --cov-report=term-missing --cov-fail-under=79 --json-report --json-report-file=.cache/test-report.json
       - name: Upload coverage
         uses: codecov/codecov-action@v4
         if: always() && steps.guard.outputs.run == 'yes'

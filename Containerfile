@@ -9,9 +9,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git ca-certificates tar \
     && rm -rf /var/lib/apt/lists/*
 
-# Pytest toolchain + app deps (always installed)
+# Pytest toolchain + app deps (always installed). pytest-xdist: suite
+# parallelization (-n auto --dist=loadfile); the conftest port allocator is
+# per-process so each worker self-allocates loopback ports without collision.
 RUN pip install --no-cache-dir \
-    pytest pytest-json-report pytest-asyncio pytest-cov ruff mypy respx \
+    pytest pytest-json-report pytest-asyncio pytest-cov pytest-xdist ruff mypy respx \
     fastapi uvicorn httpx pydantic
 
 # Browser oracle (D-58): chromium + playwright baked at BUILD time — the
