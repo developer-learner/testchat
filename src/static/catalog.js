@@ -73,15 +73,32 @@ window.Catalog = (function () {
         var catalogData = results[1];
         var lmModels = lmData.models || [];
         var catalogModels = catalogData ? (catalogData.models || []) : [];
-        var options = [];
-        // script:false — LM Studio models (from /api/v1/models) are not the
-        // app's to unload; only /api/v1/models/catalog entries are script
-        // models the eject button can act on (P2-9).
+        // A loaded script model is returned by BOTH endpoints: the catalog
+        // (script:true, ejectable) and /api/v1/models (script:false) once it
+        // is loaded. Merge by id so each model is ONE option — concatenating
+        // the two lists double-listed every loaded script model with
+        // conflicting script/loaded flags. The catalog marks a model
+        // script:true (P2-9: eject acts only on script models); a model is
+        // shown loaded if either source reports it loaded.
+        var byId = {};
+        var order = [];
+        function mergeModel(id, loaded, script) {
+          if (!byId[id]) {
+            byId[id] = { id: id, loaded: false, script: false };
+            order.push(id);
+          }
+          if (loaded) byId[id].loaded = true;
+          if (script) byId[id].script = true;
+        }
         for (var i = 0; i < lmModels.length; i++) {
-          options.push({ id: lmModels[i].id, loaded: true, script: false });
+          mergeModel(lmModels[i].id, true, false);
         }
         for (var j = 0; j < catalogModels.length; j++) {
-          options.push({ id: catalogModels[j].id, loaded: catalogModels[j].loaded === true, script: true });
+          mergeModel(catalogModels[j].id, catalogModels[j].loaded === true, true);
+        }
+        var options = [];
+        for (var k = 0; k < order.length; k++) {
+          options.push(byId[order[k]]);
         }
         populateModelOptions(options);
       })
