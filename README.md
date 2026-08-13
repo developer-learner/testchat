@@ -25,6 +25,8 @@ uvicorn src.main:app --reload --port 8080
 # open http://localhost:8080
 ```
 
+- dev venv: pin 3.12 via `.python-version`
+
 > **Do not run the app on port 8000.** That port is reserved for the DeepSeek
 > script model (`ds4-server`, spawned by the app itself at `127.0.0.1:8000` —
 > see `DS4_URL` in `src/services/models.py`). Binding the app there makes every
