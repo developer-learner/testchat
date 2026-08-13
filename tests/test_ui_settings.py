@@ -1,10 +1,12 @@
 """
-Frozen UI oracle for settings-save failure visibility (spec v100; v101 and
-v102 re-freezes restaged this file for task-mapping and brief corrections —
-no behavioral change) AC-166: a failed save keeps the dialog open and
-reports the failure — a user is never left believing the system prompt was
-saved. Browser-only observation (D-58: no time.sleep; the server failure is
-simulated with page.route).
+Frozen UI oracle for settings-save failure visibility (spec v100; the
+consolidation freeze restaged this file for provenance correction — no
+behavioral change) AC-166: a failed save keeps the dialog open and reports
+the failure — a user is never left believing the system prompt was saved.
+Browser-only observation (D-58: no time.sleep; the server failure is
+simulated with page.route). The value entered the tree with the 7bfc622
+direct fix and was pinned by the f569528 bookkeeping commit; spec v100 locks
+the observed testid in contracts.ui.
 """
 
 from playwright.sync_api import Page, expect

@@ -332,6 +332,12 @@ overwritten.
   retains both the hydrated survivors and the new mutation.
 
 * **AC-160:** WHEN a primary snapshot contains valid JSON but any thread or
+* **AC-166:** WHEN the user saves the system prompt via the settings modal
+  and the save request fails, THE SYSTEM SHALL keep the settings modal open
+  and display the failure notice `Save failed` in the modal's `settings-status`
+  element, such that the user is never left believing the system prompt was
+  saved.
+
   message fails the same `ThreadSnapshot` schema used by PUT
   `/api/v1/threads`, THE SYSTEM SHALL move the complete primary bytes to a
   same-directory `<file>.corrupt-<timestamp>` quarantine file and return

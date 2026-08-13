@@ -1,0 +1,12 @@
+{
+  "changed_contract_ids": [
+    "ui:settings-status"
+  ],
+  "changed_tests": [
+    "tests/test_ui_settings.py::test_settings_save_failure_keeps_the_modal_open_and_is_visible[chromium]"
+  ],
+  "changed_tests_granularity": "function",
+  "changed_files": [
+    "src/static/chrome.js"
+  ]
+}
