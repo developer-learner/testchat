@@ -14,8 +14,8 @@ required if and only if a frozen test pins it. This document narrates the
 product and states the acceptance criteria currently in force. Criteria from
 earlier milestones that remain live are pinned by their own frozen tests; the
 criteria written out below govern the current feature set — current-chat
-awareness, free model selection, the composer keyboard shortcuts (Enter for a
-newline, Ctrl+Enter / Cmd+Enter to send), conflict-safe history persistence,
+awareness, free model selection, the composer keyboard behavior (Enter for a
+newline, the Send button to send), conflict-safe history persistence,
 and the local model catalog.
 
 ## Acceptance criteria
@@ -145,11 +145,12 @@ and the local model catalog.
 * **AC-130:** WHEN no model is loaded and the active thread has no saved
   model, THE SYSTEM SHALL show a placeholder ("Select model...") in the
   model field, visually distinct from a real selection (muted, italic — the
-  same voice as the message-input placeholder), and SHALL NOT display an
-  unloaded model as if it were selected.
-* **AC-131:** WHEN the user sends a message with no model selected, THE
-  SYSTEM SHALL show guidance naming the fix (pick a model) instead of
-  surfacing a raw backend error, and SHALL NOT dispatch the chat request.
+  same voice as the message-input placeholder), SHALL NOT display an
+  unloaded model as if it were selected, and SHALL disable the Send control,
+  such that no message can be dispatched without a loaded model.
+* **AC-131 (retired — superseded by the AC-130 amendment, ERD-DELTA
+  v102):** the "Pick a model" guidance bubble no longer fires; the disabled
+  Send control (AC-130) is the no-model affordance.
 * **AC-132:** WHEN the user picks an unloaded model from the dropdown, THE
   SYSTEM SHALL ask for confirmation before loading; cancelling SHALL revert
   the selection to its prior value and SHALL NOT load anything or send
@@ -278,17 +279,22 @@ and the local model catalog.
   Enter key AND no IME composition is in progress, THE SYSTEM SHALL insert
   a newline at the cursor position and SHALL NOT send the message.
 
-* **AC-153:** WHEN the message input has focus AND the user presses
-  Ctrl+Enter (or Cmd+Enter on macOS) AND no IME composition is in progress
-  AND the input contains non-whitespace text, THE SYSTEM SHALL send the
-  message through the same path as the send button.
+* **AC-168 (new — replaces AC-153/AC-154):** THE Send button SHALL be the
+  ONLY path that dispatches a message; no keyboard combination (Ctrl+Enter,
+  Cmd+Enter, Shift+Enter, plain Enter, or any other key event) SHALL send,
+  such that pressing any key in the message input never produces a message
+  bubble or a chat request.
 
-* **AC-154:** WHEN the user presses Ctrl+Enter (or Cmd+Enter on macOS)
-  while the message input is empty or whitespace-only, THE SYSTEM SHALL
-  send nothing and SHALL leave the input unchanged.
+* **AC-169 (new — replaces AC-155):** THE message input's placeholder SHALL
+  state only that Enter inserts a newline ("Type a message... (Enter for
+  newline)") and SHALL NOT advertise any keyboard send shortcut.
 
-* **AC-155:** THE message input's placeholder SHALL state the keyboard
-  shortcuts: "Ctrl+Enter to send, Enter for newline".
+* **AC-153 (retired — superseded by AC-168, ERD-DELTA v102):** Ctrl+Enter /
+  Cmd+Enter no longer sends.
+* **AC-154 (retired — superseded by AC-168, ERD-DELTA v102):** the empty /
+  whitespace-only keyboard guard is gone with the shortcut.
+* **AC-155 (retired — superseded by AC-169, ERD-DELTA v102):** the
+  placeholder no longer states a shortcut.
 
 **Streaming send control**
 
@@ -444,10 +450,10 @@ overwritten.
    it the same way — and loading it releases whichever other local model was
    resident, since the local models do not run at the same time.
 8. In the message box, press Enter: a newline appears at the cursor and
-   nothing is sent. Press Ctrl+Enter (Cmd+Enter on macOS): the message sends.
-   With the box empty or whitespace-only, Ctrl+Enter sends nothing and the
-   input is unchanged. The box's hint text reads "Ctrl+Enter to send, Enter
-   for newline".
+   nothing is sent; Ctrl+Enter and Cmd+Enter are no-ops too. To send, click
+   the Send button (the only send path). With no model loaded the Send
+   button is disabled. The box's hint text reads "Type a message... (Enter
+   for newline)".
 9. Create three chats with visibly different titles, delete the middle one,
    and reload: exactly the other two chats return with their original content.
 10. During a simulated transient history-load failure, the footer reads

@@ -1,13 +1,14 @@
 {
+  "erd_version": 102,
   "files": [
     "src/static/app.js",
     "src/static/threads.js",
     "src/services/storage.py",
     "src/api/threads.py",
     "src/static/chrome.js",
-    "src/static/catalog.js"
+    "src/static/catalog.js",
+    "src/static/index.html"
   ],
-  "erd_version": 101,
   "entry_points": [
     "src.main:app",
     "src.services.llm",
@@ -46,7 +47,8 @@
     "src.api.models:CatalogEntry"
   ],
   "changed_files": [
-    "src/static/catalog.js"
+    "src/static/app.js",
+    "src/static/index.html"
   ],
   "no_edit_files": [],
   "externals": [

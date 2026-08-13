@@ -923,8 +923,8 @@ def test_sidebar_width_persists_across_reload(page: Page, app_url: str) -> None:
     )
 
 
-# AC-130 / AC-131: nothing loaded -> placeholder voice; Send guides, not 422
-def test_no_loaded_model_shows_placeholder_and_send_guides(
+# AC-130: nothing loaded -> placeholder voice; Send disabled; Enter never sends
+def test_no_loaded_model_shows_placeholder_and_disables_send(
     page: Page, app_url: str
 ) -> None:
     page.route(
@@ -949,14 +949,19 @@ def test_no_loaded_model_shows_placeholder_and_send_guides(
         ".selectedOptions[0].textContent"
     )
     assert "Select model" in shown, f"placeholder option not shown: {shown!r}"
-    # The M28 status rule already disables the Send button without a loaded
-    # model — pin that, then exercise the Enter path (form.requestSubmit
-    # bypasses the disabled submitter), which must guide, not 422.
+    # AC-130 (v102 recut): without a loaded model the Send control is
+    # disabled — the no-model affordance. AC-131 (pick-a-model guidance)
+    # is retired: no guidance bubble can fire because no keyboard path and
+    # no enabled control can attempt a send.
     expect(page.get_by_test_id("send-btn")).to_be_disabled()
-    page.get_by_test_id("message-input").fill("hello without a model")
-    page.get_by_test_id("message-input").press("Control+Enter")
-    expect(page.get_by_test_id("msg-error")).to_contain_text("Pick a model")
+    box = page.get_by_test_id("message-input")
+    box.fill("hello without a model")
+    box.press("Enter")
+    assert box.input_value() == "hello without a model\n", (
+        "Enter without a loaded model must insert a newline, not send (AC-152)"
+    )
     expect(page.get_by_test_id("msg-user")).to_have_count(0)
+    expect(page.get_by_test_id("msg-error")).to_have_count(0)
 
 
 # AC-132: picking an unloaded model asks first; cancel reverts and sends nothing
@@ -1084,8 +1089,8 @@ def test_message_input_plain_enter_inserts_newline_without_sending(
     expect(page.get_by_test_id("msg-user")).to_have_count(0)
 
 
-# AC-153: Ctrl+Enter sends through the send path
-def test_message_input_ctrl_enter_sends(
+# AC-168: Ctrl+Enter no longer sends — the only send path is the Send button
+def test_message_input_ctrl_enter_does_not_send(
     page: Page, app_url: str
 ) -> None:
     page.goto(app_url)
@@ -1093,15 +1098,12 @@ def test_message_input_ctrl_enter_sends(
     box = page.get_by_test_id("message-input")
     box.fill("sent via ctrl enter")
     box.press("Control+Enter")
-    expect(page.get_by_test_id("msg-user")).to_have_count(1)
-    expect(page.get_by_test_id("msg-user").first).to_contain_text(
-        "sent via ctrl enter"
-    )
-    expect(page.get_by_test_id("msg-assistant")).to_have_count(1)
+    expect(page.get_by_test_id("msg-user")).to_have_count(0)
+    expect(page.get_by_test_id("msg-assistant")).to_have_count(0)
 
 
-# AC-153 (macOS modifier): Cmd+Enter is the send shortcut on macOS
-def test_message_input_cmd_enter_sends(
+# AC-168 (macOS modifier): Cmd+Enter is a no-op too
+def test_message_input_cmd_enter_does_not_send(
     page: Page, app_url: str
 ) -> None:
     page.goto(app_url)
@@ -1109,27 +1111,12 @@ def test_message_input_cmd_enter_sends(
     box = page.get_by_test_id("message-input")
     box.fill("sent via cmd enter")
     box.press("Meta+Enter")
-    expect(page.get_by_test_id("msg-user")).to_have_count(1)
-    expect(page.get_by_test_id("msg-user").first).to_contain_text(
-        "sent via cmd enter"
-    )
-    expect(page.get_by_test_id("msg-assistant")).to_have_count(1)
-
-
-# AC-154: Ctrl+Enter with empty or whitespace-only input sends nothing
-def test_message_input_ctrl_enter_empty_sends_nothing(
-    page: Page, app_url: str
-) -> None:
-    page.goto(app_url)
-    box = page.get_by_test_id("message-input")
-    box.press("Control+Enter")
-    box.fill("   ")
-    box.press("Control+Enter")
     expect(page.get_by_test_id("msg-user")).to_have_count(0)
+    expect(page.get_by_test_id("msg-assistant")).to_have_count(0)
 
 
-# AC-155: the placeholder states the shortcuts
-def test_message_input_placeholder_states_shortcuts(
+# AC-169: the placeholder advertises Enter-for-newline only, no shortcut
+def test_message_input_placeholder_states_newline_only(
     page: Page, app_url: str
 ) -> None:
     page.goto(app_url)
@@ -1137,8 +1124,8 @@ def test_message_input_placeholder_states_shortcuts(
         "placeholder"
     )
     assert placeholder is not None, "message-input needs a placeholder"
-    assert "Ctrl+Enter to send" in placeholder, placeholder
     assert "Enter for newline" in placeholder, placeholder
+    assert "Ctrl+Enter" not in placeholder, placeholder
 
 
 # =============================================================================

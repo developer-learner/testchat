@@ -1,0 +1,19 @@
+{
+  "changed_contract_ids": [],
+  "changed_tests": [
+    "tests/test_ui.py::test_message_input_cmd_enter_does_not_send[chromium]",
+    "tests/test_ui.py::test_message_input_cmd_enter_sends[chromium]",
+    "tests/test_ui.py::test_message_input_ctrl_enter_does_not_send[chromium]",
+    "tests/test_ui.py::test_message_input_ctrl_enter_empty_sends_nothing[chromium]",
+    "tests/test_ui.py::test_message_input_ctrl_enter_sends[chromium]",
+    "tests/test_ui.py::test_message_input_placeholder_states_newline_only[chromium]",
+    "tests/test_ui.py::test_message_input_placeholder_states_shortcuts[chromium]",
+    "tests/test_ui.py::test_no_loaded_model_shows_placeholder_and_disables_send[chromium]",
+    "tests/test_ui.py::test_no_loaded_model_shows_placeholder_and_send_guides[chromium]"
+  ],
+  "changed_tests_granularity": "function",
+  "changed_files": [
+    "src/static/app.js",
+    "src/static/index.html"
+  ]
+}
