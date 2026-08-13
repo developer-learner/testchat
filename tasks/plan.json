@@ -1,82 +1,55 @@
 {
-  "version": 9,
+  "version": 1,
   "erd_version": 99,
   "tasks": [
     {
-      "brief": "Implementation constraints: `src/services/storage.py`. Keep the exact signature `def load_versioned_snapshot(validator=None) -> tuple[list[dict], int]`. Do NOT add a path parameter and do NOT change what any caller passes. The data path is read inside the function via the existing `_data_path()` helper. `save_versioned_snapshot(threads: list[dict], expected_revision: int) -> int`, `load_snapshot`, `save_snapshot`, `quarantine_files()`, and `SnapshotConflict` are unchanged.\n\nDefine a module-level exception class `SnapshotUnavailableError(Exception)` in this file.\n\nBehavioral specification \u2014 inside `load_versioned_snapshot`, the current implementation already renames the primary to `f\"{path}.corrupt-{stamp}\"` with `stamp = time.strftime(\"%Y%m%d-%H%M%S\")` on every quarantine path: unreadable JSON, validator raising, validator returning False, and unreadable shape. Keep that behavior and keep returning `([], 0)` when the rename succeeds. NEW: in each of those four paths, when `os.rename` raises `OSError`, keep the warning log and then `raise SnapshotUnavailableError from rename_exc` instead of falling through to `return [], 0` \u2014 the caller must learn the snapshot is unavailable, never see broken storage as healthy empty. The validator is called exactly once with the WHOLE parsed document (`validator(data)` \u2014 a dict envelope `{\"revision\": N, \"threads\": [...]}` or a legacy list).\n\nThe `corrupt-` rename must appear within the first 30 lines of the function body (a frozen smoke check greps 30 lines after the `def` line).\n\nAcceptance: the storage smoke check is green, `quarantine_files()` finds a `threads.json.corrupt-*` file after a successful schema-invalid quarantine, and `test_quarantine_rename_failure_is_unavailable` passes.",
-      "contracts": [
-        "src.services.storage:load_versioned_snapshot",
-        "src.services.storage:SnapshotUnavailableError"
-      ],
-      "depends_on": [],
-      "file": "src/services/storage.py",
-      "id": "T1",
-      "tests": []
-    },
-    {
-      "brief": "Implementation constraints: `src/api/threads.py`. This task owns all three `/api/v1/threads` route contracts (`route:GET`, `route:PUT`, `route:DELETE`), plus the persistence oracles that exercise them (`tests/test_persistence_revisions.py`, `tests/test_websearch_api.py::test_put_threads_roundtrips_sources`, `tests/test_threads_api.py`). None belong to any other task. Use the existing models `ThreadsListResponse`, `ThreadsPayload`, `ThreadsRevisionPrecondition`, `ThreadSnapshot`; import `load_versioned_snapshot`, `save_versioned_snapshot`, `SnapshotUnavailableError` from `src.services.storage`.\n\nIn the GET `/api/v1/threads` handler, define a helper `def _validate_snapshot_document(document) -> bool`: for a dict envelope select `document.get(\"threads\")` (raise `ValueError` if not a list); for a list use it directly. Apply `ThreadSnapshot.model_validate(item)` to EVERY item \u2014 a pydantic `ValidationError` (a `ValueError` subclass) is raised when an item's shape is invalid, including nested roles such as `role: \"system\"`. End with an explicit `return True`.\nCall `threads, revision = load_versioned_snapshot(validator=_validate_snapshot_document)`.\nNEVER pass `ThreadSnapshot.model_validate` itself \u2014 storage calls the validator with the WHOLE document, so the envelope always fails and quarantines every load.\n`quarantined = bool(quarantine_files())` \u2014 never from `([], 0)`.\nReturn `ThreadsListResponse(threads=threads, revision=revision, quarantined=quarantined).model_dump(exclude_none=True)` \u2014 the response MUST be dumped with `exclude_none=True` so stored messages without `sources` stay without that key (frozen oracle: `'sources' not in message`).\n\nNEW: wrap the `load_versioned_snapshot` call so a raised `SnapshotUnavailableError` returns `JSONResponse({\"detail\": \"snapshot unavailable\"}, status_code=503)` \u2014 broken storage, never a healthy-empty read.\n\nThe PUT and DELETE handlers must be left EXACTLY as they are (role 422s, `exclude_none` serialization, `ThreadSnapshot(**item)` re-validation, 409 revision-conflict, `{\"status\": \"ok\", \"revision\": N}`). Do NOT rewrite or reformat them; the file may already satisfy this brief. If it does, reply with exactly `=== NO CHANGES ===`.\n\nAcceptance: GET returns `{\"threads\": [], \"revision\": 0, \"quarantined\": true}` for a schema-invalid snapshot (moved to exactly one `*.corrupt-*` file byte-for-byte) and `503` when the quarantine rename cannot complete; the persistence, revision-conflict, and roundtrip oracles all pass.",
-      "contracts": [
-        "route:GET /api/v1/threads",
-        "route:PUT /api/v1/threads",
-        "route:DELETE /api/v1/threads",
-        "schema:ThreadsListResponse",
-        "schema:ThreadsPayload",
-        "schema:ThreadsRevisionPrecondition",
-        "schema:ThreadSnapshot",
-        "error:503-snapshot-unavailable"
-      ],
-      "depends_on": [
-        "T1"
-      ],
-      "file": "src/api/threads.py",
-      "id": "T2",
-      "tests": [
-        "tests/test_data_safety_storage.py::test_valid_json_with_invalid_thread_schema_is_quarantined",
-        "tests/test_persistence_revisions.py::test_each_accepted_delete_advances_revision",
-        "tests/test_persistence_revisions.py::test_each_accepted_put_advances_revision",
-        "tests/test_persistence_revisions.py::test_put_without_revision_is_422_and_writes_nothing",
-        "tests/test_persistence_revisions.py::test_stale_put_leaves_primary_and_backup_unchanged",
-        "tests/test_persistence_revisions.py::test_two_concurrent_same_revision_puts_have_one_winner",
-        "tests/test_threads_api.py::test_delete_clears_snapshot",
-        "tests/test_threads_api.py::test_get_reports_quarantine_after_corrupt_snapshot",
-        "tests/test_threads_api.py::test_get_with_no_saved_data_returns_empty",
-        "tests/test_threads_api.py::test_optional_fields_default",
-        "tests/test_threads_api.py::test_put_invalid_role_rejected",
-        "tests/test_threads_api.py::test_put_malformed_payload_is_422_and_preserves_stored",
-        "tests/test_threads_api.py::test_put_then_get_roundtrips",
-        "tests/test_websearch_api.py::test_put_threads_roundtrips_sources"
-      ]
-    },
-    {
-      "brief": "Implementation constraints: `src/static/app.js`. The element with `id=\"status-history\"` / `data-testid=\"history-status\"` already exists in `index.html`. Do not touch the mutation-queue code in `threads.js`.\n\nBehavioral specification \u2014 replace the current initial-load `fetch` chain (the `.then`/`.catch` at the bottom of the app boot):\n\n1. Issue GET `/api/v1/threads` for hydration. The retry loop is a self-scheduling function: at the START of EVERY iteration, BEFORE issuing the fetch, write the warning text to the `history-status` element. This re-asserts the warning on every retry.\n2. On failure (network error or non-ok status, including 503), the catch keeps the warning text exactly `history unavailable \u2014 retrying` (already written at the top of this iteration) and schedules the next retry via a short `setTimeout` loop. Do NOT call `Threads.createThread()` on failure \u2014 revision is unknown, so creating replacement state could destroy survivors.\n3. On success: set the `history-status` text to the single-owner value `data.quarantined ? 'history unreadable (backup kept)' : ''` \u2014 the hydration response is now the ONLY source for this element. Install the revision FIRST via the existing `Threads.setHydratedRevision(data.revision != null ? data.revision : 0)` before any mutation can enqueue, then hydrate threads into the UI (existing logic: populate `TC.threads`, render the newest thread, render the sidebar; if there are no threads, `Threads.createThread()` as today).\n4. Keep the retry loop running until a GET succeeds; each retry must originate from app.js code (a frozen UI oracle detects hydration GETs by the caller stack containing `/static/app.js`).\n\nThe literal string `history unavailable \u2014 retrying` must appear in this file (frozen smoke check).\n\nAcceptance: after a failed initial GET the `history-status` element shows `history unavailable \u2014 retrying`; after the retry succeeds the warning is replaced by the quarantine indicator only when `quarantined` is true, the seeded thread renders, and a subsequent new-thread mutation PUTs with the hydrated revision.",
-      "contracts": [
-        "ui:history-status"
-      ],
+      "id": "T3",
+      "file": "src/static/app.js",
       "depends_on": [
         "T4"
       ],
-      "file": "src/static/app.js",
-      "id": "T3",
+      "brief": "Implementation constraints: `src/static/app.js`. The element with\n`id=\"status-history\"` / `data-testid=\"history-status\"` already exists in\n`index.html`. Do not touch the mutation-queue code in `threads.js`.\n\nBehavioral specification \u2014 replace the current initial-load `fetch`\nchain (the `.then`/`.catch` at the bottom of the app boot):\n\n1. Issue GET `/api/v1/threads` for hydration. The retry loop is a\n   self-scheduling function: at the START of EVERY iteration, BEFORE issuing\n   the fetch, write the warning text to the `history-status` element. This\n   re-asserts the warning on every retry.\n2. On failure (network error or non-ok status, including 503), the catch\n   keeps the warning text exactly `history unavailable \u2014 retrying` (already\n   written at the top of this iteration) and schedules the next retry via a\n   short `setTimeout` loop. Do NOT call `Threads.createThread()` on failure\n   \u2014 revision is unknown, so creating replacement state could destroy\n   survivors.\n3. On success: set the `history-status` text to the single-owner value\n   `data.quarantined ? 'history unreadable (backup kept)' : ''` \u2014 the\n   hydration response is now the ONLY source for this element. Install the\n   revision FIRST via the existing\n   `Threads.setHydratedRevision(data.revision != null ? data.revision : 0)`\n   before any mutation can enqueue, then hydrate threads into the UI\n   (existing logic: populate `TC.threads`, render the newest thread, render\n   the sidebar; if there are no threads, `Threads.createThread()` as today).\n4. Keep the retry loop running until a GET succeeds; each retry must\n   originate from app.js code (a frozen UI oracle detects hydration GETs by\n   the caller stack containing `/static/app.js`).\n\nThe literal string `history unavailable \u2014 retrying` must appear in this file\n(frozen smoke check).\n\nAcceptance: after a failed initial GET the `history-status` element shows\n`history unavailable \u2014 retrying`; after the retry succeeds the warning is\nreplaced by the quarantine indicator only when `quarantined` is true, the\nseeded thread renders, and a subsequent new-thread mutation PUTs with the\nhydrated revision.",
+      "contracts": [],
       "tests": [
         "tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving[chromium]"
       ]
     },
     {
-      "brief": "Implementation constraints: `src/static/threads.js`. Do not change the PUT queue, the DELETE route handler's use, or any other behavior. This task does NOT own `route:PUT /api/v1/threads` or any backend route \u2014 those belong to the threads.py task; do not claim them.\n\nBehavioral specification: (1) confirming a single row deletion (`deleteThread(id)`) must remove only that thread and enqueue a revisioned PUT whose payload is the complete survivor snapshot via the existing `_enqueueMutation('PUT', { threads: _captureSnapshot() })` \u2014 never the clear-all DELETE route. (2) REMOVE the standalone script-eval block at the bottom of the file that issues its own `fetch('/api/v1/threads')` and writes the `history-status` element (the load-path quarantine indicator) \u2014 app.js's hydration GET is now the single owner of that element and renders `history unreadable (backup kept)` from `data.quarantined`. Delete that entire block: the fetch, both `.then` handlers, and the `.catch`.\n\nAcceptance: deleting one of three threads issues one PUT (status 200, not a DELETE), after a reload only the two survivors render and persist, and no `fetch('/api/v1/threads')` call remains outside app.js.",
-      "contracts": [
-        "ui:thread-item",
-        "ui:delete-confirm-modal",
-        "ui:delete-confirm",
-        "ui:delete-cancel",
-        "ui:thread-delete-btn"
-      ],
+      "id": "T4",
+      "file": "src/static/threads.js",
       "depends_on": [
         "T2"
       ],
-      "file": "src/static/threads.js",
-      "id": "T4",
+      "brief": "Implementation constraints: `src/static/threads.js`. Do not change the PUT\nqueue, the DELETE route handler's use, or any other behavior. This task does\nNOT own `route:PUT /api/v1/threads` or any backend route \u2014 those belong to\nthe threads.py task; do not claim them.\n\nBehavioral specification: (1) confirming a single row deletion\n(`deleteThread(id)`) must remove only that thread and enqueue a revisioned\nPUT whose payload is the complete survivor snapshot via the existing\n`_enqueueMutation('PUT', { threads: _captureSnapshot() })` \u2014 never the\nclear-all DELETE route. (2) REMOVE the standalone script-eval block at the\nbottom of the file that issues its own `fetch('/api/v1/threads')` and writes\nthe `history-status` element (the load-path quarantine indicator) \u2014 app.js's\nhydration GET is now the single owner of that element and renders\n`history unreadable (backup kept)` from `data.quarantined`. Delete that\nentire block: the fetch, both `.then` handlers, and the `.catch`.\n\nAcceptance: deleting one of three threads issues one PUT (status 200, not a\nDELETE), after a reload only the two survivors render and persist, and no\n`fetch('/api/v1/threads')` call remains outside app.js.",
+      "contracts": [],
       "tests": [
         "tests/test_data_safety_ui.py::test_delete_one_thread_survives_reload[chromium]"
+      ]
+    },
+    {
+      "id": "T1",
+      "file": "src/services/storage.py",
+      "depends_on": [],
+      "brief": "Implementation constraints: `src/services/storage.py`. Keep the exact\nsignature `def load_versioned_snapshot(validator=None) -> tuple[list[dict], int]`.\nDo NOT add a path parameter and do NOT change what any caller passes. The data\npath is read inside the function via the existing `_data_path()` helper.\n`save_versioned_snapshot(threads: list[dict], expected_revision: int) -> int`,\n`load_snapshot`, `save_snapshot`, `quarantine_files()`, and `SnapshotConflict`\nare unchanged.\n\nDefine a module-level exception class `SnapshotUnavailableError(Exception)`\nin this file.\n\nBehavioral specification \u2014 inside `load_versioned_snapshot`, the current\nimplementation already renames the primary to `f\"{path}.corrupt-{stamp}\"`\nwith `stamp = time.strftime(\"%Y%m%d-%H%M%S\")` on every quarantine path:\nunreadable JSON, validator raising, validator returning False, and unreadable\nshape. Keep that behavior and keep returning `([], 0)` when the rename\nsucceeds. NEW: in each of those four paths, when `os.rename` raises `OSError`,\nkeep the warning log and then `raise SnapshotUnavailableError from rename_exc`\ninstead of falling through to `return [], 0` \u2014 the caller must learn the\nsnapshot is unavailable, never see broken storage as healthy empty. The\nvalidator is called exactly once with the WHOLE parsed document\n(`validator(data)` \u2014 a dict envelope `{\"revision\": N, \"threads\": [...]}` or\na legacy list).\n\nThe `corrupt-` rename must appear within the first 30 lines of the function\nbody (a frozen smoke check greps 30 lines after the `def` line).\n\nAcceptance: the storage smoke check is green, `quarantine_files()` finds a\n`threads.json.corrupt-*` file after a successful schema-invalid quarantine,\nand `test_quarantine_rename_failure_is_unavailable` passes.",
+      "contracts": [
+        "src.services.storage:SnapshotUnavailableError"
+      ],
+      "tests": [
+        "tests/test_storage_service.py::test_quarantine_rename_failure_is_unavailable"
+      ]
+    },
+    {
+      "id": "T2",
+      "file": "src/api/threads.py",
+      "depends_on": [
+        "T1"
+      ],
+      "brief": "Implementation constraints: `src/api/threads.py`. This task owns all three `/api/v1/threads` route contracts (`route:GET`,\n`route:PUT`, `route:DELETE`), plus the persistence oracles that exercise\nthem (`tests/test_persistence_revisions.py`,\n`tests/test_websearch_api.py::test_put_threads_roundtrips_sources`,\n`tests/test_threads_api.py`). None belong to any other task. Use the existing\nmodels `ThreadsListResponse`, `ThreadsPayload`, `ThreadsRevisionPrecondition`,\n`ThreadSnapshot`; import `load_versioned_snapshot`, `save_versioned_snapshot`,\n`SnapshotUnavailableError` from `src.services.storage`.\n\nIn the GET `/api/v1/threads` handler, define a helper\n`def _validate_snapshot_document(document) -> bool`: for a dict envelope\nselect `document.get(\"threads\")` (raise `ValueError` if not a list); for\na list use it directly. Apply `ThreadSnapshot.model_validate(item)` to\nEVERY item \u2014 a pydantic `ValidationError` (a `ValueError` subclass) is\nraised when an item's shape is invalid, including nested roles such as\n`role: \"system\"`. End with an explicit `return True`.\nCall `threads, revision = load_versioned_snapshot(validator=_validate_snapshot_document)`.\nNEVER pass `ThreadSnapshot.model_validate` itself \u2014 storage calls the\nvalidator with the WHOLE document, so the envelope always fails and\nquarantines every load.\n`quarantined = bool(quarantine_files())` \u2014 never from `([], 0)`.\nReturn `ThreadsListResponse(threads=threads, revision=revision, quarantined=quarantined).model_dump(exclude_none=True)` \u2014 the response MUST be dumped with `exclude_none=True` so stored messages without `sources` stay without that key (frozen oracle: `'sources' not in message`).\n\nNEW: wrap the `load_versioned_snapshot` call so a raised\n`SnapshotUnavailableError` returns\n`JSONResponse({\"detail\": \"snapshot unavailable\"}, status_code=503)` \u2014\nbroken storage, never a healthy-empty read.\n\nThe PUT and DELETE handlers must be left EXACTLY as they are (role 422s,\n`exclude_none` serialization, `ThreadSnapshot(**item)` re-validation,\n409 revision-conflict, `{\"status\": \"ok\", \"revision\": N}`). Do NOT rewrite\nor reformat them; the file may already satisfy this brief. If it does,\nreply with exactly `=== NO CHANGES ===`.\n\nAcceptance: GET returns `{\"threads\": [], \"revision\": 0, \"quarantined\": true}`\nfor a schema-invalid snapshot (moved to exactly one `*.corrupt-*` file\nbyte-for-byte) and `503` when the quarantine rename cannot complete; the\npersistence, revision-conflict, and roundtrip oracles all pass.",
+      "contracts": [
+        "error:503-snapshot-unavailable"
+      ],
+      "tests": [
+        "tests/test_data_safety_storage.py::test_valid_json_with_invalid_thread_schema_is_quarantined"
       ]
     }
   ]
