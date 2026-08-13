@@ -119,22 +119,15 @@
         el.appendChild(c);
       }
 
-      // Ctrl/Cmd+Enter submits; plain Enter and Shift+Enter keep the default
-      // newline behavior. Also auto-grow the textarea up to ~40vh so a
-      // multi-line paste (markdown blocks, code) is readable without hiding
-      // the messages behind a scrolling wall.
+      // Auto-grow the textarea up to ~40vh so a multi-line paste (markdown
+      // blocks, code) is readable without hiding the messages behind a
+      // scrolling wall.
       function autogrow() {
         input.style.height = 'auto';
         var cap = Math.round(window.innerHeight * 0.4);
         input.style.height = Math.min(input.scrollHeight, cap) + 'px';
       }
       input.addEventListener('input', autogrow);
-      input.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) {
-          e.preventDefault();
-          form.requestSubmit();
-        }
-      });
       autogrow();
 
       // Stop button
