@@ -57,6 +57,27 @@ version chosen and why, selfcheck output, and an explicit cannot-prove
 list: browser-class equivalence under xdist (browser is 1194), sandbox
 image rebuild, CI green — host verifies all three.
 
+## Host pre-verification (conductor, 2026-08-13 — STEERS the draft)
+
+Empirical results before the lane drafts, on the host suite (212 tests,
+browser 1228, host python 3.14 + pytest 9.0.3 — see drift note):
+
+- Serial baseline: 313s.
+- `-n auto --dist=loadfile`: 244s, green — coarse balancing (the 60-test
+  UI file can sit alone on one worker).
+- **`-n 4` plain `load` (fine-grained): 87.5s, 212 passed — 3.6x, winner.**
+- `pytest-json-report` + xdist tested with `-n 2`: report parses clean,
+  all tests recorded — the coordinator-report friction anticipated in item
+  C step 2 did NOT reproduce. Keep the sandbox report path as-is; verify
+  full-suite in-container anyway.
+
+**Amendment to item C step 2:** wire `-n auto` (NOT `--dist=loadfile`),
+keep `--json-report` unchanged.
+
+**Host drift datum (for item D):** this host runs python 3.14 AND pytest
+9.0.3 vs the 3.12 / 8.4.2 pins — suite green on both, but the pinning
+story in the lane brief stays accurate.
+
 ## Post-arrival host verification (conductor)
 
 1. C: D-50 sandbox image rebuild (Containerfile/requirements change
