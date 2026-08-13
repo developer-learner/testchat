@@ -333,6 +333,12 @@ overwritten.
 
 * **AC-160:** WHEN a primary snapshot contains valid JSON but any thread or
 * **AC-166:** WHEN the user saves the system prompt via the settings modal
+* **AC-167:** WHEN the model dropdown is populated from both the models list
+  and the script-model catalog, THE SYSTEM SHALL render exactly one option
+  per model id, even when the same id is present in both sources, such that
+  a loaded script model is never offered twice and the dropdown never
+  contains duplicate entries for the same model.
+
   and the save request fails, THE SYSTEM SHALL keep the settings modal open
   and display the failure notice `Save failed` in the modal's `settings-status`
   element, such that the user is never left believing the system prompt was

@@ -1,50 +1,44 @@
-# ERD-DELTA — spec v100 settings-save failure visibility (lock alignment)
+# ERD-DELTA — spec v101 model dropdown dedup lock (consolidation)
 
-Consolidation freeze: this milestone locks the settings-save failure surface
-that the `7bfc622` direct fix (model-lifecycle reliability, 2026-08-09, after
-spec v99 froze) shipped, and that `tests/test_ui_settings.py` already pins.
-No app behavior changes in this delta — the element ships; this freeze brings
-the spec's lock and the PRD's AC numbering into line with the frozen oracle,
-clearing the INV-4 halt that blocked spec v100 (the test observed testid
-`settings-status`, absent from `contracts.ui` since the value entered the
-tree outside the freeze lane). The test file is restaged for provenance
-correction only (its docstring cited freeze versions that never occurred).
+Consolidation freeze: this milestone pins the model-dropdown dedup that the
+`2ebd2bd` direct fix (dedup the dropdown's option list by id, 2026-08-13,
+D-132 routing) shipped. No app behavior changes in this delta — the fix is
+on the tree; this freeze adds the acceptance criterion and the UI oracle
+that prove the dropdown renders exactly one option per model id, clearing
+the regression-test gap left when the direct fix crossed the lane.
 
 ## Changed acceptance criteria
 
-* **AC-166 — settings-save failure visibility:** WHEN the user saves the
-  system prompt via the settings modal and the save request fails, THE SYSTEM
-  SHALL keep the settings modal open and display the failure notice
-  ``Save failed`` in the modal's ``settings-status`` element, such that the
-  user is never left believing the system prompt was saved. The notice text
-  is pinned verbatim by the frozen UI oracle; the modal stays interactive
-  (the Save button remains visible).
+* **AC-167 — model dropdown dedup:** WHEN the model dropdown is populated
+  from both the models list and the script-model catalog, THE SYSTEM SHALL
+  render exactly one option per model id, even when the same id is present
+  in both sources, such that a loaded script model is never offered twice
+  and the dropdown never contains duplicate entries for the same model.
 
 ## Superseded acceptance criteria
 
-None. AC-166 documents behavior that shipped in `7bfc622`; no earlier AC is
+None. AC-167 documents behavior that shipped in `2ebd2bd`; no earlier AC is
 replaced.
 
 ## Changed files
 
-* `src/static/chrome.js` — the settings modal's owning file (per
-  `contracts.ui` attribution alongside `settings-toggle`, `settings-save`,
-  `settings-cancel`); no code changes in this delta — the delta declares the
-  lock and ownership of the element that already ships.
+* `src/static/catalog.js` — the model dropdown's owning file (per
+  `contracts.ui` attribution for `model-select` and `eject-model-btn`); no
+  code changes in this delta — the delta declares the ownership of the
+  dedup that already ships.
 
 ## Test-to-file mapping
 
 Now-approved node IDs pin exactly:
 
-* `tests/test_ui_settings.py::test_settings_save_failure_keeps_the_modal_open_and_is_visible[chromium]` (UPDATED — provenance correction only, no behavioral change)
-  -> `src/static/chrome.js` (AC-166)
+* `tests/test_ui_catalog.py::test_model_dropdown_shows_each_script_model_once[chromium]` (NEW — fresh oracle for the shipped dedup)
+  -> `src/static/catalog.js` (AC-167)
 
-The docstring's earlier ``spec v100; v101 and v102 re-freezes restaged this
-file`` citation was fiction — the file entered the tree with the `7bfc622`
-direct fix and was pinned by the `f569528` INV-1 bookkeeping commit; this
-freeze restages it so the accepted AC reference is real and the provenance
-truthful.
+The oracle routes both sources (`/api/v1/models` and `/api/v1/models/catalog`)
+with the same model id present, opens the page, and counts the dropdown's
+options via a JS evaluate on the locked `model-select` testid — exactly one
+option for the overlap id and for a catalog-only id.
 
-Contracts: ``ui`` gains ``ui:settings-status`` (testid ``settings-status``,
-file ``src/static/chrome.js``). No entry_points, routes, schemas, errors,
-externals, or smoke checks change.
+Contracts: `files` gains `src/static/catalog.js` (the new oracle's owner);
+no entry_points, routes, schemas, errors, ui, externals, or smoke checks
+change.

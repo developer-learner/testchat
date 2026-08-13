@@ -1,0 +1,10 @@
+{
+  "changed_contract_ids": [],
+  "changed_tests": [
+    "tests/test_ui_catalog.py::test_model_dropdown_shows_each_script_model_once[chromium]"
+  ],
+  "changed_tests_granularity": "function",
+  "changed_files": [
+    "src/static/catalog.js"
+  ]
+}
