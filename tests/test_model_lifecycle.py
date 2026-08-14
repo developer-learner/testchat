@@ -1,13 +1,12 @@
 """
-Frozen oracles for model-lifecycle reliability (spec v100; v101 re-freeze
-restaged this file to fix the task mapping, v102 to retune the AC-165
-threshold against the sandbox's ~2s httpx connect-refused baseline — no
-behavioral change): AC-163 (unload terminates only a positively identified
-server), AC-164 (a failed unload is a 503), AC-165 (load/unload never block
-the event loop). Observes ONLY the locked surface in contracts.json:
-entry_points (src.main:app, src.services.models:*) and routes.
-subprocess/threading/httpx are plain externals, never observed as src.*
-imports.
+Frozen oracles for model-lifecycle reliability (spec v100; provenance note
+corrected at v103 — the v101/v102 clauses in earlier drafts described
+re-freeze retunes that never landed in these bytes): AC-163 (unload
+terminates only a positively identified server), AC-164 (a failed unload is
+a 503), AC-165 (load/unload never block the event loop). Observes ONLY the
+locked surface in contracts.json: entry_points (src.main:app,
+src.services.models:*) and routes. subprocess/threading/httpx are plain
+externals, never observed as src.* imports.
 """
 import socket
 import subprocess
@@ -255,7 +254,7 @@ def test_concurrent_loads_spawn_at_most_one_server(monkeypatch):
 
     monkeypatch.setattr(models_mod, "_responds_ready", fake_responds_ready)
     monkeypatch.setattr(models_mod.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(models_mod.httpx, "get", lambda *a, **k: _ReadyResp())
+    monkeypatch.setattr(models_mod.httpx, "get", lambda url, **k: _ReadyResp() if url.startswith("http") else None)
 
     threads = [
         threading.Thread(target=lambda: models_mod.load_script_model(model_id))
