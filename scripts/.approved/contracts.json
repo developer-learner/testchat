@@ -1,5 +1,4 @@
 {
-  "erd_version": 102,
   "files": [
     "src/static/app.js",
     "src/static/threads.js",
@@ -9,6 +8,14 @@
     "src/static/catalog.js",
     "src/static/index.html"
   ],
+  "no_edit_files": [
+    "src/static/threads.js",
+    "src/services/storage.py",
+    "src/api/threads.py",
+    "src/static/chrome.js",
+    "src/static/catalog.js"
+  ],
+  "erd_version": 104,
   "entry_points": [
     "src.main:app",
     "src.services.llm",
@@ -50,7 +57,6 @@
     "src/static/app.js",
     "src/static/index.html"
   ],
-  "no_edit_files": [],
   "externals": [
     {
       "id": "external:lmstudio-models",

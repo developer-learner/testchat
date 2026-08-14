@@ -130,6 +130,20 @@
       input.addEventListener('input', autogrow);
       autogrow();
 
+      // Enter-to-send (AC-152, v104): plain Enter dispatches the same submit
+      // event the Send button takes — including the no-model / unloaded-model
+      // guards in the form submit handler. Shift+Enter is the native textarea
+      // newline (AC-168); Ctrl/Cmd+Enter stay no-ops (AC-153/154 retired, still
+      // non-sending in v104). During IME composition Enter confirms the
+      // composition, never sends.
+      input.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey || e.isComposing) {
+          return;
+        }
+        e.preventDefault();
+        form.dispatchEvent(new Event('submit', { cancelable: true }));
+      });
+
       // Stop button
       sendBtn.addEventListener('click', function () {
         if (TC.streaming && TC.currentController) TC.currentController.abort();
