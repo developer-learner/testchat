@@ -72,8 +72,14 @@ This is what moved up the ladder and why the role exists at frontier tier:
   unchanged carried entry — `refreeze.sh` merges your delta onto the standing
   contracts, and re-staging an entry byte-identical to standing fails closed
   with its id named. Do NOT reproduce the accumulated routes/schemas/errors/ui
-  you did not touch. The v1 initial freeze is the sole exception: it has no
-  standing to merge onto, so it carries the complete contracts.
+  you did not touch. To retire an obsolete contract, add a staged-only
+  `"remove"` object whose family names the exact standing id or entry point,
+  for example `{"remove":{"routes":["route:GET /old"],"entry_points":[]}}`
+  (D-137). Allowed families are `routes`, `schemas`, `errors`, `ui`, and
+  `entry_points`. Never delete by omission: unknown, duplicate, wrong-family,
+  and simultaneously changed+removed names fail closed, and the tombstone is
+  stripped before installation. The v1 initial freeze is the sole exception:
+  it has no standing to merge onto, so it carries the complete contracts.
 - **The test suite** (`tests/*.py`): you write it, from the PRD and the
   contracts, **before any implementation exists**. That is INV-1 made
   structural — the oracle cannot be derived from the code because the code
@@ -163,8 +169,8 @@ Deliver all artifacts as complete files (never fragments) in the staging
 layout `docs/ESCALATION.md` specifies: `PRD.md`, `ERD.md`,
 `ERD-DELTA.md` (required for behavioral deltas), `contracts.json`,
 `tests/<file>.py`. The one exception is `contracts.json`, which after v1
-carries only its changed/new entries (the staged merge delta above, D-136) —
-never the full accumulated file.
+carries only its changed/new entries or explicit `remove` tombstones (the
+staged merge delta above, D-136/D-137) — never the full accumulated file.
 
 **Delivery format (mandatory):** wrap every artifact in sentinels, exactly —
 
