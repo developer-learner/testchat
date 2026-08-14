@@ -2222,7 +2222,7 @@ def run_tpm_pack(tmp_path, with_delta=True, with_summary_generator=True):
     (repo / "scripts" / ".approved").mkdir(parents=True)
     (repo / "scripts" / "schemas").mkdir(parents=True)
     (repo / "docs").mkdir(parents=True)
-    for name in ("tpm-pack.sh", "spec_artifacts.py"):
+    for name in ("tpm-pack.sh", "spec_artifacts.py", "context-budget.py"):
         shutil.copy(SCRIPTS / name, repo / "scripts" / name)
     if with_summary_generator:
         shutil.copy(SCRIPTS / "standing-summary.py",
@@ -7239,7 +7239,7 @@ def test_tpm_shuttle_carries_erd_delta_end_to_end(tmp_path):
     (tmp_path / "scripts" / "schemas").mkdir(parents=True)
     (tmp_path / "scripts" / ".approved").mkdir()
     (tmp_path / "docs").mkdir()
-    for name in ("tpm-pack.sh", "tpm-unpack.sh"):
+    for name in ("tpm-pack.sh", "tpm-unpack.sh", "context-budget.py"):
         target = tmp_path / "scripts" / name
         target.write_bytes((SCRIPTS / name).read_bytes())
     policy = SCRIPTS / "spec_artifacts.py"
@@ -8326,6 +8326,26 @@ def test_metrics_report_spec_scoping_ignores_other_specs(tmp_path):
     assert "em_calls=2" in r.stdout            # the spec-8 entry is excluded
     assert "success_runs=1  retry_runs=1" in r.stdout
     assert "feature v7" in r.stdout
+
+
+def test_metrics_report_v_prefixed_feature_override_records_row(tmp_path):
+    """The orchestrator success path passes `--feature v$FROZEN_V` (e.g. v99).
+    That shape must record a metrics.tsv row, not crash on int('v99') — which
+    the caller's `|| true` swallowed silently, so the loop never produced a
+    row (the defect this pins)."""
+    root = _metrics_root(tmp_path, with_git=True)
+    r = subprocess.run(
+        [sys.executable, str(METRICS_REPORT), "--root", str(root),
+         "--feature", "v99"],
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    out = root / ".measurement" / "metrics.tsv"
+    assert out.is_file(), "v-prefixed feature override must write a row"
+    row = out.read_text().splitlines()[1].split("\t")
+    assert row[2] == "v99"         # stored back with the v prefix
+    assert row[3] == "0.00"        # no spec-99 counters -> 0 gate hours
+    assert "recorded" in r.stdout
 
 
 def test_metrics_report_evidence_matches_recorded_row(tmp_path):
