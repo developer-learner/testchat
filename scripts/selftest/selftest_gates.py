@@ -206,8 +206,9 @@ def _repo_with_changed_contract(repo, changed_ids):
 
 
 def test_unchanged_self_owned_contract_claim_rejected(repo):
-    """T2 (src/b.py) claims route-items — pinned to its OWN file but not
-    changed in the active delta: reject the ride-along with its id named."""
+    """T2 (src/b.py) claims route-items — pinned to its OWN file but never
+    declared changed in any delta: the ride-along pattern, rejected with
+    the ids named so the EM revision trims them."""
     _repo_with_changed_contract(repo, ["route-item"])
     plan = good_plan()
     plan["tasks"][1]["contracts"] = ["src.b:handler", "route-items", "route-item"]
@@ -218,8 +219,7 @@ def test_unchanged_self_owned_contract_claim_rejected(repo):
 
 
 def test_historical_contract_change_is_not_current_claim_authority(repo):
-    """A self-owned contract changed in v1 cannot ride a v2 milestone merely
-    because it appears somewhere in accumulated DELTA history."""
+    """A historical self-owned change cannot ride the current milestone."""
     approved = repo / "scripts" / ".approved"
     _repo_with_changed_contract(repo, ["route-items"])
     (approved / "VERSION").write_text("2\n")
@@ -238,8 +238,7 @@ def test_historical_contract_change_is_not_current_claim_authority(repo):
 
 
 def test_skipped_freeze_contract_claim_uses_full_active_range(repo):
-    """D-113 can make v2 and v3 one active milestone after a v1 success;
-    claims changed in either active delta remain valid."""
+    """Every delta since the last success remains current claim authority."""
     approved = repo / "scripts" / ".approved"
     _repo_with_changed_contract(repo, [])
     (approved / "VERSION").write_text("3\n")
@@ -3563,7 +3562,7 @@ def test_orchestrate_em_context_fallbacks_are_loud(tmp_path):
     assert ("WARNING: standing summary generation failed — EM context "
             "falls back to the full standing ERD" in src), src
     # success echo for contracts slice
-    assert ("echo \"  contracts context: generated milestone slice" in src), src
+    assert ("echo \"  contracts context: generated active-milestone slice" in src), src
     assert ("CONTRACTS_DELTA=\"$APPROVED/contracts.json\"" in src), src
     assert ("WARNING: contracts slice generation failed — EM context falls "
             "back to the full contracts.json" in src), src
@@ -3589,6 +3588,12 @@ def test_contract_id_rule_present_at_all_plan_sites():
         "verbatim id list must be injected at all 4 plan-emission sites"
     )
     assert "never convert a file path to dotted form" in orch
+    assert 'os.environ.get("SWBP_CONTRACT_FILES")' in orch, (
+        "contract ids must use the exact active inventory, not standing files"
+    )
+    assert '"${ACTIVE_ERD_CONTEXT:-$APPROVED/ERD-DELTA.md}"' in orch, (
+        "contract ids must recognize every active freeze's instruction packet"
+    )
 
 
 def test_contracts_delta_wired_at_plan_sites():
@@ -5729,6 +5734,7 @@ def test_refreeze_ui_change_reaches_delta(freezable_repo):
     delta = json.loads((freezable_repo / "scripts" / ".approved"
                         / "DELTA-v2.json").read_text())
     assert "ui:new-badge" in delta["changed_contract_ids"], delta
+    assert delta["inventory_files"] == ["src/app.py"], delta
 
 
 # --- D-136: staged contracts merge + PRD additive guard ----------------------
@@ -6871,8 +6877,18 @@ def test_refreeze_accepts_and_pins_erd_delta(freezable_repo):
     approved = freezable_repo / "scripts" / ".approved"
     assert (approved / "ERD-DELTA.md").read_text().startswith("# Current milestone"), \
         "ERD-DELTA.md must install to scripts/.approved/"
+    assert (approved / "ERD-DELTA-v2.md").read_text() == \
+        (approved / "ERD-DELTA.md").read_text(), \
+        "each freeze must preserve its immutable active-range instruction slice"
     manifest = (approved / "frozen-manifest").read_text()
     assert "scripts/.approved/ERD-DELTA.md" in manifest, manifest
+    assert "scripts/.approved/ERD-DELTA-v2.md" in manifest, manifest
+    delta = json.loads((approved / "DELTA-v2.json").read_text())
+    assert delta["inventory_files"] == [], (
+        "a freeze without a contracts scope declaration must not inherit "
+        "the prior freeze's standing inventory"
+    )
+    assert delta["retired_tests"] == []
 
 
 def test_refreeze_rejects_unexpected_staging_path(freezable_repo):
