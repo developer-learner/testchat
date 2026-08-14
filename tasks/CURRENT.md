@@ -873,3 +873,11 @@ recorded.
 ## Results
 
   Full frozen TPM suite green against spec v99 (on-demand regression check, D-112). Feature built and validated.
+
+## Results
+
+  Zero-work consolidation baseline for spec v105 (D-140 empty active set).
+  Durable completion ledger advanced v99 -> v105 with an empty plan
+  (tasks: []); no EM or coder was invoked. Active-range calculations now
+  resolve against the empty v105 consolidation instead of the four
+  historical build files (chrome.js, catalog.js, app.js, index.html).

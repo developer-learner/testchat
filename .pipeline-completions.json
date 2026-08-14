@@ -1,6 +1,9 @@
 {
   "schema_version": 1,
   "specs": {
+    "105": {
+      "tasks": {}
+    },
     "77": {
       "tasks": {
         "T1": {
