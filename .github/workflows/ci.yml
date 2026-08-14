@@ -68,7 +68,7 @@ jobs:
         if: steps.guard.outputs.run == 'yes'
         run: |
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio pytest-cov pytest-json-report ruff mypy respx
+          pip install pytest pytest-asyncio pytest-cov pytest-json-report pytest-xdist ruff mypy respx
       - name: Lint
         if: steps.guard.outputs.run == 'yes'
         run: ruff check src/
@@ -117,7 +117,7 @@ jobs:
         # Clearing 80 is not a CI-config change — it needs real coverage, and
         # under INV-1 no agent may author tests: it takes a TPM spec + refreeze.
         # Standing gap for that milestone: status.py at 38% (61 of 99 stmts).
-        # Parallel workers (pytest-xdist): the frozen suite is ~212 tests with
+# Parallel workers (pytest-xdist): the frozen suite is ~212 tests with
         # 61 Playwright browser flows; -n 4 cuts wall-clock ~5.5 min -> ~2 min
         # on the 4-vCPU runner. Each worker is process-isolated: its own
         # session-scoped app server, stub, browser, and snapshot dir, so the
