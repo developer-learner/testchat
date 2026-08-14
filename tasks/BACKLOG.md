@@ -30,28 +30,15 @@ load/unload semantics. Tests must be TPM-authored and installed through
 **Rough size:** Spec + API/service tests + `services/models.py` + model source
 schema (and UI test only if existing generic-model behavior is insufficient)
 
-### Guard against control-plane manifest drift on doc edits
-**Priority:** P2 (process hygiene)
-**Why:** Recurred twice now — a legitimate `CLAUDE.md` correction-log edit
-(2026-06-30 Rule-8/build-prompt row; again 2026-08-03 commit `7537d83`) lands
-without regenerating `scripts/.manifest-project`, so the pre-commit /
-`phase-gate.sh manifest` control-plane check goes red and blocks *every*
-subsequent commit (`AGENTS.md` is a symlink to `CLAUDE.md`). Each time it is
-caught only when the next commit fails, then fixed by hand via
-`scripts/regen-manifest.sh`. The gate *detects* the drift; nothing prevents
-introducing it.
-**What:** A mechanical guard that catches the drift at edit/commit time — **not**
-a silent auto-regenerate. Auto-regen in the commit path would defeat the
-tamper-detection the gate exists for (it would bless any `CLAUDE.md` change,
-not just an intended one). Options to weigh: (a) an advisory `pre-commit`
-warning that a staged control-plane file's hash differs from the manifest,
-printing the exact `regen-manifest.sh` command (does not auto-write); (b) a
-CI/Make check that fails when any control-plane file is staged without a
-matching manifest update in the same commit. Semantics are a Rule-3
-stop-and-ask (this changes what a gate does), so decide deliberately.
-**Rough size:** Tooling only (hook or CI); no `src/`, no spec/tests.
-**Source:** 2026-08-03 pre-milestone readiness session — recurrence `7537d83`
-(gate red) → `68b2b2a` (hand re-pin).
+### ~~Guard against control-plane manifest drift on doc edits~~ — DONE 2026-08-08
+**Priority:** ~~P2~~ — shipped as the warning-only
+`scripts/manifest-drift-guard.sh`, wired into `.githooks/pre-commit`. When a
+staged control-plane file changes without its matching manifest update, the
+guard names the file and prints the exact `scripts/regen-manifest.sh` command.
+It never regenerates or blesses the manifest itself; the existing manifest
+gate remains the fail-closed enforcement point. Selftests cover project- and
+template-manifest drift plus the clean path. The original recurrence was
+`7537d83` (gate red) → `68b2b2a` (hand re-pin).
 
 ### ~~AC-95′/AC-96′ recut — "unloaded" must mean the process is gone~~ — SHIPPED
 **Priority:** ~~P0~~ — **DONE 2026-07-26, M29 (spec v58 → v59).** Recut as
@@ -180,39 +167,19 @@ doesn't.
 already scheduled for other reasons — no standalone freeze just for this.
 **Rough size:** Spec/test-only
 
-### Halve the full-suite wall clock (freeze-time floor)
-**Priority:** P2
-**Why:** The Playwright suite takes ~4.5 min per full run on the host (176
-tests at v65) and grows with every milestone. Post-D-86/D-87, freeze
-discipline runs the staged suite before every refreeze, so suite runtime is
-now the floor on every spec change — v65's staging spent ~9 of its ~30
-minutes inside two full runs. **Updated 2026-08-06 (D-112):** the milestone
-verdict is now the delta-mapped set only, so the full suite no longer runs
-every milestone — but it remains the floor for refreeze staging (above) and
-for on-demand `--full-suite` regression checks, so the wall-clock problem
-still stands wherever the suite runs.
-**What:** (a) `pytest-xdist` sharding — **BLOCKED as a cheap win (corrected
-2026-08-04).** The browser tests share a `scope="session"` app server on fixed
-ports (`STUB_PORT=8971`/`APP_PORT=8972`) + a single `TESTCHAT_DATA` file, and
-the autouse `_fresh_snapshot` fixture DELETEs all threads before each test — so
-naive `-n N` collides on ports and corrupts shared storage. "Isolated
-per-context" is browser-context only, NOT server/port/storage. Real sharding
-needs per-worker ports + server instances + data files (keyed off
-`PYTEST_XDIST_WORKER`), a conftest rework — not a dependency add. And/or (b) a
-changed-tests-first ordering so a red staged suite fails in seconds — this one
-IS cheap and unblocked. And/or (c) a ~~concurrent backend lane~~ — **DROPPED 2026-08-08 (scoped
-review):** only 3 files use the shared UI server (`test_ui*.py`); the other 14
-use no `app_url`/stub/`TESTCHAT_DATA`, so they could run as a second `pytest`
-process alongside the UI files, folding the ~40s backend suite into the ~4min UI
-window. But the split is messier than the 2026-08-04 note claimed (8 of 17
-files touch shared server/stub/TESTCHAT_DATA — per-file isolation checking
-required), the payoff is ~40s of ceiling that mostly no longer applies since
-D-112 took the full suite off the per-milestone verdict path (only refreeze
-staging / on-demand `--full-suite` pay it), and it changes how the verdict is
-computed (two pytest processes → report merge) — the lie-green surface the
-system guards. Not worth the risk; (a)/(b) stand.
-**Rough size:** (a) per-worker isolation rework of the session fixtures — NOT
-trivial; (b) small — a pytest ordering hook.
+### ~~Halve the full-suite wall clock (freeze-time floor)~~ — RETIRED 2026-08-14
+**Priority:** ~~P2~~ — superseded by the current scoped test paths. D-112
+removed the full suite from ordinary milestone completion: the verdict runs
+only the delta-mapped node-ids. `refreeze.sh` likewise does not execute the
+full suite; it performs sandbox collection plus the D-75 delta-only
+red-before-green check. The full suite now runs only when explicitly requested
+through `orchestrate.sh --full-suite`, so it is neither a freeze-time floor nor
+a recurring milestone cost. Changed-tests-first ordering therefore has no
+remaining recurring run to optimize. `pytest-xdist`/parallel report-merging is
+also retired: it would add shared-server, fixed-port, and shared-storage risk
+for an on-demand check, not shorten the normal milestone path. Revisit only if
+measured evidence shows on-demand regression checks have become an operational
+bottleneck.
 
 ### ~~Fold `mypy` into the sandbox run~~ — DONE 2026-08-08 (D-129)
 **Priority:** ~~P2~~ — shipped. `run_tests()` now type-checks `src/` in the
