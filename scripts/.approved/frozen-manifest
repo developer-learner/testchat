@@ -1,6 +1,5 @@
 acbab99f5b5f940f90bfb9649b0efcfbd46a9b0fb6a2a92e2adee577769bcdb7  scripts/.approved/PRD.md
 32b537f2c4380287f1bd8a521968b74d43a062e61a0367742fac4dee3001d6da  scripts/.approved/ERD.md
-3138053a146a2a96442c4246a736f81d2c85da035f0faadbdc9b156272a98c0b  scripts/.approved/ERD-DELTA.md
 5db004d3c30ea9e9ef7bd2c593a55038cd95143cb538bfdf22528a6686e5ff3e  scripts/.approved/contracts.json
 42fe2c255d7d949ff35cd02fda526bb02a317dcf5363f08c6c203145dd792484  scripts/.approved/test-nodeids
 3a2093c2f54d5ed755d06460255fa0e8ce53026b17fb63566dc508c38e155e01  tests/conftest.py
