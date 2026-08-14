@@ -53,3 +53,6 @@ blueprint-dryrun*/
 .venv-linux/
 .venv-vm/
 data/
+
+# Local user double-click launcher (not product code)
+Start Testchat.command
