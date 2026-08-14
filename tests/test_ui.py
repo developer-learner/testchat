@@ -949,19 +949,21 @@ def test_no_loaded_model_shows_placeholder_and_disables_send(
         ".selectedOptions[0].textContent"
     )
     assert "Select model" in shown, f"placeholder option not shown: {shown!r}"
-    # AC-130 (v102 recut): without a loaded model the Send control is
-    # disabled — the no-model affordance. AC-131 (pick-a-model guidance)
-    # is retired: no guidance bubble can fire because no keyboard path and
-    # no enabled control can attempt a send.
+    # AC-130 (v104 recut): without a loaded model the Send control is
+    # disabled, and a keyboard send attempt (plain Enter, AC-152) is
+    # blocked by the submit guard — the "Pick a model" bubble fires and no
+    # message is dispatched. AC-131 is retired: the bubble is no longer the
+    # standing affordance (the disabled control is); it survives only as
+    # the guard's reply to an attempted send.
     expect(page.get_by_test_id("send-btn")).to_be_disabled()
     box = page.get_by_test_id("message-input")
     box.fill("hello without a model")
     box.press("Enter")
-    assert box.input_value() == "hello without a model\n", (
-        "Enter without a loaded model must insert a newline, not send (AC-152)"
+    assert box.input_value() == "hello without a model", (
+        "plain Enter without a loaded model must keep the text (no newline, no send)"
     )
     expect(page.get_by_test_id("msg-user")).to_have_count(0)
-    expect(page.get_by_test_id("msg-error")).to_have_count(0)
+    expect(page.get_by_test_id("msg-error")).to_have_count(1)
 
 
 # AC-132: picking an unloaded model asks first; cancel reverts and sends nothing
@@ -1075,21 +1077,35 @@ def test_mid_chat_switch_updates_thread_model_and_routes_next_send(
     expect(select).to_have_value("beta-model")
 
 
-# AC-152: plain Enter inserts a newline, never sends
-def test_message_input_plain_enter_inserts_newline_without_sending(
+# AC-168: Shift+Enter inserts a newline — never sends
+def test_message_input_shift_enter_inserts_newline_without_sending(
     page: Page, app_url: str
 ) -> None:
     page.goto(app_url)
+    page.get_by_test_id("model-select").select_option("beta-model")
     box = page.get_by_test_id("message-input")
     box.fill("first line")
-    box.press("Enter")
+    box.press("Shift+Enter")
     assert box.input_value() == "first line\n", (
-        "plain Enter must insert a newline, not send"
+        "Shift+Enter must insert a newline, not send"
     )
     expect(page.get_by_test_id("msg-user")).to_have_count(0)
 
 
-# AC-168: Ctrl+Enter no longer sends — the only send path is the Send button
+# AC-152 (v104): plain Enter sends — the same dispatch path as the Send button
+def test_message_input_plain_enter_sends(
+    page: Page, app_url: str
+) -> None:
+    page.goto(app_url)
+    page.get_by_test_id("model-select").select_option("beta-model")
+    box = page.get_by_test_id("message-input")
+    box.fill("sent via enter")
+    box.press("Enter")
+    expect(page.get_by_test_id("msg-user")).to_have_count(1)
+    expect(box).to_have_value("")
+
+
+# AC-168: Ctrl+Enter no longer sends — only the Send button and plain Enter send
 def test_message_input_ctrl_enter_does_not_send(
     page: Page, app_url: str
 ) -> None:
@@ -1115,8 +1131,8 @@ def test_message_input_cmd_enter_does_not_send(
     expect(page.get_by_test_id("msg-assistant")).to_have_count(0)
 
 
-# AC-169: the placeholder advertises Enter-for-newline only, no shortcut
-def test_message_input_placeholder_states_newline_only(
+# AC-169 (v104): the placeholder advertises Enter-to-send and Shift+Enter newline
+def test_message_input_placeholder_states_send_shortcut(
     page: Page, app_url: str
 ) -> None:
     page.goto(app_url)
@@ -1124,7 +1140,8 @@ def test_message_input_placeholder_states_newline_only(
         "placeholder"
     )
     assert placeholder is not None, "message-input needs a placeholder"
-    assert "Enter for newline" in placeholder, placeholder
+    assert "Enter to send" in placeholder, placeholder
+    assert "Shift+Enter" in placeholder, placeholder
     assert "Ctrl+Enter" not in placeholder, placeholder
 
 

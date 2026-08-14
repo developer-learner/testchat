@@ -1,0 +1,16 @@
+{
+  "changed_contract_ids": [],
+  "changed_tests": [
+    "tests/test_ui.py::test_message_input_placeholder_states_newline_only[chromium]",
+    "tests/test_ui.py::test_message_input_placeholder_states_send_shortcut[chromium]",
+    "tests/test_ui.py::test_message_input_plain_enter_inserts_newline_without_sending[chromium]",
+    "tests/test_ui.py::test_message_input_plain_enter_sends[chromium]",
+    "tests/test_ui.py::test_message_input_shift_enter_inserts_newline_without_sending[chromium]",
+    "tests/test_ui.py::test_no_loaded_model_shows_placeholder_and_disables_send[chromium]"
+  ],
+  "changed_tests_granularity": "function",
+  "changed_files": [
+    "src/static/app.js",
+    "src/static/index.html"
+  ]
+}
