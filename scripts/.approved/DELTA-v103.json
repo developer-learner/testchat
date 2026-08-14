@@ -1,6 +1,12 @@
 {
   "changed_contract_ids": [],
-  "changed_tests": [],
+  "changed_tests": [
+    "tests/test_model_lifecycle.py::test_concurrent_loads_spawn_at_most_one_server",
+    "tests/test_model_lifecycle.py::test_load_does_not_block_other_requests",
+    "tests/test_model_lifecycle.py::test_unload_after_restart_still_refuses_a_foreign_process",
+    "tests/test_model_lifecycle.py::test_unload_after_restart_terminates_sidecar_recorded_server",
+    "tests/test_model_lifecycle.py::test_unload_refuses_an_unidentified_listener_and_reports_503"
+  ],
   "changed_tests_granularity": "function",
   "changed_files": []
 }
