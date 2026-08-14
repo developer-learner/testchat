@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # tpm-pack.sh — assemble the TPM chat bundle (D-38).
 #
-# The TPM is a frontier LLM in a human-operated web chat with NO repo access
-# (docs/TPM-ROLE.md — the air gap is the design, not a limitation). This
+# The TPM seat is an LLM the CEO assigns per session (D-139): by default a
+# frontier LLM in a human-operated web chat with NO repo access
+# (docs/TPM-ROLE.md — the air gap is the design, not a limitation), but it
+# may also be a scoped repo agent (`scripts/tpm-agent.sh`) or the same LLM
+# already on the job. This
 # script removes the operator's courier burden: one command packs the small
 # milestone slice a TPM session needs into a single copy-pasteable blob.
 #

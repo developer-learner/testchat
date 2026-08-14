@@ -59,7 +59,7 @@ testchat/
 
 See `BLUEPRINT.md` for the full pipeline. Short version:
 
-1. TPM (frontier LLM) writes the spec and tests
+1. TPM seat (LLM assigned by the CEO per session — D-139) writes the spec and tests
 2. TPM runs the refreeze — auto-applies when all mechanical preflights are green (no approval step, D-121)
 3. `orchestrate.sh` drives EM (planner) and coder (local LLM) to build it
 4. Frozen tests are ground truth — feature is done when the delta's mapped tests are green (D-112; full suite = on-demand `--full-suite` regression check)
