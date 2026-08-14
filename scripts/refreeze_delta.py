@@ -16,9 +16,10 @@ is newly added); a content-bearing change OUTSIDE every test function
 (fixtures, helpers, imports, module constants) can alter test meaning without
 any test body changing, so it conservatively falls back to file-level scope —
 an over-run, never an under-run that could green a milestone without running
-the affected test. Comment-only and whitespace-only changes are noise (the
-v87 two-comment-line class, D-116): they cannot change meaning and never
-widen the delta. DELTA files written by this producer carry
+the affected test. Comment-only, whitespace-only, and MODULE-DOCSTRING-only
+changes are noise (the v87 two-comment-line class, D-116; and the v103
+model-lifecycle docstring edit that re-ran five tests for one changed body):
+they cannot change meaning and never widen the delta. DELTA files written by this producer carry
 "changed_tests_granularity": "function"; consumers slice function-granular
 deltas without trimming (an unpinned new test must never be silently
 discarded — testchat v99: the AC-161 oracle rode no test_mapping pin, so the
@@ -80,6 +81,24 @@ def _slice_lines(src: str, start: int, end: int) -> list[str]:
     ]
 
 
+def _module_docstring_span(tree) -> tuple[int, int] | None:
+    """(start_lineno, end_lineno) of the module docstring, or None. The module
+    docstring is the first statement when it is a bare string literal — a
+    documentation string that cannot change any test's runtime meaning, so an
+    edit confined to it is meaning-neutral like a comment. Function/class
+    docstrings are NOT module docstrings: they live inside a test span and are
+    handled by the per-function slice comparison."""
+    body = getattr(tree, "body", [])
+    if body and isinstance(body[0], ast.Expr) \
+            and isinstance(getattr(body[0].value, "value", None), str):
+        return (body[0].lineno, body[0].end_lineno)
+    return None
+
+
+def _in_span(lineno: int, span: tuple[int, int] | None) -> bool:
+    return span is not None and span[0] <= lineno <= span[1]
+
+
 def function_changes(
     file_path: str,
     old_src: str,
@@ -106,6 +125,18 @@ def function_changes(
         new_tree = ast.parse(new_src, filename=file_path)
     except SyntaxError:
         return set(), True
+    # A change confined to the MODULE DOCSTRING is meaning-neutral (like a
+    # comment): drop the docstring's lines and re-test equality before the
+    # infra check, so a docstring-only edit scopes nothing instead of tripping
+    # the file-level fallback (v103 re-ran five model-lifecycle tests for one
+    # docstring edit). Fixtures, imports, helpers, and module constants stay
+    # meaning-bearing and keep the conservative fallback below.
+    old_doc = _module_docstring_span(old_tree)
+    new_doc = _module_docstring_span(new_tree)
+    old_lines = [(i, ln) for i, ln in old_lines if not _in_span(i, old_doc)]
+    new_lines = [(i, ln) for i, ln in new_lines if not _in_span(i, new_doc)]
+    if [ln for _, ln in old_lines] == [ln for _, ln in new_lines]:
+        return set(), False
     old_spans = _test_spans(old_tree)
     new_spans = _test_spans(new_tree)
     families: set[str] = set()
