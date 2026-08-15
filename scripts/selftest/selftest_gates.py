@@ -2655,6 +2655,96 @@ exit 0
     assert metrics["selftest_count"] == "1"
 
 
+def test_metrics_guard_binds_to_this_runs_success_commit(tmp_path):
+    """P3-5: `--milestone HEAD` must bind to the commit THIS run made. A
+    subject-only `git log -1 --format=%s` check passes when the PREVIOUS
+    milestone already carries a `[success] spec vN` subject and today's
+    guarded commit silently failed (identity, hook abort — all muffled by
+    the `|| true`). The guard requires the pre-commit SHA to advance AND the
+    new subject to be exact. Arm A: the commit lands -> row recorded. Arm B:
+    a failing pre-commit hook aborts the commit -> HEAD unchanged -> loud
+    SKIPPED warning, no row, still exit 0."""
+    source = (SCRIPTS / "orchestrate.sh").read_text()
+    guard = re.search(
+        r"^  # P3-5: the metrics row must bind to THIS milestone's \[success\] commit.*?"
+        r"^  exit 0$",
+        source, re.M | re.S,
+    )
+    assert guard, "P3-5 metrics guard not found in orchestrate.sh — extractor drift"
+    block = guard.group(0)
+
+    def run_arm(arm, hook_aborts):
+        arm_dir = tmp_path / arm
+        arm_dir.mkdir()
+        state = arm_dir / ".pipeline-state"
+        mea = arm_dir / ".measurement"
+        logs = state / "logs"
+        logs.mkdir(parents=True)
+        (logs / "timings.tsv").write_text(
+            "10:00:00\t0s\trun start (budget 1200s)\n"
+            "10:00:05\t5s\tpre-flight done (spec v106)\n"
+        )
+        subprocess.run(["git", "init", "-q"], cwd=arm_dir, check=True)
+        subprocess.run(["git", "config", "user.name", "t"], cwd=arm_dir, check=True)
+        subprocess.run(["git", "config", "user.email", "t@t"], cwd=arm_dir, check=True)
+        # seed HEAD with the PRIOR milestone's commit: a subject-only guard
+        # would pass against it once today's commit fails
+        subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@t",
+             "commit", "-q", "--allow-empty", "-m", "[success] spec v105"],
+            cwd=arm_dir, check=True,
+        )
+        if hook_aborts:
+            hooks = arm_dir / ".git" / "hooks"
+            hooks.mkdir(exist_ok=True)
+            (hooks / "pre-commit").write_text("#!/usr/bin/env bash\nexit 1\n")
+            (hooks / "pre-commit").chmod(0o755)
+        # The production path `git add`s the success artifacts before the
+        # guard; stage a file the same way so the commit actually fires.
+        (state / "ledger.md").write_text("row\n")
+        subprocess.run(["git", "add", ".pipeline-state/ledger.md"],
+                       cwd=arm_dir, check=True)
+        script = """#!/usr/bin/env bash
+set -euo pipefail
+STATE_DIR="{state}"
+LOG_DIR="$STATE_DIR/logs"
+MEAS_DIR="{mea}"
+METRICS_REPORT_TOOL="{tool}"
+FROZEN_V=106
+__GUARD_BLOCK__
+""".format(state=state, mea=mea, tool=SCRIPTS / "metrics-report.py")
+        script = script.replace("__GUARD_BLOCK__", block)
+        return subprocess.run(
+            ["bash", "-c", script], cwd=arm_dir, capture_output=True, text=True,
+        )
+
+    r = run_arm("a", hook_aborts=False)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "metrics row NOT recorded" not in r.stderr
+    rows = (tmp_path / "a" / ".measurement" / "metrics.tsv").read_text().splitlines()
+    assert len(rows) == 2 and "feature" in rows[0], rows
+    metrics = dict(zip(rows[0].split("\t"), rows[1].split("\t")))
+    assert metrics["feature"] == "v106"
+    head = subprocess.run(
+        ["git", "log", "-1", "--format=%s"], cwd=tmp_path / "a",
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert head == "[success] spec v106", "arm A must advance HEAD"
+
+    r = run_arm("b", hook_aborts=True)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "metrics row SKIPPED" in r.stderr, r.stderr
+    assert "HEAD " in r.stderr and "->" in r.stderr, r.stderr
+    assert not (tmp_path / "b" / ".measurement" / "metrics.tsv").exists(), \
+        "a failed [success] commit must not produce a row bound to a stale HEAD"
+    head = subprocess.run(
+        ["git", "log", "-1", "--format=%s"], cwd=tmp_path / "b",
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert head == "[success] spec v105", \
+        "the ARM B guard must not have committed anything"
+
+
 def test_full_suite_execution_is_confined_to_tests_directory():
     """No-argument run_tests cannot discover archives or selftests.
 
@@ -6499,6 +6589,34 @@ SUB_GOOD_REPLY = {
     ],
 }
 
+# The FULL-plan counterpart for the P2-1 abandon drive: every inventory
+# file, carried T1 included (revision two is a full emission, not a merge).
+SUB_FULL_PLAN = {
+    "version": 2,
+    "erd_version": 2,
+    "tasks": [
+        {"id": "T1", "file": "src/a.py", "depends_on": [],
+         "brief": "build a", "contracts": [],
+         "tests": ["tests/test_a.py::test_one"]},
+        {"id": "T2", "file": "src/b.py", "depends_on": ["T1"],
+         "brief": "rebuild b", "contracts": [],
+         "tests": ["tests/test_b.py::test_two",
+                   "tests/test_b.py::test_three"]},
+        {"id": "T3", "file": "src/c.py", "depends_on": ["T2"],
+         "brief": "build c", "contracts": [],
+         "tests": ["tests/test_c.py::test_four"]},
+    ],
+}
+
+
+def bad_keep_id_reply():
+    """Copy of SUB_GOOD_REPLY with the re-planned file under a WRONG id —
+    the exact shape --merge-subtree rejects loud (D-91 id discipline:
+    rejected, never repaired)."""
+    bad = json.loads(json.dumps(SUB_GOOD_REPLY))
+    bad["tasks"][0]["id"] = "T9"
+    return bad
+
 
 @pytest.fixture()
 def subtree_repo(tmp_path):
@@ -6961,6 +7079,44 @@ def test_plan_subtree_replan_one_em_call(tmp_path):
     assert by_id["T2"]["brief"] == "rebuild b"
     assert not (work / ".pipeline-state" / "plan-prior.json").exists()
     assert not (work / "tasks" / "plan-subtree.json").exists()
+
+
+def test_plan_subtree_first_rejected_merge_abandons_to_full(tmp_path):
+    """P2-1 (amends D-91): the FIRST rejected subtree merge abandons subtree
+    mode — revision two is a FULL-plan call, within the default
+    MAX_PLAN_REVISIONS=2 budget. The old promise of two rejected merges was
+    unreachable: `revs` and SUBTREE_ATTEMPTS increment in lockstep before the
+    second attempt, so at the cap the budget die ran before the abandon
+    branch ever could. Here reply 1 is a subtree reply the merge rejects
+    (wrong keep-id — emitted verbatim as T9, D-97 id discipline), reply 2 is
+    a valid FULL plan: the second call must be the full emission prompt, and
+    both revisions must fit the budget."""
+    work = plan_workdir(tmp_path, dict(SUB_CONTRACTS),
+                        [json.dumps(bad_keep_id_reply()),
+                         json.dumps(SUB_FULL_PLAN)])
+    (work / "scripts" / ".approved" / "test-nodeids").write_text(
+        "\n".join(SUB_NODEIDS) + "\n")
+    (work / "scripts" / ".approved" / "DELTA-v2.json").write_text(
+        json.dumps(SUB_DELTA))
+    (work / "tasks").mkdir()
+    (work / "tasks" / "plan.json").write_text(json.dumps(SUB_PRIOR))
+    r = run_drive_plan(work)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "subtree re-plan armed" in r.stdout, r.stdout
+    assert "abandoned after 1 rejected merge" in r.stdout, r.stdout
+    assert (work / ".calls").read_text().strip() == "2", r.stdout
+    subtree_prompt = (work / "prompts" / "1").read_text()
+    full_prompt = (work / "prompts" / "2").read_text()
+    assert "Delta re-plan" in subtree_prompt
+    assert "Decompose the frozen ERD" in full_prompt, \
+        "revision two must be the FULL emission prompt, not another subtree"
+    assert "Delta re-plan" not in full_prompt
+    assert "must keep the carried plan's id T2" in full_prompt, \
+        "the merge rejection must be the feedback the EM's NEXT call carries"
+    plan = json.loads((work / "tasks" / "plan.json").read_text())
+    assert plan["erd_version"] == 2
+    assert {t["file"] for t in plan["tasks"]} == \
+        {"src/a.py", "src/b.py", "src/c.py"}
 
 
 def test_plan_docs_only_delta_zero_em_calls(tmp_path):
