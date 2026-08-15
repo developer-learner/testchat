@@ -405,34 +405,15 @@ earns; 38%→~85% on the CI floor is still gated on the mac/Linux delta).
   verification (the PRD/test-assertion view understated the shipped scope).
 - ~~Multi-model comparison (side-by-side responses)~~ — REMOVED 2026-08-08 (CEO: not needed)
 
-### Candidate: file-granular changed_tests refinement (review granularity only)
-**Priority:** P3 (process hygiene — audit follow-up 2026-08-06)
-**Why:** DELTA-v84 shipped 58 changed_tests vs 6 mapped to the milestone's
-files: whole-file subtree resets. By design via D-116 (file-scoped removal
-term), but the mapped set is the true affected set; broader resets re-run
-finished user tasks only when a milestone's files collide.
-**What:** No change now — record as review candidate. If a later milestone
-ships a wider byte-diff than its mapped tests warrant, revisit whether
-`changed_tests` should carry the mapped node-ids only (D-112 verdict scope
-already uses the mapped set).
-
-**v87 fresh instance (2026-08-08):** VERSION=87, DELTA-v87 = 58
-changed_tests / 0 changed_files / 0 contract_ids; the refreeze staged 1
-comment line each into conftest.py and test_ui.py. Byte-touching both test
-files → `in_changed_files` swept all 58 node-ids. Confirmed same known class
-as v84, not a new anomaly. Harm bounded and efficiency-only: gate reads full
-truth (no lie-green), changed_files=[] means no coder re-execution, the real
-cost is the EM's 58-node mapping exercise while v87 sits in an active delta
-range — and the union across v1..v87 is still exactly 58/198 (the seam is
-flat; one-off events, not compounding).
-**Fix location (design steer, decided 2026-08-08):** do NOT change
-`refreeze_delta.compute_changed_tests` — file granularity is by design (D-116
-kills the v77 relabel-churn bug; per-node diff there reintroduces phantom
-re-runs). The leak is at the D-124 consumer seam: intersect the EM's
-NODEIDS_SCOPE with the delta's actually-mapped / `test_mapping` node-ids
-instead of the raw file-union `changed_tests`. Park until D-126 metrics
-quantify EM-mapping bloat (node-ids-mapped vs node-ids-material per
-milestone) across a few runs — fix with data, not speculation.
+### ~~Candidate: file-granular changed_tests refinement~~ — RETIRED 2026-08-14
+**Priority:** ~~P3~~ — superseded by D-140's function-granular DELTA producer.
+`refreeze_delta.py` now records only living tests whose executable function AST
+changed; comments, whitespace, formatting, and leading function/module
+docstrings do not enter `changed_tests`. New or modified tests must also carry
+an owning-file pin at freeze time. Infrastructure changes outside test
+functions remain conservatively file-scoped because fixtures, imports, helpers,
+and constants can change every test's meaning. Revisit only if measured runs
+show that this intentional safety fallback creates material recurring cost.
 
 ---
 
