@@ -82,18 +82,25 @@
       pollStatus();
 
       // Bubble helpers
-      function appendBubble(text, type) {
+      function appendBubble(text, type, forceScroll) {
         var bubble = document.createElement('div');
         bubble.className = 'chat-bubble ' + type;
         bubble.textContent = text;
         bubble.setAttribute('data-testid',
           type === 'user' ? 'msg-user' : type === 'error' ? 'msg-error' : 'msg-assistant');
         container.appendChild(bubble);
-        scrollToBottom();
+        scrollToBottom(forceScroll);
         return bubble;
       }
 
-      function scrollToBottom() {
+      function scrollToBottom(force) {
+        if (!force) {
+          // Stick-to-bottom: only repin while the user is already at/near the
+          // bottom. Scrolling up to read must not be fought by the next 30ms
+          // stream tick.
+          var offBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+          if (offBottom > 24) return;
+        }
         container.scrollTop = container.scrollHeight;
       }
 
@@ -200,7 +207,7 @@
           Threads.updateTitle(currentThread, message);
         }
 
-        var userBubble = appendBubble(message, 'user');
+        var userBubble = appendBubble(message, 'user', true);
         Threads.addBubbleChrome(userBubble, message, Date.now() / 1000, '');
         input.value = '';
         autogrow();
@@ -241,7 +248,12 @@
             renderQueued = false;
             if (streamEnded) return;
             renderReply(replyBubble, replyText, true);
-            scrollToBottom();
+            // Only auto-scroll when the stream's thread is the one on screen.
+            // A background stream must never yank a past chat back to the
+            // bottom.
+            if (currentThread.id === TC.activeThreadId) {
+              scrollToBottom();
+            }
           }, 30);
         }
 
