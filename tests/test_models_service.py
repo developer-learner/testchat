@@ -259,6 +259,8 @@ def test_registry_contains_expected_script_models():
     assert set(models_mod.SCRIPT_MODELS) == {
         "nemotron",
         "deepseek-v4-flash-0731",
+        "Flash_Q2KXL",
+        "Flash_IQ3XXS",
     }
     entry_0731 = models_mod.SCRIPT_MODELS["deepseek-v4-flash-0731"]
     assert entry_0731["id"] == "deepseek-v4-flash-0731"
@@ -266,6 +268,24 @@ def test_registry_contains_expected_script_models():
     assert entry_0731["ready_url"].endswith("/v1/models")
     assert entry_0731["command"] == ["/Users/arc.elixir/dev/ds4/run-server-0731.sh"]
     assert entry_0731["base_url"] == "http://127.0.0.1:8005"
+
+    entry_q2 = models_mod.SCRIPT_MODELS["Flash_Q2KXL"]
+    assert entry_q2["id"] == "Flash_Q2KXL"
+    assert entry_q2["chat_endpoint"].endswith("/v1/chat/completions")
+    assert entry_q2["ready_url"].endswith("/v1/models")
+    assert entry_q2["command"] == [
+        "/Users/arc.elixir/dev/testchat/scripts/run-server-0731-q2.sh"
+    ]
+    assert entry_q2["base_url"] == "http://127.0.0.1:8101"
+
+    entry_iq3 = models_mod.SCRIPT_MODELS["Flash_IQ3XXS"]
+    assert entry_iq3["id"] == "Flash_IQ3XXS"
+    assert entry_iq3["chat_endpoint"].endswith("/v1/chat/completions")
+    assert entry_iq3["ready_url"].endswith("/v1/models")
+    assert entry_iq3["command"] == [
+        "/Users/arc.elixir/dev/testchat/scripts/run-server-0731-ud.sh"
+    ]
+    assert entry_iq3["base_url"] == "http://127.0.0.1:8102"
 
 
 def test_registry_0731_source_string_is_accepted_by_response_schema():
@@ -277,6 +297,16 @@ def test_registry_0731_source_string_is_accepted_by_response_schema():
     )
     assert info.source == "deepseek-v4-flash-0731"
     assert catalog.source == "deepseek-v4-flash-0731"
+
+
+def test_registry_flash_schema_sources_accepted_by_response_schema():
+    # The llama-server-backed unsloth models must validate at the same
+    # response-schema boundary AC-151 covers for the 0731 model.
+    for source in ("Flash_Q2KXL", "Flash_IQ3XXS"):
+        info = ModelInfo(id=source, source=source)
+        catalog = CatalogEntry(id=source, source=source, loaded=False)
+        assert info.source == source
+        assert catalog.source == source
 
 
 def test_load_nemotron_expands_script_path(monkeypatch):

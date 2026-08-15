@@ -30,6 +30,18 @@ DEEPSEEK_0731_READY_URL = DEEPSEEK_0731_BASE_URL + "/v1/models"
 DEEPSEEK_0731_SCRIPT_PATH = "/Users/arc.elixir/dev/ds4/run-server-0731.sh"
 DEEPSEEK_0731_READY_TIMEOUT_SECONDS = 300
 
+DEEPSEEK_Q2KXL_BASE_URL = os.environ.get("DS4_Q2KXL_URL", "http://127.0.0.1:8101")
+DEEPSEEK_Q2KXL_CHAT_ENDPOINT = DEEPSEEK_Q2KXL_BASE_URL + "/v1/chat/completions"
+DEEPSEEK_Q2KXL_READY_URL = DEEPSEEK_Q2KXL_BASE_URL + "/v1/models"
+DEEPSEEK_Q2KXL_SCRIPT_PATH = "/Users/arc.elixir/dev/testchat/scripts/run-server-0731-q2.sh"
+DEEPSEEK_Q2KXL_READY_TIMEOUT_SECONDS = 300
+
+DEEPSEEK_IQ3XXS_BASE_URL = os.environ.get("DS4_IQ3XXS_URL", "http://127.0.0.1:8102")
+DEEPSEEK_IQ3XXS_CHAT_ENDPOINT = DEEPSEEK_IQ3XXS_BASE_URL + "/v1/chat/completions"
+DEEPSEEK_IQ3XXS_READY_URL = DEEPSEEK_IQ3XXS_BASE_URL + "/v1/models"
+DEEPSEEK_IQ3XXS_SCRIPT_PATH = "/Users/arc.elixir/dev/testchat/scripts/run-server-0731-ud.sh"
+DEEPSEEK_IQ3XXS_READY_TIMEOUT_SECONDS = 300
+
 SCRIPT_MODEL_TERMINATE_GRACE_SECONDS = NEMOTRON_TERMINATE_GRACE_SECONDS
 
 
@@ -175,6 +187,22 @@ SCRIPT_MODELS: dict[str, dict] = {
         "ready_url": DEEPSEEK_0731_READY_URL,
         "command": [DEEPSEEK_0731_SCRIPT_PATH],
         "ready_timeout_attr": "DEEPSEEK_0731_READY_TIMEOUT_SECONDS",
+    },
+    "Flash_Q2KXL": {
+        "id": "Flash_Q2KXL",
+        "base_url": DEEPSEEK_Q2KXL_BASE_URL,
+        "chat_endpoint": DEEPSEEK_Q2KXL_CHAT_ENDPOINT,
+        "ready_url": DEEPSEEK_Q2KXL_READY_URL,
+        "command": [DEEPSEEK_Q2KXL_SCRIPT_PATH],
+        "ready_timeout_attr": "DEEPSEEK_Q2KXL_READY_TIMEOUT_SECONDS",
+    },
+    "Flash_IQ3XXS": {
+        "id": "Flash_IQ3XXS",
+        "base_url": DEEPSEEK_IQ3XXS_BASE_URL,
+        "chat_endpoint": DEEPSEEK_IQ3XXS_CHAT_ENDPOINT,
+        "ready_url": DEEPSEEK_IQ3XXS_READY_URL,
+        "command": [DEEPSEEK_IQ3XXS_SCRIPT_PATH],
+        "ready_timeout_attr": "DEEPSEEK_IQ3XXS_READY_TIMEOUT_SECONDS",
     },
 }
 
