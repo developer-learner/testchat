@@ -228,9 +228,9 @@ def test_load_nemotron_idempotent_when_already_loaded(client, monkeypatch):
 
 
 def test_load_deepseek_via_generic_endpoint(client, script_model):
-    port = script_model("deepseek-v4-flash")
+    port = script_model("deepseek-v4-flash-0731")
 
-    resp = client.post("/api/v1/script-models/deepseek-v4-flash/load")
+    resp = client.post("/api/v1/script-models/deepseek-v4-flash-0731/load")
 
     assert resp.status_code == 200
     assert resp.json()["status"] == "loaded"
@@ -262,15 +262,15 @@ def test_load_deadline_returns_503_and_leaves_nothing_running(
     client, script_model, monkeypatch
 ):
     """AC-106 at the route: 503 AND the spawned server is actually gone."""
-    port = script_model("deepseek-v4-flash")
-    monkeypatch.setattr(models_mod, "DEEPSEEK_READY_TIMEOUT_SECONDS", 1)
+    port = script_model("deepseek-v4-flash-0731")
+    monkeypatch.setattr(models_mod, "DEEPSEEK_0731_READY_TIMEOUT_SECONDS", 1)
 
     def never_ready(*args, **kwargs):
         raise models_mod.httpx.ConnectError("not ready")
 
     monkeypatch.setattr(models_mod.httpx, "get", never_ready)
 
-    resp = client.post("/api/v1/script-models/deepseek-v4-flash/load")
+    resp = client.post("/api/v1/script-models/deepseek-v4-flash-0731/load")
 
     assert resp.status_code == 503
     assert resp.json()["status"] == "error"
@@ -280,10 +280,10 @@ def test_load_deadline_returns_503_and_leaves_nothing_running(
 
 def test_load_reports_child_exit_distinctly_from_deadline(client, script_model):
     """AC-105: a backing server that dies on startup is not a timeout."""
-    script_model("deepseek-v4-flash", command_src=_DIES_ON_START_SRC)
+    script_model("deepseek-v4-flash-0731", command_src=_DIES_ON_START_SRC)
 
     started = time.monotonic()
-    resp = client.post("/api/v1/script-models/deepseek-v4-flash/load")
+    resp = client.post("/api/v1/script-models/deepseek-v4-flash-0731/load")
     elapsed = time.monotonic() - started
 
     assert resp.status_code == 503
@@ -302,11 +302,11 @@ def test_load_reports_child_exit_distinctly_from_deadline(client, script_model):
 
 def test_unload_route_leaves_the_server_unreachable(client, script_model):
     """AC-102 baseline through the generic endpoint."""
-    port = script_model("deepseek-v4-flash")
-    assert client.post("/api/v1/script-models/deepseek-v4-flash/load").status_code == 200
+    port = script_model("deepseek-v4-flash-0731")
+    assert client.post("/api/v1/script-models/deepseek-v4-flash-0731/load").status_code == 200
     assert _reachable(port)
 
-    resp = client.post("/api/v1/script-models/deepseek-v4-flash/unload")
+    resp = client.post("/api/v1/script-models/deepseek-v4-flash-0731/unload")
 
     assert resp.status_code == 200
     assert resp.json()["status"] == "unloaded"
@@ -324,11 +324,11 @@ def test_unload_route_stops_a_server_with_no_tracked_handle(
     under --reload is enough), click Unload. v57 answered 200 "unloaded" and
     left the model running and still advertised as loaded by the catalog.
     """
-    port = script_model("deepseek-v4-flash")
+    port = script_model("deepseek-v4-flash-0731")
     spawned(port)
     _simulate_process_restart()
 
-    resp = client.post("/api/v1/script-models/deepseek-v4-flash/unload")
+    resp = client.post("/api/v1/script-models/deepseek-v4-flash-0731/unload")
 
     assert _wait_until(lambda: not _reachable(port)), (
         "AC-102: unload must stop a running server it holds no handle for"
@@ -341,26 +341,26 @@ def test_unload_route_reports_error_when_the_model_stays_reachable(
     client, script_model, monkeypatch
 ):
     """AC-103 (D-68): unload can fail, and the failure must be visible."""
-    script_model("deepseek-v4-flash")
+    script_model("deepseek-v4-flash-0731")
 
     always_ready = MagicMock()
     always_ready.status_code = 200
     monkeypatch.setattr(models_mod.httpx, "get", MagicMock(return_value=always_ready))
 
-    resp = client.post("/api/v1/script-models/deepseek-v4-flash/unload")
+    resp = client.post("/api/v1/script-models/deepseek-v4-flash-0731/unload")
 
     body = resp.json()
     assert body["status"] == "error", (
         "AC-103: must not report 'unloaded' while the model is still reachable"
     )
-    assert "deepseek-v4-flash" in str(body.get("message", ""))
+    assert "deepseek-v4-flash-0731" in str(body.get("message", ""))
 
 
 def test_unload_route_is_a_noop_when_not_loaded(client, script_model):
     """AC-102 second clause."""
-    script_model("deepseek-v4-flash")
+    script_model("deepseek-v4-flash-0731")
 
-    resp = client.post("/api/v1/script-models/deepseek-v4-flash/unload")
+    resp = client.post("/api/v1/script-models/deepseek-v4-flash-0731/unload")
 
     assert resp.status_code == 200
     assert resp.json()["status"] == "unloaded"
@@ -400,12 +400,12 @@ def test_load_route_evicts_a_running_untracked_other_model(
     v57 spawned the second model while the first kept serving.
     """
     other_port = script_model("nemotron")
-    requested_port = script_model("deepseek-v4-flash")
+    requested_port = script_model("deepseek-v4-flash-0731")
 
     spawned(other_port)
     _simulate_process_restart()
 
-    resp = client.post("/api/v1/script-models/deepseek-v4-flash/load")
+    resp = client.post("/api/v1/script-models/deepseek-v4-flash-0731/load")
 
     assert not _reachable(other_port), (
         "AC-104: the other model must be unreachable before the second spawns"

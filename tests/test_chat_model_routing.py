@@ -109,19 +109,19 @@ def test_chat_routes_to_deepseek_and_passes_model(client, monkeypatch):
     monkeypatch.setattr(llm_mod, "stream_reply", fake_stream_reply)
 
     resp = client.post(
-        "/api/v1/chat", json={"message": "hello", "model": "deepseek-v4-flash"}
+        "/api/v1/chat", json={"message": "hello", "model": "deepseek-v4-flash-0731"}
     )
 
     assert resp.status_code == 200
-    assert captured["endpoint_override"] == models_mod.DEEPSEEK_CHAT_ENDPOINT
-    assert captured["model"] == "deepseek-v4-flash"
+    assert captured["endpoint_override"] == models_mod.DEEPSEEK_0731_CHAT_ENDPOINT
+    assert captured["model"] == "deepseek-v4-flash-0731"
 
 
 def test_chat_deepseek_selected_but_not_loaded_is_422(client, monkeypatch):
     _patch_deepseek_loaded(monkeypatch, False)
 
     resp = client.post(
-        "/api/v1/chat", json={"message": "hello", "model": "deepseek-v4-flash"}
+        "/api/v1/chat", json={"message": "hello", "model": "deepseek-v4-flash-0731"}
     )
 
     assert resp.status_code == 422

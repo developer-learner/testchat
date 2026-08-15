@@ -24,12 +24,6 @@ NEMOTRON_SCRIPT_PATH = "~/nemotron-vmlx.py"
 NEMOTRON_READY_TIMEOUT_SECONDS = 240
 NEMOTRON_TERMINATE_GRACE_SECONDS = 5
 
-DEEPSEEK_BASE_URL = os.environ.get("DS4_URL", "http://127.0.0.1:8000")
-DEEPSEEK_CHAT_ENDPOINT = DEEPSEEK_BASE_URL + "/v1/chat/completions"
-DEEPSEEK_READY_URL = DEEPSEEK_BASE_URL + "/v1/models"
-DEEPSEEK_SCRIPT_PATH = "/Users/arc.elixir/dev/ds4/run-server.sh"
-DEEPSEEK_READY_TIMEOUT_SECONDS = 180
-
 DEEPSEEK_0731_BASE_URL = os.environ.get("DS4_0731_URL", "http://127.0.0.1:8005")
 DEEPSEEK_0731_CHAT_ENDPOINT = DEEPSEEK_0731_BASE_URL + "/v1/chat/completions"
 DEEPSEEK_0731_READY_URL = DEEPSEEK_0731_BASE_URL + "/v1/models"
@@ -173,14 +167,6 @@ SCRIPT_MODELS: dict[str, dict] = {
         "ready_url": NEMOTRON_READY_URL,
         "command": ["python3", os.path.expanduser(NEMOTRON_SCRIPT_PATH)],
         "ready_timeout_attr": "NEMOTRON_READY_TIMEOUT_SECONDS",
-    },
-    "deepseek-v4-flash": {
-        "id": "deepseek-v4-flash",
-        "base_url": DEEPSEEK_BASE_URL,
-        "chat_endpoint": DEEPSEEK_CHAT_ENDPOINT,
-        "ready_url": DEEPSEEK_READY_URL,
-        "command": [DEEPSEEK_SCRIPT_PATH],
-        "ready_timeout_attr": "DEEPSEEK_READY_TIMEOUT_SECONDS",
     },
     "deepseek-v4-flash-0731": {
         "id": "deepseek-v4-flash-0731",

@@ -161,12 +161,12 @@ def client():
 def test_unload_refuses_an_unidentified_listener_and_reports_503(client, script_model):
     """AC-163/AC-164: an unrelated process answering the model port is never
     terminated, and the refusal surfaces as a 503."""
-    port = script_model("deepseek-v4-flash")
+    port = script_model("deepseek-v4-flash-0731")
     foreign = subprocess.Popen([sys.executable, "-m", "http.server", str(port)])
     try:
         assert _wait_until(lambda: _reachable(port)), "foreign server never came up"
 
-        resp = client.post("/api/v1/script-models/deepseek-v4-flash/unload")
+        resp = client.post("/api/v1/script-models/deepseek-v4-flash-0731/unload")
 
         assert resp.status_code == 503, "AC-164: a failed unload must be a 503"
         assert resp.json()["status"] == "error", "AC-163: the refusal is an error"
@@ -179,11 +179,11 @@ def test_unload_refuses_an_unidentified_listener_and_reports_503(client, script_
 
 def test_load_does_not_block_other_requests(client, script_model):
     """AC-165: while a model is loading, other requests still complete."""
-    script_model("deepseek-v4-flash", command_src=_SLOW_SERVER_SRC)
+    script_model("deepseek-v4-flash-0731", command_src=_SLOW_SERVER_SRC)
     responses = []
 
     def _load():
-        responses.append(client.post("/api/v1/script-models/deepseek-v4-flash/load"))
+        responses.append(client.post("/api/v1/script-models/deepseek-v4-flash-0731/load"))
 
     thread = threading.Thread(target=_load)
     thread.start()
@@ -194,7 +194,7 @@ def test_load_does_not_block_other_requests(client, script_model):
         elapsed = time.monotonic() - started
     finally:
         thread.join(timeout=30)
-        client.post("/api/v1/script-models/deepseek-v4-flash/unload")
+        client.post("/api/v1/script-models/deepseek-v4-flash-0731/unload")
 
     assert not thread.is_alive(), "load never completed"
     assert resp.status_code == 200
@@ -214,7 +214,7 @@ def test_load_does_not_block_other_requests(client, script_model):
 
 
 def test_concurrent_loads_spawn_at_most_one_server(monkeypatch):
-    model_id = "deepseek-v4-flash"
+    model_id = "deepseek-v4-flash-0731"
     ready_url = models_mod.SCRIPT_MODELS[model_id]["ready_url"]
     spawned = {"ready": False}
     spawn_count = {"n": 0}
@@ -283,7 +283,7 @@ def test_concurrent_loads_spawn_at_most_one_server(monkeypatch):
 def test_unload_after_restart_terminates_sidecar_recorded_server(
     script_model, monkeypatch, tmp_path
 ):
-    model_id = "deepseek-v4-flash"
+    model_id = "deepseek-v4-flash-0731"
     port = script_model(model_id)
     base = f"http://127.0.0.1:{port}"
     entry = dict(models_mod.SCRIPT_MODELS[model_id])
@@ -319,7 +319,7 @@ def test_unload_after_restart_still_refuses_a_foreign_process(
 ):
     """The sidecar must not weaken AC-163: with no matching record, a live but
     unidentified process on the port is still refused."""
-    model_id = "deepseek-v4-flash"
+    model_id = "deepseek-v4-flash-0731"
     port = script_model(model_id)
     monkeypatch.setattr(models_mod, "_SIDECAR_DIR", str(tmp_path))
     foreign = subprocess.Popen([sys.executable, "-m", "http.server", str(port)])

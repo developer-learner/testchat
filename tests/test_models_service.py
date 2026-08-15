@@ -242,12 +242,12 @@ def test_list_models_includes_deepseek_when_loaded(monkeypatch):
     monkeypatch.setattr(
         models_mod,
         "is_script_model_loaded",
-        lambda model_id: model_id == "deepseek-v4-flash",
+        lambda model_id: model_id == "deepseek-v4-flash-0731",
     )
 
     result = models_mod.list_models()
 
-    assert {"id": "deepseek-v4-flash", "source": "deepseek-v4-flash"} in result
+    assert {"id": "deepseek-v4-flash-0731", "source": "deepseek-v4-flash-0731"} in result
     assert all(m["id"] != "nemotron" for m in result)
 
 
@@ -258,14 +258,8 @@ def test_list_models_includes_deepseek_when_loaded(monkeypatch):
 def test_registry_contains_expected_script_models():
     assert set(models_mod.SCRIPT_MODELS) == {
         "nemotron",
-        "deepseek-v4-flash",
         "deepseek-v4-flash-0731",
     }
-    entry = models_mod.SCRIPT_MODELS["deepseek-v4-flash"]
-    assert entry["chat_endpoint"].endswith("/v1/chat/completions")
-    assert entry["ready_url"].endswith("/v1/models")
-    assert entry["command"] == ["/Users/arc.elixir/dev/ds4/run-server.sh"]
-
     entry_0731 = models_mod.SCRIPT_MODELS["deepseek-v4-flash-0731"]
     assert entry_0731["id"] == "deepseek-v4-flash-0731"
     assert entry_0731["chat_endpoint"].endswith("/v1/chat/completions")
@@ -324,18 +318,18 @@ def test_load_nemotron_expands_script_path(monkeypatch):
 
 def test_load_then_unload_leaves_the_server_unreachable(script_model):
     """The baseline: a server this process started is actually stopped."""
-    port = script_model("deepseek-v4-flash")
+    port = script_model("deepseek-v4-flash-0731")
 
-    assert models_mod.load_script_model("deepseek-v4-flash")["status"] == "loaded"
+    assert models_mod.load_script_model("deepseek-v4-flash-0731")["status"] == "loaded"
     assert _reachable(port)
 
-    result = models_mod.unload_script_model("deepseek-v4-flash")
+    result = models_mod.unload_script_model("deepseek-v4-flash-0731")
 
     assert result["status"] == "unloaded"
     assert _wait_until(lambda: not _reachable(port)), (
         "AC-102: after unload reported success the server was still reachable"
     )
-    assert models_mod.is_script_model_loaded("deepseek-v4-flash") is False
+    assert models_mod.is_script_model_loaded("deepseek-v4-flash-0731") is False
 
 
 def test_unload_stops_a_running_server_with_no_tracked_handle(script_model, spawned):
@@ -344,29 +338,29 @@ def test_unload_stops_a_running_server_with_no_tracked_handle(script_model, spaw
     v57 returned {"status": "unloaded"} here while the server kept running,
     kept its port, and kept being reported as loaded by the catalog.
     """
-    port = script_model("deepseek-v4-flash")
+    port = script_model("deepseek-v4-flash-0731")
     spawned(port)
     _simulate_process_restart()
 
-    assert models_mod.is_script_model_loaded("deepseek-v4-flash") is True
+    assert models_mod.is_script_model_loaded("deepseek-v4-flash-0731") is True
 
-    result = models_mod.unload_script_model("deepseek-v4-flash")
+    result = models_mod.unload_script_model("deepseek-v4-flash-0731")
 
     assert _wait_until(lambda: not _reachable(port)), (
         "AC-102: unload must stop a running server even with no tracked handle"
     )
     assert result["status"] == "unloaded"
-    assert models_mod.is_script_model_loaded("deepseek-v4-flash") is False
+    assert models_mod.is_script_model_loaded("deepseek-v4-flash-0731") is False
 
 
 def test_unload_is_a_noop_when_the_model_is_not_running(script_model):
     """AC-102 second clause: already unreachable is a plain success."""
-    script_model("deepseek-v4-flash")
+    script_model("deepseek-v4-flash-0731")
 
-    result = models_mod.unload_script_model("deepseek-v4-flash")
+    result = models_mod.unload_script_model("deepseek-v4-flash-0731")
 
     assert result["status"] == "unloaded"
-    assert models_mod.is_script_model_loaded("deepseek-v4-flash") is False
+    assert models_mod.is_script_model_loaded("deepseek-v4-flash-0731") is False
 
 
 def test_unload_reports_error_when_the_model_stays_reachable(script_model, monkeypatch):
@@ -376,18 +370,18 @@ def test_unload_reports_error_when_the_model_stays_reachable(script_model, monke
     by any implementation. Reporting "unloaded" here is the defect; the
     specified outcome is a named error.
     """
-    script_model("deepseek-v4-flash")
+    script_model("deepseek-v4-flash-0731")
 
     always_ready = MagicMock()
     always_ready.status_code = 200
     monkeypatch.setattr(models_mod.httpx, "get", MagicMock(return_value=always_ready))
 
-    result = models_mod.unload_script_model("deepseek-v4-flash")
+    result = models_mod.unload_script_model("deepseek-v4-flash-0731")
 
     assert result["status"] == "error", (
         "AC-103: unload must not claim success while the model is still reachable"
     )
-    assert "deepseek-v4-flash" in str(result.get("message", ""))
+    assert "deepseek-v4-flash-0731" in str(result.get("message", ""))
 
 
 def test_unload_nemotron_alias_leaves_it_unreachable(script_model):
@@ -415,13 +409,13 @@ def test_load_evicts_a_running_untracked_other_model(script_model, spawned):
     spawned the requested model anyway — two RAM-heavy servers resident.
     """
     other_port = script_model("nemotron")
-    requested_port = script_model("deepseek-v4-flash")
+    requested_port = script_model("deepseek-v4-flash-0731")
 
     spawned(other_port)
     _simulate_process_restart()
     assert models_mod.is_script_model_loaded("nemotron") is True
 
-    result = models_mod.load_script_model("deepseek-v4-flash")
+    result = models_mod.load_script_model("deepseek-v4-flash-0731")
 
     assert not _reachable(other_port), (
         "AC-104: the other model must be unreachable before the second spawns"
@@ -436,7 +430,7 @@ def test_load_refuses_when_the_other_model_cannot_be_evicted(script_model, monke
     Silently proceeding is what makes the RAM guarantee a fiction.
     """
     script_model("nemotron")
-    requested_port = script_model("deepseek-v4-flash")
+    requested_port = script_model("deepseek-v4-flash-0731")
 
     nemotron_ready = models_mod.SCRIPT_MODELS["nemotron"]["ready_url"]
     real_get = models_mod.httpx.get
@@ -450,7 +444,7 @@ def test_load_refuses_when_the_other_model_cannot_be_evicted(script_model, monke
 
     monkeypatch.setattr(models_mod.httpx, "get", fake_get)
 
-    result = models_mod.load_script_model("deepseek-v4-flash")
+    result = models_mod.load_script_model("deepseek-v4-flash-0731")
 
     assert result["status"] == "error", (
         "AC-104: must not spawn a second model when the first cannot be evicted"
@@ -463,10 +457,10 @@ def test_load_refuses_when_the_other_model_cannot_be_evicted(script_model, monke
 
 def test_load_is_idempotent_when_already_running(script_model, spawned):
     """AC-5 carried forward: no second instance for an already-ready model."""
-    port = script_model("deepseek-v4-flash")
+    port = script_model("deepseek-v4-flash-0731")
     proc = spawned(port)
 
-    result = models_mod.load_script_model("deepseek-v4-flash")
+    result = models_mod.load_script_model("deepseek-v4-flash-0731")
 
     assert result["status"] == "loaded"
     assert proc.poll() is None, "the already-running server must be left alone"
@@ -484,10 +478,10 @@ def test_load_reports_child_exit_distinctly_from_the_deadline(script_model):
     had already exited — for example because its port was taken by the app
     itself under the previously documented run command.
     """
-    script_model("deepseek-v4-flash", command_src=_DIES_ON_START_SRC)
+    script_model("deepseek-v4-flash-0731", command_src=_DIES_ON_START_SRC)
 
     started = time.monotonic()
-    result = models_mod.load_script_model("deepseek-v4-flash")
+    result = models_mod.load_script_model("deepseek-v4-flash-0731")
     elapsed = time.monotonic() - started
 
     assert result["status"] == "error"
@@ -496,21 +490,21 @@ def test_load_reports_child_exit_distinctly_from_the_deadline(script_model):
         "AC-105: a server that exited before becoming ready must not be "
         f"reported as a timeout (got {message!r})"
     )
-    assert "deepseek-v4-flash" in message
+    assert "deepseek-v4-flash-0731" in message
     assert elapsed < 30, "must not wait out the full readiness deadline"
 
 
 def test_load_deadline_leaves_the_spawned_server_unreachable(script_model, monkeypatch):
     """AC-106: the AC-6 replacement, in outcome form."""
-    port = script_model("deepseek-v4-flash")
-    monkeypatch.setattr(models_mod, "DEEPSEEK_READY_TIMEOUT_SECONDS", 1)
+    port = script_model("deepseek-v4-flash-0731")
+    monkeypatch.setattr(models_mod, "DEEPSEEK_0731_READY_TIMEOUT_SECONDS", 1)
 
     def never_ready(*args, **kwargs):
         raise models_mod.httpx.ConnectError("not ready")
 
     monkeypatch.setattr(models_mod.httpx, "get", never_ready)
 
-    result = models_mod.load_script_model("deepseek-v4-flash")
+    result = models_mod.load_script_model("deepseek-v4-flash-0731")
 
     assert result["status"] == "error"
     monkeypatch.undo()
