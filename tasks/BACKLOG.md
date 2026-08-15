@@ -397,6 +397,52 @@ earns; 38%→~85% on the CI floor is still gated on the mac/Linux delta).
 
 ## Later
 
+### Model add/unload has issues — run a small test LLM through user use cases, note and fix
+**Priority:** P2 (deferred — logged 2026-08-15)
+**Why:** Model add/load/unload has known rough edges discovered in 2026-08-15
+session work, but no focused pass has classified them. Known so far:
+- Terminating testchat (SIGINT/SIGTERM, Ctrl+C on `uvicorn`) does NOT unload
+  spawned script models — models.py has no shutdown/lifespan handler, so child
+  engine processes are orphaned (still running, RAM held) after the app dies.
+  Sidecars (`data/model-sidecars/`) survive by design so a restarted app can
+  take ownership and Eject them, but a dedicated unload-all-on-exit hook is
+  absent.
+- To be surfaced by the use-case pass: load-confirm flow, eviction/mutual
+  exclusion, cancel-mid-load, port collisions, engine crash, double-Eject.
+**What:** Use a small fast test LLM (e.g. a tiny GGUF reached at ~high tok/s)
+and walk the real user flows — load from the dropdown, send while
+thinking/streaming, Eject, load another model (eviction), kill the engine
+process externally, restart testchat mid-load — and catalog every defect with
+a repro + expected behavior, then fix. This is deliberately "for later":
+session value is higher in the router extraction (below) first.
+**Rough size:** investigation pass + a handful of small direct fixes.
+
+### Model router app — unified engine manager testchat (and other apps) refer to
+**Priority:** P1 (design-validation requested 2026-08-15; build deferred TBD)
+**Why:** testchat currently owns engine lifecycle inline in
+`src/services/models.py` (SCRIPT_MODELS registry + spawn/ready-probe/terminate
++ sidecars) and hard-codes the per-engine launcher scripts
+(`scripts/run-server-0731-*.sh`, ds4 `run-server-0731.sh`) and their ports.
+That couples every consumer of these engines to a testchat-specific process
+manager. Extract it into a standalone **router app** that:
+- Owns the full engine inventory: `omlx`/`antirez` (ds4 0731), `llama.cpp`
+  (`llama-server` unsloth GGUFs), LM Studio, mtplx — spawn, ready-probe,
+  terminate, evict-on-load, mutual exclusion, sidecar identity.
+- Exposes a management surface (catalog, loaded-state, load/unload) so testchat
+  delegates model handling to it instead of embedding it.
+- Exposes a **universal OpenAI-compatible service** (`GET /v1/models`,
+  `POST /v1/chat/completions`, SSE) so ANY app — testchat, OpenCode, the pi
+  agent — can consume the loaded models through the router without
+  understanding engines at all.
+**Check asked:** confirm the router can present a generic `/v1/*` surface that
+other OpenAI-compatible clients (opencode, pi agent) can target unchanged, and
+that LM Studio models still route through it alongside script engines.
+**Rough size:** new standalone service repo + thin testchat integration
+(drop-in for `services/models.py`); likely its own freeze/milestone trajectory
+per the repo rules.
+
+## Later (existing)
+
 - ~~Mobile/responsive layout (sidebar needs touch treatment)~~ — REMOVED 2026-08-08 (CEO: not needed)
 - Export/import conversations
 - ~~Search across threads~~ — DONE: shipped M18–M20 (AC-63..71); the sidebar search matches
