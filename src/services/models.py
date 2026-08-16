@@ -42,6 +42,8 @@ DEEPSEEK_IQ3XXS_READY_URL = DEEPSEEK_IQ3XXS_BASE_URL + "/v1/models"
 DEEPSEEK_IQ3XXS_SCRIPT_PATH = os.environ.get("DS4_IQ3XXS_SCRIPT_PATH", "/Users/arc.elixir/dev/testchat/scripts/run-server-0731-ud.sh")
 DEEPSEEK_IQ3XXS_READY_TIMEOUT_SECONDS = 300
 
+ROUTER_MODEL_ID = os.environ.get("ROUTER_MODEL_ID", "qwen3.8-27b-8bit")
+
 SCRIPT_MODEL_TERMINATE_GRACE_SECONDS = NEMOTRON_TERMINATE_GRACE_SECONDS
 
 
@@ -396,6 +398,8 @@ def list_models() -> list[dict]:
         except Exception:
             logger.exception("Failed to fetch LM Studio models")
 
+    models.extend(router_models())
+
     for model_id in SCRIPT_MODELS:
         if is_script_model_loaded(model_id):
             models.append({"id": model_id, "source": model_id})
@@ -408,6 +412,57 @@ def list_model_catalog() -> list[dict]:
         {"id": model_id, "source": model_id, "loaded": is_script_model_loaded(model_id)}
         for model_id in SCRIPT_MODELS
     ]
+
+
+def _router_base_url() -> str | None:
+    return os.environ.get("VORTEX_URL") or None
+
+
+def is_router_configured() -> bool:
+    return _router_base_url() is not None
+
+
+def router_chat_endpoint() -> str:
+    return _router_base_url() + "/v1/chat/completions"
+
+
+def _router_probe() -> list[str] | None:
+    base = _router_base_url()
+    if base is None:
+        return None
+    try:
+        response = httpx.get(base + "/v1/models", timeout=2)
+    except Exception:
+        return None
+    if response.status_code != 200:
+        return None
+    try:
+        data = response.json().get("data", [])
+    except Exception:
+        return None
+    ids: list[str] = []
+    for entry in data:
+        if isinstance(entry, dict):
+            model_id = entry.get("id")
+            if isinstance(model_id, str):
+                ids.append(model_id)
+    return ids
+
+
+def router_models() -> list[dict]:
+    if _router_base_url() is None:
+        return []
+    ids = _router_probe()
+    if ids is None or ROUTER_MODEL_ID not in ids:
+        return []
+    return [{"id": ROUTER_MODEL_ID, "source": "router"}]
+
+
+def is_router_model(model_id: str) -> bool:
+    if model_id != ROUTER_MODEL_ID:
+        return False
+    ids = _router_probe()
+    return ids is not None and ROUTER_MODEL_ID in ids
 
 
 def is_nemotron_loaded() -> bool:
