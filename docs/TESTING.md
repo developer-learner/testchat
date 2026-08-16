@@ -96,7 +96,9 @@ def auth_headers(test_user):
 
 | Test | Issue | Workaround |
 |------|-------|------------|
-| [test name] | [why it's flaky] | [current workaround] |
+
+Keep one row per known-flaky test: the test name, why it's flaky, and the
+current workaround.
 
 ---
 
