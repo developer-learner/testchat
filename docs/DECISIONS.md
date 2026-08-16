@@ -21,15 +21,28 @@
 
 ## Decisions
 
-## D-162 — 2026-08-15 — Child-owned scripts join .manifest-project; the child ledger mirrors the template's full D-1..D-158
+## D-169 — 2026-08-15 — Second ledger back-port: mirror advanced to blueprint D-1..D-164; locals renumbered to D-165..D-168
 
-**Decision:** `scripts/.manifest-project` now lists the three testchat-owned scripts that sat in no manifest — `lane-selfcheck.py`, `run-server-0731-q2.sh`, `run-server-0731-ud.sh` — closing the same drift-invisible class the review flagged for the template (bootstrap/new-project, landed blueprint-side as D-158). Separately, the blueprint's D-158 entry was back-ported into this ledger and the child-local script-paths entry was renumbered D-158 → D-161 (the blueprint owns 1..N; children append at N+1), so the child ledger is now blueprint D-1..D-158 plus locals D-159..D-161 — a padded `comm` over entry numbers agrees exactly on the mirror range.
+**Decision:** The blueprint ledger advanced to D-164 (README-tree D-159; placeholder-gate mechanization D-160; oracle-strength gap D-161; materialized TPM view D-162; eval deferral D-163; multi-file sequencing D-164). testchat's mirror was advanced by verbatim copy of D-159..D-164, and the four testchat-LOCAL entries were renumbered D-159..D-162 → D-165..D-168 so one number still names one decision (the blueprint owns 1..N; children append at N+1). The script-paths entry's missing heading (lost in the first renumber pass) was restored as part of the renumbering. A padded `comm` over entry numbers agrees exactly on the mirror range D-1..D-164.
+
+**Alternatives considered:** (a) Keeping the locals at D-159..D-162 and accepting collision with the mirror — rejected: one number names one decision (the D-160/D-161 renumbering precedent). (b) Waiting for a later pass — rejected: the correction-log guard requires code and ledger to travel together, and the TPM-view code (D-162) synced in this very pass.
+
+**Reason:** The two ledgers must agree on the mirror range or the "ledgers agree" claim decays into drift again (the failure the first back-port, now D-166, fixed); the renumbering keeps every local decision findable under one stable number.
+
+**Do not suggest:** hand-curating the mirror (verbatim scripted copy stays re-runnable); renumbering mirror entries (the blueprint owns the canonical sequence); leaving locals colliding with the mirror range.
+
+
+## D-168 — 2026-08-15 — Child-owned scripts join .manifest-project; the child ledger mirrors the template's full D-1..D-158
+
+**Decision:** `scripts/.manifest-project` now lists the three testchat-owned scripts that sat in no manifest — `lane-selfcheck.py`, `run-server-0731-q2.sh`, `run-server-0731-ud.sh` — closing the same drift-invisible class the review flagged for the template (bootstrap/new-project, landed blueprint-side as D-158). Separately, the blueprint's D-158 entry was back-ported into this ledger and the child-local script-paths entry was renumbered D-158 → D-161 (the blueprint owns 1..N; children append at N+1), so the child ledger is now blueprint D-1..D-158 plus locals D-165..D-168 — a padded `comm` over entry numbers agrees exactly on the mirror range.
 
 **Alternatives considered:** (a) Waiting for the next template sync to sweep all missing entries at once — rejected: the sync does not add entries to `.manifest-project` (it only mirrors `.manifest-template`), and the three scripts are child-owned, so they are this repo's responsibility. (b) Moving the local launchers into `.manifest-template` — rejected: they are not template files; `update-template.sh` would flag them as foreign.
 
 **Reason:** The correction-log rule treats an unlisted control-plane-adjacent script as invisible drift; these three are tracked, executable, and shipped — exactly the surface the manifest gate exists to cover.
 
 **Do not suggest:** removing the run-server wrappers from `scripts/` (they are the working engine launchers); folding the local launchers into the template manifest; renumbering the mirror (1..N stays the blueprint's; locals grow from N+1).
+
+## D-167 — 2026-08-15 — Engine launcher paths env-ified with current absolutes as defaults
 
 **Decision:** `src/services/models.py` script paths are no longer hardcoded machine absolutes. Each engine's launcher path is now an env var with the current absolute path as the default: `DS4_0731_SCRIPT_PATH`, `DS4_Q2KXL_SCRIPT_PATH`, `DS4_IQ3XXS_SCRIPT_PATH`, `NEMOTRON_SCRIPT_PATH` (the tilde default is expanduser-expanded at Popen, already the standing convention). Frozen tests assert the default paths and remain green; another machine can point the launchers elsewhere without forking the repo.
 
@@ -39,9 +52,9 @@
 
 **Do not suggest:** moving the launcher scripts into the repo as a "portable" fix (engine repos are their own; the ds4 one is a sibling repo by design); a single relative-path scheme that special-cases the two external launchers; removing the defaults (the frozen tests pin them).
 
-> Numbering note: this testchat-LOCAL entry was D-150 when written (2026-08-15, commit a42076a); the first back-port pass renumbered it to D-158, then the blueprint took D-158 for its own manifest-coverage decision, so this entry was renumbered again to D-161. One number names one decision per ledger; the blueprint owns 1..N, children append at N+1.
+> Numbering note: this testchat-LOCAL entry was D-150 when written (2026-08-15, commit a42076a); the first back-port pass renumbered it to D-158, then the blueprint took D-158 for its own manifest-coverage decision, so this entry was renumbered again to D-167. The second back-port pass (same day) renumbered it again to D-167. One number names one decision per ledger; the blueprint owns 1..N, children append at N+1.
 
-## D-160 — 2026-08-15 — Ledger back-port: DECISIONS.md mirrors the blueprint's full D-1..D-157 set
+## D-166 — 2026-08-15 — Ledger back-port: DECISIONS.md mirrors the blueprint's full D-1..D-157 set
 
 **Decision:** testchat's `docs/DECISIONS.md` now carries a verbatim mirror of every blueprint ledger entry — the missing D-48, D-56..D-106, D-150..D-157 were copied from the template repo by script (D-48 + D-56..D-106 were the drift flagged by the review; D-150..D-157 landed in the same pass since this ledger's head had fallen behind the template's again). The child's own entry that previously occupied D-150 (script-model paths) was renumbered to D-158 with a note, so one number names one decision. A padded `comm` over entry numbers now shows no diff between the two ledgers.
 
@@ -51,7 +64,7 @@
 
 **Do not suggest:** hand-curating the back-port (scripted verbatim copy keeps fidelity and is re-runnable); keeping the old D-150 numbering (one number names one decision); giving the mirror new numbers (the blueprint owns the canonical 1..N sequence; children append their own at N+1).
 
-## D-159 — 2026-08-15 — API hardening: chat input bounds, same-origin gate on bodyless POSTs, stale pipeline-state cleanup
+## D-165 — 2026-08-15 — API hardening: chat input bounds, same-origin gate on bodyless POSTs, stale pipeline-state cleanup
 
 **Decision:** `src/api/chat.py` bounds the chat input (`message` ≤ 32 000 chars, `history` ≤ 100 entries, enforced by pydantic `Field` constraints) and the four bodyless POST routes in `src/api/models.py` (script-model load/unload + their nemotron aliases) reject cross-origin requests via a `_require_same_origin` dependency that compares a present `Origin` header against this app's own origin (403 otherwise). The stale `.pipeline-state/refreeze-pending.diff` from the halted 2026-08-09 refreeze was removed (the file is gitignored runtime state; a future refreeze regenerates it).
 
@@ -60,6 +73,73 @@
 **Reason:** The review found the unbounded chat input and the bodyless POST routes; the Origin check is the standard defense for the form-CSRF shape, and the browser UI always sends a same-origin Origin on its own POSTs.
 
 **Do not suggest:** an allowlist of foreign origins (this app is single-origin by design); raising the message cap (32k chars is well past the longest paste the UI produces, and the LLM context window is the real ceiling); a global middleware once the routes are narrowed (the four bodyless routes are the entire surface).
+
+
+## D-164 — 2026-08-15 — Multi-file transactional task groups sequenced behind measured oracle strength
+
+**Decision:** A bounded multi-file transactional task group (one model completion per file, the group validated/tested/committed/rolled back atomically) for migrations and cross-cutting refactors is a recognized gap and deliberately deferred: sequenced after oracle strength is measured (the D-161 freeze-cadence pass). The one-file containment that makes the local-coder floor fail cheaply is not widened first.
+
+**Alternatives considered:** (a) Build the group now — rejected: it widens the blast radius per completion before the oracle can be shown to catch the wider blast. (b) Reject the gap forever — rejected: migrations and cross-cutting refactors are real, unserved task shapes. (c) Multi-file without group atomicity — rejected: partial groups re-introduce the half-applied class refreeze's transactionality (D-151) exists to prevent.
+
+**Reason:** Rule 9 (gate strength ∝ blast radius) cuts both ways — widening the lane before measuring the oracle that must catch the wider blast inverts the sequence the green-suite/broken-app incidents (D-75's reason) teach.
+
+**Do not suggest:** widening the coder lane to multi-file while the frozen suite's discrimination is unmeasured; reading this deferral as approval of one-file as dogma (it is the current safe default, not a universal); building the group with per-file commits instead of group atomicity (the D-151 class).
+
+## D-163 — 2026-08-15 — Comparative evaluation deferred until independent oracle authorship exists
+
+**Decision:** A comparative benchmark (this pipeline vs. Spec Kit + a frontier agent vs. a plain Codex/Claude Code workflow, scored on hidden acceptance tests) is deferred, gated on solving independent evaluation: the hidden tests must be authored by someone other than the TPM seat. Not ranked as next work. The existing external-review commissioning pattern (REVIEW.md; the 2026-08 remediation review) is the template for that independent author — the constraint is commissioning, not engineering.
+
+**Alternatives considered:** (a) Run now with TPM-authored hidden tests on both arms — rejected: it measures oracle-authoring skill, not pipeline efficacy — self-certification. (b) Independent review for the blueprint arm only — rejected: same validity failure, asymmetric. (c) Skip the benchmark permanently — rejected: the pipeline's internal claims are evidence-backed while its comparative claim stays narrative.
+
+**Reason:** Every internal gate claim in this repo has mechanical evidence; the market-superiority claim has none. A benchmark that cannot distinguish "the pipeline wins" from "the TPM writes better tests" would fail the repo's own Rule 6 standard at benchmark scale.
+
+**Do not suggest:** running the eval with TPM-authored hidden tests and reporting "pipeline wins" (the rubber-ruler failure at benchmark scale); commissioning the eval before D-162 lands (an eval run on a tainted oracle inherits the taint); treating the eval's deferral as evidence against the pipeline's value (deferral is validity-gated, not verdict-gated).
+
+## D-162 — 2026-08-15 — TPM read wall to become structural: materialized view, not a settings allowlist
+
+> Amended by the 2026-08-15 implementation commit: the materialized view shipped — `scripts/tpm-view.sh` builds `.tpm/view/` (spec artifacts + frozen tests + sanitized escalations + TPM-ROLE.md, outbox symlinked to `.tpm/outbox`), `scripts/tpm-agent.sh --view` roots the agent there with `scripts/tpm-view-settings.json`; src/ is physically absent. Three selftests pin the behavior.
+
+**Decision:** INV-1's read side becomes structural via a materialized TPM view — a directory containing only the spec artifacts `spec_artifacts.py` describes, the frozen tests, and sanitized escalation evidence, with the agent rooted there so implementation bytes are physically absent — not by tightening `tpm-agent-settings.json`. Until the view exists, the read wall remains harness-enforced policy (the softness `tpm-agent.sh`'s own header admits), and claims of structurality are wrong.
+
+**Alternatives considered:** (a) Settings allowlist only (deny `Read(./.git/**)`, `Read(./project-trail/**)`, `Read(./.pipeline-state/**)`) — rejected as the fix: still harness-enforced policy, same softness class; the practical leak channels are human-readable evidence files, and a policy list binds only as long as the harness has no gap (the conductor-lane-breach class, project-trail/2026-07-04). (b) Run the agent inside the test sandbox with src/ unmounted — viable but heavier than needed; the materialized view reuses the pack machinery that already excludes src/ and tests/ from TPM briefs by construction. (c) Leave as-is — rejected: REVIEW.md HIGH-2 names this exact hole, and its fix remains open.
+
+**Reason:** Every other load-bearing invariant got the structural treatment (committed hooks, hash-pinned manifests, sandbox mounts, a coder with no filesystem at all); INV-1's read side is the last one enforced by a promise. A TPM that reads src/ fails softly: the suite freezes green-tinted, INV-1 is violated without any crash, and everything downstream reports healthy.
+
+**Do not suggest:** declaring the read wall structural after a settings-file edit (a tighter policy is not a boundary); building the view without sanitizing escalation evidence (project-trail/.pipeline-state quotes of implementation are the practical channel, ahead of `.git` blobs); demoting the D-38 chat air gap below fallback status before the view exists.
+
+## D-161 — 2026-08-15 — Oracle-strength gap recorded as open: the frozen suite's discrimination is unverified (D-75 continuation)
+
+> Amended by the 2026-08-15 docs-wording commit: the Rule 5 correction below landed — BLUEPRINT.md's Rule 5 heading/table row, CLAUDE.md's guidance bullet, and new-project.sh's child CLAUDE.md template now read "binding automated completion evidence"; REVIEW.md and historical entries untouched.
+
+**Decision:** Record as an open, load-bearing gap. INV-1 hardening (D-155) guarantees the TPM did not see the implementation; it says nothing about whether the frozen suite discriminates against plausible wrong implementations. D-75 already observes each new delta's tests failing against the pre-implementation tree at freeze time (red-before-green, warn-only); nothing verifies the existing suite's discrimination, and nothing maps the suite to the spec's clauses. The per-run mutation check remains rejected — D-75 alternatives (a) stands (orders of magnitude more compute for the same signal; flags noise on healthy tests). The sanctioned shape of any future fix is a freeze-cadence, one-shot, report-only mutation pass against the frozen suite — not implemented now. Rule 5's "Tests are ground truth" (BLUEPRINT.md) is an overclaim against the D-44 reality — acceptance is the live CEO check; the suite is binding automated completion evidence. The wording correction landed the same day (see the amendment
+note above).
+
+**Alternatives considered:** (a) Per-run mutation testing — rejected at D-75, carried forward verbatim; not re-litigated here. (b) Building the freeze-cadence pass now — rejected: a measurement of a tainted oracle would certify it; the pass is only meaningful once the TPM read wall is structural (the materialized-view item), and recording the gap first gives any future pass a named baseline to beat. (c) Spec-clause coverage mapping — real machinery nobody has built; separate future item. (d) Leaving the gap only in REVIEW.md — rejected: it is the single load-bearing assumption of the post-D-53 design, and REVIEW.md's own banner marks its findings stale; the authoritative record must carry it.
+
+**Reason:** Everything downstream optimizes against the frozen suite; a green-but-toothless suite does not fail loudly, it silently certifies wrong code as done (the v6/M5 mock family and M16's hit-counter — the incident class D-75's reason documents). D-155 closed INV-1's provenance side on 2026-08-15; without this entry the ledger reads "INV-1 fully addressed" — true for who-pinned-it, false for does-it-discriminate. Independence without strength is a clean-provenance rubber ruler.
+
+**Do not suggest:** re-proposing mutation-per-run (D-75 stands); building the freeze-cadence pass before the TPM read wall is structural (a tainted oracle certifies itself); relocating this gap back to REVIEW.md (historical by design); reading this entry as license to skip D-44's CEO-checkable milestone acceptance (the suite cannot replace the live check).
+
+## D-160 — 2026-08-15 — Placeholder gate mechanized: bootstrap arms .placeholder-gate; phase-gate enforces Step 7
+
+**Decision:** BLUEPRINT.md Step 7's placeholder grep is no longer judgment-only. `bootstrap.sh` creates `.placeholder-gate` before its baseline commit (which is exempt — the hook is not yet enabled when bootstrap commits the skeleton baseline), and from then on `phase-gate.sh manifest` — the mode the pre-commit hook and the orchestrator pre-flight both run — fails any commit whose tree still carries a Step-7 hit (same command, same exclusions: md/json, markdown links filtered, DECISIONS.md/BLUEPRINT.md exempt). The template repo itself never runs bootstrap.sh, so its intentional skeleton rows can never trip the gate; a derived repo is on the enforced side from its first bootstrap. Four selftests pin the behavior: dormant without marker, blocks hits when armed, passes clean when armed, ignores markdown links.
+
+**Alternatives considered:** (a) Leaving Step 7 procedural — rejected (2026-08-15 PM ruling): the meta-rule treats an unmechanized rule as a suggestion, and the re-verification explicitly called the missing fail-closed mechanism. (b) Unconditional enforcement in phase-gate — rejected: the template repo's own commits would fail on its skeletons; the marker is the discriminator. (c) Wiring into bootstrap's fill step only — rejected: bootstrap runs at Step 4, before fill; enforcement belongs at the commit door.
+
+**Reason:** A third-party re-verification confirmed the gate existed but could not find a mechanical failure path for unfilled slots; the repo's own correction-log meta-rule (a rule that cannot be enforced mechanically is a suggestion) demands the gate fail on its own.
+
+**Do not suggest:** exempting skeleton files from the gate (they are the Step-6 fill contract — a derived repo must fill them); deleting `.placeholder-gate` from a child to quiet the gate (silent fail-open; the marker is the enforcement switch); adding the marker to the template manifest (it is a marker, not control-plane logic, and the template repo never carries one).
+
+## D-159 — 2026-08-15 — README file tree completed; placeholder gate re-verified
+
+**Decision:** `README.md`'s file tree now lists all 11 `docs/` files (BROWSER-ORACLE-DESIGN, CEO-PLAYBOOK, CONDUCTOR-ROLE, DEV-VM-SETUP, SANDBOX-VALIDATION were missing — DEV-VM-SETUP is referenced by the README itself). A third-party re-verification of the remediation batches independently confirmed the D-153 placeholder gate: it exists as BLUEPRINT.md Step 7 (a real fail-and-return gate with the hardened regex, markdown-link filter, and the two documented verbatim-record exceptions), and a live run against the template repo is clean except the Step-6 skeleton rows and the two exceptions — the gate's purpose is a derived repo after fill, and the template's skeletons are its fill targets by design.
+
+**Alternatives considered:** (a) Adding CURRENT.md to the gate's exclusion list after a session note quoted a token class — rejected: exclusions are for intentional bracket content; the prose was reworded instead, and a derived repo's CURRENT.md should be gate-clean. (b) Mechanizing the gate (a script that exits nonzero on hits, wired into bootstrap/phase-gate) — held as a stop-and-ask: adding a new fail behavior to an existing gate is a Rule 3 change pending PM ruling.
+
+**Reason:** The D-153 sweep covered QUICKSTART/.env.example/plan.schema but missed README's file tree; the re-verification caught it, and the same pass confirmed the gate was not lost in the hardening.
+
+**Do not suggest:** removing the skeleton rows from the template to make the template repo gate-clean (they are the fill contract Step 6 targets); adding per-file exclusions beyond DECISIONS.md/BLUEPRINT.md (the maintained-list anti-pattern the 2026-06-04 correction log rejected); rewording the gate command.
+
 
 ## D-158 — 2026-08-15 — Manifest covers the full script inventory: bootstrap.sh and new-project.sh join the template manifest
 
