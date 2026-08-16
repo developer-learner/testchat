@@ -207,11 +207,16 @@ def test_chat_router_model_not_listed_is_422(client, monkeypatch, httpserver):
     assert resp.status_code == 422
 
 
-def test_chat_router_model_router_down_is_422(client, monkeypatch, httpserver):
-    _serve_router_models(httpserver, [models_mod.ROUTER_MODEL_ID])
-    monkeypatch.setenv("VORTEX_URL", _router_base(httpserver))
-    httpserver.stop()
-    httpserver.clear()
+def test_chat_router_model_router_down_is_422(client, monkeypatch):
+    # Simulate the router being unreachable without touching the
+    # session-shared httpserver (stopping it breaks every later
+    # httpserver-based test when the suite runs as sorted node-ids).
+    monkeypatch.setenv("VORTEX_URL", "http://127.0.0.1:1")
+
+    def _raise(*args, **kwargs):
+        raise models_mod.httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(models_mod.httpx, "get", _raise)
 
     resp = client.post(
         "/api/v1/chat",

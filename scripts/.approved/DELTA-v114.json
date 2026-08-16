@@ -1,0 +1,10 @@
+{
+  "changed_contract_ids": [],
+  "changed_tests": [
+    "tests/test_router_route.py::test_chat_router_model_router_down_is_422"
+  ],
+  "retired_tests": [],
+  "changed_tests_granularity": "function",
+  "changed_files": [],
+  "inventory_files": []
+}
