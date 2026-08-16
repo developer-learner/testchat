@@ -1,21 +1,27 @@
 {
+  "erd_version": 107,
   "files": [
-    "src/static/app.js",
-    "src/static/threads.js",
+    "src/services/models.py",
+    "src/api/models.py",
+    "src/api/chat.py",
+    "src/static/catalog.js",
     "src/services/storage.py",
     "src/api/threads.py",
-    "src/static/chrome.js",
-    "src/static/catalog.js",
-    "src/static/index.html"
+    "src/static/threads.js",
+    "src/static/app.js"
+  ],
+  "changed_files": [
+    "src/services/models.py",
+    "src/api/models.py",
+    "src/api/chat.py"
   ],
   "no_edit_files": [
-    "src/static/threads.js",
+    "src/static/catalog.js",
     "src/services/storage.py",
     "src/api/threads.py",
-    "src/static/chrome.js",
-    "src/static/catalog.js"
+    "src/static/threads.js",
+    "src/static/app.js"
   ],
-  "erd_version": 104,
   "entry_points": [
     "src.main:app",
     "src.services.llm",
@@ -51,11 +57,11 @@
     "src.services.models:list_model_catalog",
     "src.services.models:get_script_model",
     "src.api.models:ModelInfo",
-    "src.api.models:CatalogEntry"
-  ],
-  "changed_files": [
-    "src/static/app.js",
-    "src/static/index.html"
+    "src.api.models:CatalogEntry",
+    "src.services.models:is_router_configured",
+    "src.services.models:router_models",
+    "src.services.models:is_router_model",
+    "src.services.models:router_chat_endpoint"
   ],
   "externals": [
     {

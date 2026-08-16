@@ -365,6 +365,36 @@ overwritten.
   a loaded script model is never offered twice and the dropdown never
   contains duplicate entries for the same model.
 
+### Router model (dual-path, v107)
+
+* **AC-170:** WHEN `VORTEX_URL` is set AND the router at
+  `{VORTEX_URL}/v1/models` answers HTTP 200 with `qwen3.8-27b-8bit` listed in
+  its `data`, THE SYSTEM SHALL include the model `qwen3.8-27b-8bit` with
+  source `router` in the response of `GET /api/v1/models`, such that the
+  router model appears in the model dropdown as a selectable chat model.
+
+* **AC-171:** WHEN the router probe fails (non-200 status or connection
+  error) or the router does not list `qwen3.8-27b-8bit`, THE SYSTEM SHALL
+  omit the router model from `GET /api/v1/models` and SHALL never include it
+  in `GET /api/v1/models/catalog`, such that the dropdown never offers a chat
+  that cannot succeed and the script-model load/unload machinery never
+  becomes involved with the router model.
+
+* **AC-172:** WHEN a chat request names `qwen3.8-27b-8bit` AND the router
+  lists it, THE SYSTEM SHALL stream the reply from
+  `{VORTEX_URL}/v1/chat/completions` with the model id passed through
+  unchanged, such that the router — not the internal endpoints — answers.
+
+* **AC-173:** WHEN a chat request names the router model id and the router
+  does not list it at that moment, THE SYSTEM SHALL reject the request with
+  422 before any streaming begins — the same contract as a not-loaded script
+  model — such that the request never silently falls through to a different
+  backend.
+
+* **AC-174:** WHEN `VORTEX_URL` is not set, THE SYSTEM SHALL expose no router
+  model and perform no router probe, such that existing deployments behave
+  exactly as before.
+
 ## Out of scope
 
 * **Clear-all redesign or removal.** DELETE `/api/v1/threads` retains its

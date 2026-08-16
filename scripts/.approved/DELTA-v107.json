@@ -1,0 +1,45 @@
+{
+  "changed_contract_ids": [
+    "src.services.models:is_router_configured",
+    "src.services.models:is_router_model",
+    "src.services.models:router_chat_endpoint",
+    "src.services.models:router_models"
+  ],
+  "changed_tests": [
+    "tests/test_router_route.py::test_chat_internal_path_untouched_when_vortex_url_unset",
+    "tests/test_router_route.py::test_chat_router_model_not_listed_is_422",
+    "tests/test_router_route.py::test_chat_router_model_router_down_is_422",
+    "tests/test_router_route.py::test_chat_routes_router_model_to_router_endpoint_and_passes_model",
+    "tests/test_router_route.py::test_get_models_includes_router_when_ready",
+    "tests/test_router_route.py::test_is_router_configured_reflects_env",
+    "tests/test_router_route.py::test_router_chat_endpoint_uses_vortex_url",
+    "tests/test_router_route.py::test_router_model_never_in_catalog",
+    "tests/test_router_route.py::test_router_models_deduplicated",
+    "tests/test_router_route.py::test_router_models_empty_when_probe_raises",
+    "tests/test_router_route.py::test_router_models_empty_when_router_503",
+    "tests/test_router_route.py::test_router_models_empty_when_router_omits_it",
+    "tests/test_router_route.py::test_router_models_empty_when_vortex_url_unset",
+    "tests/test_router_route.py::test_router_models_included_in_list_models",
+    "tests/test_router_route.py::test_router_models_lists_router_when_router_reports_it",
+    "tests/test_ui_catalog.py::test_model_dropdown_lists_router_model_from_models_list[chromium]"
+  ],
+  "retired_tests": [
+    "tests/test_ui_catalog.py::test_model_dropdown_shows_each_script_model_once"
+  ],
+  "changed_tests_granularity": "function",
+  "changed_files": [
+    "src/services/models.py",
+    "src/api/models.py",
+    "src/api/chat.py"
+  ],
+  "inventory_files": [
+    "src/services/models.py",
+    "src/api/models.py",
+    "src/api/chat.py",
+    "src/static/catalog.js",
+    "src/services/storage.py",
+    "src/api/threads.py",
+    "src/static/threads.js",
+    "src/static/app.js"
+  ]
+}
