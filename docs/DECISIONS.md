@@ -21,18 +21,28 @@
 
 ## Decisions
 
-## D-169 — 2026-08-15 — Second ledger back-port: mirror advanced to blueprint D-1..D-164; locals renumbered to D-165..D-168
+## D-171 — 2026-08-15 — Third ledger back-port: mirror advanced to blueprint D-1..D-165; locals renumbered to D-166..D-170
+
+**Decision:** The blueprint ledger advanced to D-165 (brownfield adoption theory — snapshot-plus-go-forward model, generalization deferred as a later feature). testchat's mirror was advanced by verbatim copy of D-165, and the five testchat-LOCAL entries were renumbered D-165..D-169 → D-166..D-170 so one number still names one decision (the blueprint owns 1..N; children append at N+1). A padded `comm` over entry numbers agrees exactly on the mirror range D-1..D-165.
+
+**Alternatives considered:** (a) Keeping the locals at D-165..D-169 and accepting collision with the mirror — rejected: one number names one decision (the D-160/D-161 and D-165/D-166 renumbering precedents). (b) Waiting for a later pass — rejected: the correction-log guard requires code and ledger to travel together, and the ledger-only advance (no code synced) still must not drift.
+
+**Reason:** The two ledgers must agree on the mirror range or the "ledgers agree" claim decays into drift again; the renumbering keeps every local decision findable under one stable number.
+
+**Do not suggest:** hand-curating the mirror (verbatim scripted copy stays re-runnable); renumbering mirror entries (the blueprint owns the canonical sequence); leaving locals colliding with the mirror range.
+
+## D-170 — 2026-08-15 — Second ledger back-port: mirror advanced to blueprint D-1..D-164; locals renumbered to D-165..D-168
 
 **Decision:** The blueprint ledger advanced to D-164 (README-tree D-159; placeholder-gate mechanization D-160; oracle-strength gap D-161; materialized TPM view D-162; eval deferral D-163; multi-file sequencing D-164). testchat's mirror was advanced by verbatim copy of D-159..D-164, and the four testchat-LOCAL entries were renumbered D-159..D-162 → D-165..D-168 so one number still names one decision (the blueprint owns 1..N; children append at N+1). The script-paths entry's missing heading (lost in the first renumber pass) was restored as part of the renumbering. A padded `comm` over entry numbers agrees exactly on the mirror range D-1..D-164.
 
 **Alternatives considered:** (a) Keeping the locals at D-159..D-162 and accepting collision with the mirror — rejected: one number names one decision (the D-160/D-161 renumbering precedent). (b) Waiting for a later pass — rejected: the correction-log guard requires code and ledger to travel together, and the TPM-view code (D-162) synced in this very pass.
 
-**Reason:** The two ledgers must agree on the mirror range or the "ledgers agree" claim decays into drift again (the failure the first back-port, now D-166, fixed); the renumbering keeps every local decision findable under one stable number.
+**Reason:** The two ledgers must agree on the mirror range or the "ledgers agree" claim decays into drift again (the failure the first back-port, now D-167, fixed); the renumbering keeps every local decision findable under one stable number.
 
 **Do not suggest:** hand-curating the mirror (verbatim scripted copy stays re-runnable); renumbering mirror entries (the blueprint owns the canonical sequence); leaving locals colliding with the mirror range.
 
 
-## D-168 — 2026-08-15 — Child-owned scripts join .manifest-project; the child ledger mirrors the template's full D-1..D-158
+## D-169 — 2026-08-15 — Child-owned scripts join .manifest-project; the child ledger mirrors the template's full D-1..D-158
 
 **Decision:** `scripts/.manifest-project` now lists the three testchat-owned scripts that sat in no manifest — `lane-selfcheck.py`, `run-server-0731-q2.sh`, `run-server-0731-ud.sh` — closing the same drift-invisible class the review flagged for the template (bootstrap/new-project, landed blueprint-side as D-158). Separately, the blueprint's D-158 entry was back-ported into this ledger and the child-local script-paths entry was renumbered D-158 → D-161 (the blueprint owns 1..N; children append at N+1), so the child ledger is now blueprint D-1..D-158 plus locals D-165..D-168 — a padded `comm` over entry numbers agrees exactly on the mirror range.
 
@@ -42,7 +52,7 @@
 
 **Do not suggest:** removing the run-server wrappers from `scripts/` (they are the working engine launchers); folding the local launchers into the template manifest; renumbering the mirror (1..N stays the blueprint's; locals grow from N+1).
 
-## D-167 — 2026-08-15 — Engine launcher paths env-ified with current absolutes as defaults
+## D-168 — 2026-08-15 — Engine launcher paths env-ified with current absolutes as defaults
 
 **Decision:** `src/services/models.py` script paths are no longer hardcoded machine absolutes. Each engine's launcher path is now an env var with the current absolute path as the default: `DS4_0731_SCRIPT_PATH`, `DS4_Q2KXL_SCRIPT_PATH`, `DS4_IQ3XXS_SCRIPT_PATH`, `NEMOTRON_SCRIPT_PATH` (the tilde default is expanduser-expanded at Popen, already the standing convention). Frozen tests assert the default paths and remain green; another machine can point the launchers elsewhere without forking the repo.
 
@@ -52,9 +62,9 @@
 
 **Do not suggest:** moving the launcher scripts into the repo as a "portable" fix (engine repos are their own; the ds4 one is a sibling repo by design); a single relative-path scheme that special-cases the two external launchers; removing the defaults (the frozen tests pin them).
 
-> Numbering note: this testchat-LOCAL entry was D-150 when written (2026-08-15, commit a42076a); the first back-port pass renumbered it to D-158, then the blueprint took D-158 for its own manifest-coverage decision, so this entry was renumbered again to D-167. The second back-port pass (same day) renumbered it again to D-167. One number names one decision per ledger; the blueprint owns 1..N, children append at N+1.
+> Numbering note: this testchat-LOCAL entry was D-150 when written (2026-08-15, commit a42076a); the first back-port pass renumbered it to D-158, then the blueprint took D-158 for its own manifest-coverage decision, so this entry was renumbered again to D-167. The second back-port pass (same day) renumbered it again to D-167. The third back-port pass (same day) renumbered it to D-168 (blueprint D-165 mirrored). One number names one decision per ledger; the blueprint owns 1..N, children append at N+1.
 
-## D-166 — 2026-08-15 — Ledger back-port: DECISIONS.md mirrors the blueprint's full D-1..D-157 set
+## D-167 — 2026-08-15 — Ledger back-port: DECISIONS.md mirrors the blueprint's full D-1..D-157 set
 
 **Decision:** testchat's `docs/DECISIONS.md` now carries a verbatim mirror of every blueprint ledger entry — the missing D-48, D-56..D-106, D-150..D-157 were copied from the template repo by script (D-48 + D-56..D-106 were the drift flagged by the review; D-150..D-157 landed in the same pass since this ledger's head had fallen behind the template's again). The child's own entry that previously occupied D-150 (script-model paths) was renumbered to D-158 with a note, so one number names one decision. A padded `comm` over entry numbers now shows no diff between the two ledgers.
 
@@ -64,7 +74,7 @@
 
 **Do not suggest:** hand-curating the back-port (scripted verbatim copy keeps fidelity and is re-runnable); keeping the old D-150 numbering (one number names one decision); giving the mirror new numbers (the blueprint owns the canonical 1..N sequence; children append their own at N+1).
 
-## D-165 — 2026-08-15 — API hardening: chat input bounds, same-origin gate on bodyless POSTs, stale pipeline-state cleanup
+## D-166 — 2026-08-15 — API hardening: chat input bounds, same-origin gate on bodyless POSTs, stale pipeline-state cleanup
 
 **Decision:** `src/api/chat.py` bounds the chat input (`message` ≤ 32 000 chars, `history` ≤ 100 entries, enforced by pydantic `Field` constraints) and the four bodyless POST routes in `src/api/models.py` (script-model load/unload + their nemotron aliases) reject cross-origin requests via a `_require_same_origin` dependency that compares a present `Origin` header against this app's own origin (403 otherwise). The stale `.pipeline-state/refreeze-pending.diff` from the halted 2026-08-09 refreeze was removed (the file is gitignored runtime state; a future refreeze regenerates it).
 
@@ -74,6 +84,16 @@
 
 **Do not suggest:** an allowlist of foreign origins (this app is single-origin by design); raising the message cap (32k chars is well past the longest paste the UI produces, and the LLM context window is the real ceiling); a global middleware once the routes are narrowed (the four bodyless routes are the entire surface).
 
+
+## D-165 — 2026-08-15 — Brownfield adoption: snapshot-plus-go-forward model recorded; generalization deferred as a future feature
+
+**Decision:** Adopting this framework onto an existing working app is theorized (not tested) as a *snapshot-plus-go-forward* model: the legacy test suite is frozen as a hash-pinned snapshot that is explicitly NOT an independent oracle (never the acceptance gate for legacy paths), while all new behavior runs through the normal TPM → refreeze → orchestrate loop. Generalizing the framework for brownfield onboarding is deliberately deferred as a later feature — no adoption tooling is built now and no brownfield run is scheduled.
+
+**Alternatives considered:** (a) Retroactive oracle upgrade — rejected as impossible: legacy tests were authored with the implementation in view; the structural taint (the class D-162's read wall exists to prevent) cannot be retroactively removed, so the legacy suite can never satisfy INV-1's meaning. (b) Rewrite the legacy suite before first freeze — rejected as the adoption cost: effectively rebuilding the app's test story before the framework earns anything; test-by-test replacement via refreeze as features are touched is the cheaper, incremental path. (c) Freeze legacy tests as acceptance-gating oracle — rejected: the D-75 class (green suite, broken app); the suite's discrimination for legacy paths is unknown and unmeasurable post-hoc, and hash-pinning that blindness into frozen-manifest compounds it.
+
+**Reason:** The mechanical walk-through found two fatal classes and one workable-but-heavy path. Fatal: (1) non-Python/non-pytest stacks — the oracle machinery is pytest + --json-report + Python-validator bound (D-110), so the framework does not exist for other stacks without writing a new oracle adapter; (2) treating the legacy suite as the acceptance oracle. Workable (Python/pytest apps): reverse-construct the frozen spec (PRD/ERD/contracts.json, inventory enumerating every file EM/coder may touch); write contracts to match what legacy tests actually import or rewrite them (INV-4 at first freeze rejects implementation-internal imports); satisfy D-151 operational preflights; accept that the gate's exemption set (tuned on testchat incidents) will hit unknown seams on an arbitrary repo. No onboarding tooling exists — new-project.sh is greenfield-only, so adoption is a hand-assembled, undocumented, untested procedure until the deferred generalization feature lands.
+
+**Do not suggest:** building brownfield tooling now (deferred by CEO 2026-08-15 as a later feature); treating the legacy snapshot as an independent oracle or as acceptance-gating for legacy paths (D-75 class); rewriting the entire legacy suite up front as an adoption prerequisite; citing this entry as evidence that adoption "works" — it is theory, unvalidated by any run, and the framework's own history shows every new seam class is discovered by incident, not design.
 
 ## D-164 — 2026-08-15 — Multi-file transactional task groups sequenced behind measured oracle strength
 

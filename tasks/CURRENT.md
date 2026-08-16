@@ -7,7 +7,7 @@
 
 ## State at 2026-08-15 — review remediation batch: API hardening, ledger back-port, stale-state cleanup
 
-- **API hardening (D-165):** `src/api/chat.py` now bounds the chat input (message ≤ 32 000 chars, history ≤ 100 entries, pydantic `Field` constraints) and the four bodyless POST routes in `src/api/models.py` (script-model load/unload + nemotron aliases) reject cross-origin requests via a `_require_same_origin` Origin check (403). The stale `.pipeline-state/refreeze-pending.diff` from the halted 2026-08-09 refreeze was removed (gitignored runtime state; a future refreeze regenerates it).
+- **API hardening (D-166):** `src/api/chat.py` now bounds the chat input (message ≤ 32 000 chars, history ≤ 100 entries, pydantic `Field` constraints) and the four bodyless POST routes in `src/api/models.py` (script-model load/unload + nemotron aliases) reject cross-origin requests via a `_require_same_origin` Origin check (403). The stale `.pipeline-state/refreeze-pending.diff` from the halted 2026-08-09 refreeze was removed (gitignored runtime state; a future refreeze regenerates it).
 
 - **Ledger back-port (D-160):** `docs/DECISIONS.md` now mirrors the blueprint's full D-1..D-158 set verbatim — the missing D-48 + D-56..D-106 (the drift the review flagged), D-150..D-157, and (second pass) the blueprint's D-158 (template manifest coverage) all landed by script; a padded `comm` over entry numbers shows the ledgers agree exactly on 1..158, with testchat's locals at 159/160/161. The testchat-local script-paths entry (previously D-150, then D-158) was renumbered to **D-161** — one number names one decision.
 
