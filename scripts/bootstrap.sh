@@ -6,17 +6,16 @@
 # What it does:
 #   1. Renames placeholders throughout docs
 #   2. Creates AGENTS.md symlink → CLAUDE.md (OpenCode's preferred filename)
-#   3. Copies opencode.json to global config location if not already present
-#   4. Creates Python virtual environment
-#   5. Installs base dependencies
-#   6. Initializes git (if not already)
-#   7. Prints next steps
+#   3. Creates Python virtual environment
+#   4. Installs base dependencies
+#   5. Initializes git (if not already)
+#   6. Prints next steps
 #
 # NOTE (Rule 3): This installs the DEFAULT stack (FastAPI + Postgres async).
 # If this project uses a different stack (e.g. SQLite, Django, no DB), EDIT
 # the dependency list below BEFORE running. Also update ci.yml and CONVENTIONS.md.
 
-set -e
+set -euo pipefail
 
 PROJECT_NAME=${1:-"my-project"}
 
@@ -35,6 +34,7 @@ echo "📝 Updating docs with project name..."
 find . -type f \( -name "*.md" -o -name "*.yml" -o -name "*.yaml" \) \
   -not -path "./.git/*" \
   -not -path "./.venv/*" \
+  -not -name "BLUEPRINT.md" \
   -exec "${SED_INPLACE[@]}" "s/\[PROJECT_NAME\]/$PROJECT_NAME/g" {} +
 
 # --- AGENTS.md symlink (OpenCode reads AGENTS.md; symlink keeps one source of truth) ---
@@ -44,21 +44,6 @@ if [ ! -f AGENTS.md ]; then
   echo "   AGENTS.md symlink created"
 else
   echo "   AGENTS.md already exists, skipping"
-fi
-
-# --- OpenCode global config (copy only if not already configured) ---
-OPENCODE_CONFIG_DIR="$HOME/.config/opencode"
-OPENCODE_CONFIG="$OPENCODE_CONFIG_DIR/opencode.json"
-if [ ! -f "$OPENCODE_CONFIG" ]; then
-  echo "⚙️  Installing OpenCode global config..."
-  mkdir -p "$OPENCODE_CONFIG_DIR"
-  cp opencode.json "$OPENCODE_CONFIG"
-  echo "   Config written to $OPENCODE_CONFIG"
-  echo "   ⚠️  Verify the model name matches what LM Studio is serving:"
-  echo "       curl http://localhost:1234/v1/models | python3 -m json.tool"
-else
-  echo "⚙️  OpenCode config already exists at $OPENCODE_CONFIG — not overwriting"
-  echo "   Ensure it uses provider key 'lms' (not 'lmstudio') to avoid model name collision"
 fi
 
 # --- Python virtual environment ---
@@ -76,7 +61,6 @@ pip install \
   "uvicorn[standard]" \
   pydantic \
   pydantic-settings \
-  loguru \
   python-dotenv \
   httpx \
   aiosqlite

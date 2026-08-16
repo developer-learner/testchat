@@ -59,6 +59,30 @@ IN="${1:-$APPROVED/incoming}"
 
 die() { echo "REFREEZE FAIL: $*" >&2; exit 1; }
 
+# D-151: refreeze MUTATES the tree (installs docs/tests, deletes REMOVED
+# files, bumps VERSION) before committing; a commit failure on a missing git
+# identity would leave the tree half-applied with no recovery. orchestrate.sh
+# pre-flights identity for the same reason (its commits deliberately swallow
+# failures); refreeze is the destructive one, so it fails closed BEFORE any
+# mutation. --diff is read-only and skips this.
+if [ "$MODE" != "diff" ]; then
+  { [ -n "$(git config user.email || true)" ] && [ -n "$(git config user.name || true)" ]; } \
+    || die "git identity missing — the freeze commit would fail after the tree was already mutated: git config --global user.email <addr> && git config --global user.name <name>"
+fi
+
+# D-152: fail fast on stock macOS. Operational freezes belong in the Linux
+# dev VM (orchestrate.sh hard-dies on Darwin for the same constraint), and
+# stock macOS lacks sha256sum — the old failure was a confusing "command not
+# found" mid-flow. macOS hosts with GNU coreutils can run the fixture-level
+# apply path (the selftest suite does exactly that), so those proceed with a
+# loud warning instead of a blanket die.
+if [ "$(uname -s)" = "Darwin" ]; then
+  if ! command -v sha256sum >/dev/null 2>&1; then
+    die "sha256sum not found — refreeze needs GNU coreutils (macOS ships shasum -a 256 instead); run operational freezes inside the Linux dev VM (docs/DEV-VM-SETUP.md) or install coreutils"
+  fi
+  echo "WARNING: running refreeze on macOS — operational freezes belong inside the Linux dev VM (docs/DEV-VM-SETUP.md)" >&2
+fi
+
 case "${1:-}" in
   --approve|--interactive)
     die "the ${1} approval path was removed (D-121) — refreeze installs by gate verdict once every preflight is green; use --diff for a read-only preview" ;;
@@ -110,7 +134,8 @@ CHANGED_CAPTURES=$(cd "$IN" && find captures -type f 2>/dev/null | sed 's|^\./||
 REMOVED_FILES=""
 if [ -f "$IN/REMOVED" ]; then
   REMOVED_FILES=$(grep -vE '^\s*(#|$)' "$IN/REMOVED" || true)
-  for f in $REMOVED_FILES; do
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
     # Bash case-globs match '/', so a literal `tests/*.py` accepts
     # `tests/../scripts/foo.py` — a whitelist the TPM could bypass to
     # rm -f arbitrary paths at apply. Reject traversal before the pattern.
@@ -121,7 +146,7 @@ if [ -f "$IN/REMOVED" ]; then
     esac
     [ -f "$f" ] || die "REMOVED lists a file that does not exist in the repo: $f"
     [ ! -f "$IN/$f" ] || die "REMOVED lists a file also present in staging (conflict — pick one): $f"
-  done
+  done <<< "$REMOVED_FILES"
 fi
 [ -n "$CHANGED_DOCS$CHANGED_TEST_FILES$CHANGED_CAPTURES$REMOVED_FILES" ] || die "staging dir is empty — nothing to freeze"
 
@@ -351,7 +376,7 @@ trap 'rm -rf "$PREVIEW"' EXIT
 mkdir -p "$PREVIEW/tests"
 [ -d tests ] && cp -R tests/. "$PREVIEW/tests/" 2>/dev/null || true
 [ -d "$IN/tests" ] && cp -R "$IN/tests/." "$PREVIEW/tests/"
-for f in $REMOVED_FILES; do rm -f "$PREVIEW/$f"; done   # preview reflects the post-delta suite
+while IFS= read -r f; do [ -n "$f" ] || continue; rm -f "$PREVIEW/$f"; done <<< "$REMOVED_FILES"   # preview reflects the post-delta suite
 INV4_CONTRACTS="$APPROVED/contracts.json"
 [ -f "$IN/contracts.json" ] && INV4_CONTRACTS="$MERGED_CONTRACTS"
 python3 scripts/check-test-surface.py --tests-dir "$PREVIEW/tests" --contracts "$INV4_CONTRACTS" \
@@ -444,11 +469,12 @@ show_diff() {  # $1 current-path  $2 incoming-path
     diff -u --label "$APPROVED/ERD-DELTA.md" --label /dev/null \
       "$APPROVED/ERD-DELTA.md" /dev/null || true
   fi
-  for f in $REMOVED_FILES; do
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
     echo ""
     echo "--- $f (REMOVED) ---"
     diff -u --label "$f" --label /dev/null "$f" /dev/null || true
-  done
+  done <<< "$REMOVED_FILES"
 } > "$DIFF_FILE"
 DIFF_SHA=$(sha256sum "$DIFF_FILE" | awk '{print $1}')
 
@@ -587,6 +613,18 @@ for f in $CHANGED_TEST_FILES; do
   cp "$f" ".pipeline-state/old-tests/$f"
 done
 
+# --- Transactional guard (D-151) ---
+# The apply below mutates the frozen lane; a failed commit rolls back to HEAD
+# (git restore --source=HEAD), which is only sound if the lane had no
+# pre-existing uncommitted edits to clobber. The frozen lane is committed by
+# every prior refreeze, so dirt here is a real anomaly, not a normal state.
+# The incoming/ staging dir is excluded from the lane by construction: it is
+# untracked in real repos (gitignored), consumed on success, and preserved
+# on failure for retry — the rollback must never touch it.
+if [ -n "$(git status --porcelain --untracked-files=no -- tests/ scripts/.approved/ ':(exclude)scripts/.approved/incoming')" ]; then
+  die "frozen lane is dirty before apply (uncommitted changes in tests/ or scripts/.approved/ outside the incoming/ staging dir) — commit or stash them first; a failed freeze commit must roll back to HEAD safely"
+fi
+
 # --- Apply ---
 VERSIONED_ERD_DELTA=""
 for f in $CHANGED_DOCS; do
@@ -607,9 +645,10 @@ for f in $CHANGED_TEST_FILES; do
   mkdir -p "$(dirname "$f")"
   cp "$IN/$f" "$f"
 done
-for f in $REMOVED_FILES; do
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
   rm -f "$f"    # `git add tests/` below stages the deletion
-done
+done <<< "$REMOVED_FILES"
 for f in $CHANGED_CAPTURES; do
   mkdir -p "$APPROVED/$(dirname "$f")"
   cp "$IN/$f" "$APPROVED/$f"
@@ -829,7 +868,17 @@ for f in $CHANGED_DOCS; do git add "$APPROVED/$f"; done
 [ -n "$VERSIONED_ERD_DELTA" ] && git add "$VERSIONED_ERD_DELTA"
 if [ "$RETIRE_ERD_DELTA" -eq 1 ]; then git add "$APPROVED/ERD-DELTA.md"; fi
 for f in $CHANGED_CAPTURES; do git add "$APPROVED/$f"; done
-git commit -m "[refreeze v$NEW]"
+git commit -m "[refreeze v$NEW]" || {
+  # D-151: the apply above already mutated the tree; a failed commit must not
+  # leave it half-applied (a retry would freeze as vN+1 against a tree that
+  # already contains this delta — version skip plus a wrong delta). The `||`
+  # block preserves git's real exit code (`if ! cmd` would invert it).
+  commit_rc=$?
+  echo "REFREEZE FAIL: freeze commit failed (rc=$commit_rc) — rolling back the applied freeze to HEAD" >&2
+  git restore --source=HEAD --staged --worktree -- tests/ scripts/.approved/ ':(exclude)scripts/.approved/incoming' \
+    || echo "REFREEZE WARNING: rollback restore failed — inspect tests/ and scripts/.approved/ manually before retrying" >&2
+  exit 1
+}
 rm -rf "$IN"
 
 echo ""
