@@ -5,6 +5,51 @@
 
 ---
 
+## State at 2026-08-16 — router-model milestone CLOSED OUT: `[success] spec v114` (manual, M28/M33 precedent)
+
+- **Outcome:** the router-model milestone (frozen v107..v113, stuck with T3
+  escalated / T4–T8 blocked) is complete. The stuck state was a **frozen-test
+  defect, not a product defect** — closed manually per the M28/M33 precedent
+  after the test was corrected via refreeze v114, rather than re-running the
+  coder on already-correct code (which the M33 incident showed wastes ~25 min
+  and risks re-corrupting a correct file).
+- **Root cause (proven by sandbox bisection):**
+  `tests/test_router_route.py::test_chat_router_model_router_down_is_422`
+  called `httpserver.stop()`, tearing down the **session-shared**
+  pytest-httpserver. Under the pipeline's sorted-node-id verdict run this test
+  sorts before the positive router tests, leaving them with a dead mock server
+  → their `httpx.get({VORTEX_URL}/v1/models)` probe returns empty →
+  `router_models()` yields `[]` → 5 assertions fail. Run as a whole file
+  (definition order) `stop()` runs last, so the file passes 15/15 in
+  isolation; only the node-id verdict exposed it. This is why T3 escalated:
+  three coder attempts were told "the test fails, fix the code" for code that
+  was never broken.
+- **Failing node-ids (before fix, sorted-node-id run):**
+  `test_chat_routes_router_model_to_router_endpoint_and_passes_model`,
+  `test_get_models_includes_router_when_ready`,
+  `test_router_models_deduplicated`,
+  `test_router_models_included_in_list_models`,
+  `test_router_models_lists_router_when_router_reports_it`.
+- **Fix (frozen v114, `d6a038f`):** the one non-hermetic test now simulates
+  router-down the way the suite already does elsewhere
+  (`test_router_models_empty_when_probe_raises`) — `VORTEX_URL` at a dead
+  address + `monkeypatch` `models_mod.httpx.get` to raise `ConnectError` —
+  instead of stopping the shared server. Same assertion (422), same AC-173
+  behaviour. **No product files changed.**
+- **Sandbox verdict:** the full 20 mapped tests pass **20/20** at v114
+  (`scripts/sandbox-run.sh -- pytest <mapped node-ids>`); the router file also
+  passes 15/15 in definition order. Delta-inventory: `contracts.json`
+  unchanged; only `tests/test_router_route.py` staged (ERD-DELTA-v114.md).
+- **CEO consent:** 2026-08-16 ("yes, close it out"). `.pipeline-state/`
+  cleared as part of this success close-out.
+- **Follow-up (not a blocker, noted for the router app / future refreeze):**
+  `src/services/models.py:45` reads `ROUTER_MODEL_ID` from the environment
+  **once at import** — a latent import-timing fragility (not this bug's cause;
+  the failing tests were robust to it). Harden if the router source is
+  revisited.
+
+---
+
 ## State at 2026-08-15 — review remediation batch: API hardening, ledger back-port, stale-state cleanup
 
 - **API hardening (D-166):** `src/api/chat.py` now bounds the chat input (message ≤ 32 000 chars, history ≤ 100 entries, pydantic `Field` constraints) and the four bodyless POST routes in `src/api/models.py` (script-model load/unload + nemotron aliases) reject cross-origin requests via a `_require_same_origin` Origin check (403). The stale `.pipeline-state/refreeze-pending.diff` from the halted 2026-08-09 refreeze was removed (gitignored runtime state; a future refreeze regenerates it).
