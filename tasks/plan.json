@@ -1,12 +1,12 @@
 {
-  "erd_version": 110,
   "version": 2,
+  "erd_version": 111,
   "tasks": [
     {
       "id": "T1",
       "file": "src/services/models.py",
       "depends_on": [],
-      "brief": "Add a router (vortex) section to this file, following existing module conventions.\n\n1. Add module-level constant with other env-derived constants: `ROUTER_MODEL_ID = os.environ.get(\"ROUTER_MODEL_ID\", \"qwen3.8-27b-8bit\")`. Read the router base URL at call time (never a module constant) via a helper returning `os.environ.get(\"VORTEX_URL\") or None`, mirroring how `list_models` reads `LLM_ENDPOINT` at call time.\n2. Add `def is_router_configured() -> bool:` returning True iff the call-time VORTEX_URL is a non-empty string, else False. This is the single gate for the router path.\n3. Add `def router_chat_endpoint() -> str:` returning `base + \"/v1/chat/completions\"` for the call-time base.\n4. Add `def router_models() -> list[dict]:` — when VORTEX_URL is unset, return `[]` WITHOUT any probe (gate runs before the HTTP call). Otherwise probe `GET {base}/v1/models` with `httpx.get(base + \"/v1/models\", timeout=2)`. Any exception or non-200 returns `[]`. On 200, parse the JSON `data` array (objects with string `id` fields). Return `[{\"id\": ROUTER_MODEL_ID, \"source\": \"router\"}]` exactly once when some `data` entry's `id` equals `ROUTER_MODEL_ID`, else `[]`. Share the probe logic with `is_router_model` so both observe the same response.\n5. Add `def is_router_model(model_id: str) -> bool:` returning True iff `model_id == ROUTER_MODEL_ID` and the shared probe lists it; False on any probe failure and when VORTEX_URL is unset.\n6. Extend the existing `list_models()`: after the LM Studio block and before the `SCRIPT_MODELS` loop, extend the returned list with `router_models()`. Each router dict carries `id` and `source` keys only.\n\nDo not change the signature, order, or behavior of any existing function or constant. Acceptance: all four new functions exist with the exact names and return shapes given, `ROUTER_MODEL_ID` defaults to `qwen3.8-27b-8bit`, and `list_models` calls `router_models` in the position described.",
+      "brief": "Add a router (vortex universal surface) section to this file, following existing module conventions.\n\n1. Add module-level constant with other env-derived constants: `ROUTER_MODEL_ID = os.environ.get(\"ROUTER_MODEL_ID\", \"qwen3.8-27b-8bit\")`. The router base URL is read at call time from the environment inside the new functions (never a module-level constant), mirroring how `list_models` reads `LLM_ENDPOINT` at call time: a helper returning `os.environ.get(\"VORTEX_URL\") or None`.\n2. Add `def is_router_configured() -> bool:` returning `True` iff the call-time `VORTEX_URL` value is a non-empty string, `False` otherwise. This is the single gate deciding whether the router path exists at all.\n3. Add `def router_chat_endpoint() -> str:` returning `base + \"/v1/chat/completions\"` for the call-time base from the helper.\n4. Add `def router_models() -> list[dict]:` — when `VORTEX_URL` is unset, return `[]` WITHOUT issuing any probe (the configuration gate runs before the HTTP call). Otherwise probe `GET {base}/v1/models` with `httpx.get(base + \"/v1/models\", timeout=2)`. Any exception or a non-200 status returns `[]`. On 200, parse the JSON `data` array (entries are objects with string `id` fields, e.g. the vortex universal surface's `{\"object\": \"list\", \"data\": [{\"id\": ...}]}` shape). Return the list `[{\"id\": ROUTER_MODEL_ID, \"source\": \"router\"}]` exactly once when some `data` entry's `id` equals `ROUTER_MODEL_ID`, otherwise `[]`. Share the probe logic with `is_router_model` so both observe the same response.\n5. Add `def is_router_model(model_id: str) -> bool:` returning `True` iff `model_id == ROUTER_MODEL_ID` and the shared probe lists it; `False` on any probe failure and when `VORTEX_URL` is unset.\n6. Extend the existing `list_models()`: after the LM Studio block and before the `SCRIPT_MODELS` loop, extend the returned list with `router_models()`. Each router dict carries `id` and `source` keys only.\n\nDo not change the signature, order, or behavior of any existing function or constant in this file. After editing, self-verify by reading the final file: all four new functions exist with the exact names and return shapes given, `ROUTER_MODEL_ID` defaults to `qwen3.8-27b-8bit`, and `list_models` calls `router_models` in the position described.",
       "contracts": [
         "src.services.models:is_router_configured",
         "src.services.models:is_router_model",
@@ -31,7 +31,7 @@
       "depends_on": [
         "T1"
       ],
-      "brief": "Edit exactly one thing in this file: extend the `ModelInfo` class's `source` `Literal` — currently `\"lmstudio\", \"nemotron\", \"deepseek-v4-flash-0731\", \"Flash_Q2KXL\", \"Flash_IQ3XXS\"` — with the additional value `\"router\"`. Nothing else in this file changes: no new routes, no other schema edits, the load/unload endpoints stay byte identical. Acceptance: the `ModelInfo` `source` `Literal` contains `\"router\"`, and `CatalogEntry`'s `source` `Literal` is untouched.",
+      "brief": "Edit exactly one thing in this file: extend the `ModelInfo` class's `source` `Literal` — currently `\"lmstudio\", \"nemotron\", \"deepseek-v4-flash-0731\", \"Flash_Q2KXL\", \"Flash_IQ3XXS\"` — with the additional value `\"router\"`. Nothing else in this file changes: no new routes, no other schema edits, the load/unload endpoints stay byte identical. After editing, self-verify by reading the final file: the `Literal` contains `\"router\"`, and `CatalogEntry`'s `source` `Literal` is untouched.",
       "contracts": [],
       "tests": [
         "tests/test_router_route.py::test_get_models_includes_router_when_ready",
@@ -45,7 +45,7 @@
         "T1",
         "T2"
       ],
-      "brief": "Inside the existing `if request.model:` block in the `chat` endpoint, after the script-model branch and before the `endpoint_override = None` fall-through (the `endpoint_override` variable keeps its current default initialization):\n\n1. Add a router branch: when `models_mod.is_router_configured()` is true AND `request.model == models_mod.ROUTER_MODEL_ID` and the script-model branch did not handle it, call `models_mod.is_router_model(request.model)`; when it returns `False`, raise `HTTPException(status_code=422, detail=f\"Model {request.model} is not loaded\")` — the exact 422 contract the script-model branch uses; when it returns `True`, set `endpoint_override = models_mod.router_chat_endpoint()`. When `is_router_configured()` is false, no model id enters this branch — every id takes the pre-existing generic path byte-identically.\n2. Add a module import `import src.services.models as models_mod` (the existing `from src.services.models import get_script_model, is_script_model_loaded` import stays as is).\n\nEvery other path stays byte identical: the generic `endpoint_override = None` default, the script-model branch, the SSE event generator, and the exception collapse. Acceptance: the router branch sits inside `if request.model:` after the script-model branch; both router outcomes are present (listed -> override, not listed -> 422 before any streaming); with `VORTEX_URL` unset the function body is byte-identical to the pre-edit file.",
+      "brief": "Inside the existing `if request.model:` block in the `chat` endpoint, after the script-model branch and before the function's `endpoint_override = None` fall-through (the `endpoint_override` variable keeps its current default initialization):\n\n1. Add a router branch: when `models_mod.is_router_configured()` is true AND `request.model == models_mod.ROUTER_MODEL_ID` and the script-model branch did not handle it, call `models_mod.is_router_model(request.model)`; when it returns `False`, raise `HTTPException(status_code=422, detail=f\"Model {request.model} is not loaded\")` — the exact 422 contract the script-model branch uses; when it returns `True`, set `endpoint_override = models_mod.router_chat_endpoint()`. When `is_router_configured()` is false, no model id enters this branch — every id takes the pre-existing generic path byte-identically.\n2. Make the router functions reachable by adding a module import: `import src.services.models as models_mod` (the existing `from src.services.models import get_script_model, is_script_model_loaded` import stays as is).\n\nEvery other path in this file stays byte identical: the generic `endpoint_override = None` default, the script-model branch, the SSE event generator, and the exception collapse. After editing, self-verify by reading the final file: the router branch sits inside `if request.model:` after the script-model branch; both router outcomes are present (listed -> override, not listed -> 422 before any streaming); with `VORTEX_URL` unset the function body is byte-identical to the pre-edit file.",
       "contracts": [],
       "tests": [
         "tests/test_router_route.py::test_chat_internal_path_untouched_when_vortex_url_unset",
@@ -62,7 +62,7 @@
         "T2",
         "T3"
       ],
-      "brief": "No code change. The existing `fetchModels` flow merges the models list and the catalog by id and renders one option per id; a list entry with id `qwen3.8-27b-8bit` and source `router` therefore renders as a selectable (script:false, loaded:true) option without any edit to this file. This task owns only the acceptance signal: the mapped browser test (`test_model_dropdown_lists_router_model_from_models_list`) which simulates the API payloads via page.route and asserts the option renders exactly once. Acceptance: the mapped test passes without any working-tree change to this file.",
+      "brief": "No code change. The existing `fetchModels` flow merges the models list and the catalog by id and renders one option per id; a list entry with id `qwen3.8-27b-8bit` and source `router` therefore renders as a selectable (script:false, loaded:true) option without any edit to this file. This task owns only the acceptance signal: the mapped browser test (`test_model_dropdown_lists_router_model_from_models_list`) which simulates the API payloads via page.route and asserts the option renders exactly once. Self-verify: run the mapped test; it must pass without any working-tree change to this file.",
       "contracts": [],
       "tests": [
         "tests/test_ui_catalog.py::test_model_dropdown_lists_router_model_from_models_list[chromium]"
@@ -74,7 +74,7 @@
       "depends_on": [
         "T4"
       ],
-      "brief": "No code change. This file is in the inventory so the standing storage behavior stays pinned (the mapped regression test `test_roundtrip_preserves_snapshot` pins it as behavioral owner); the delta touches none of its behavior. This task exists so the carried pin stays in-inventory; it owns no acceptance signal beyond the carried regression test, which the milestone's full mapped scope runs. Acceptance: no working-tree change to this file; the pinned test passes untouched.",
+      "brief": "No code change. This file is in the inventory so the standing storage behavior stays pinned (the mapped regression test `test_roundtrip_preserves_snapshot` pins it as behavioral owner); the delta touches none of its behavior. This task exists so the carried pin stays in-inventory; it owns no acceptance signal beyond the carried regression test, which the milestone's full mapped scope runs. Self-verify: confirm no working-tree change to this file; run the pinned test, which must pass untouched.",
       "contracts": [],
       "tests": []
     },
@@ -84,7 +84,7 @@
       "depends_on": [
         "T5"
       ],
-      "brief": "No code change. In the inventory because `contracts.test_mapping` pins `tests/test_data_safety_storage.py::test_valid_json_with_invalid_thread_schema_is_quarantined` to it as behavioral owner. No delta behavior touches this file; the task exists so the carried pin stays in-inventory. Acceptance: no working-tree change to this file; the pinned regression test passes untouched.",
+      "brief": "No code change. In the inventory because `contracts.test_mapping` pins `tests/test_data_safety_storage.py::test_valid_json_with_invalid_thread_schema_is_quarantined` to it as behavioral owner. No delta behavior touches this file; the task exists so the carried pin stays in-inventory. Self-verify: confirm no working-tree change to this file; the pinned regression test passes untouched.",
       "contracts": [],
       "tests": []
     },
@@ -94,7 +94,7 @@
       "depends_on": [
         "T6"
       ],
-      "brief": "No code change. In the inventory because `contracts.test_mapping` pins `tests/test_data_safety_ui.py::test_delete_one_thread_survives_reload` to it as behavioral owner, and `contracts.smoke_checks` carries the entry `grep -q '_enqueueMutation' src/static/threads.js`. No delta behavior touches this file; the task exists so the carried pin and smoke check stay in-inventory. Acceptance: no working-tree change to this file; the pinned regression test passes untouched.",
+      "brief": "No code change. In the inventory because `contracts.test_mapping` pins `tests/test_data_safety_ui.py::test_delete_one_thread_survives_reload` to it as behavioral owner, and `contracts.smoke_checks` carries the entry `grep -q '_enqueueMutation' src/static/threads.js`. No delta behavior touches this file; the task exists so the carried pin and smoke check stay in-inventory. Self-verify: confirm no working-tree change to this file; the pinned regression test passes untouched.",
       "contracts": [],
       "tests": []
     },
@@ -104,7 +104,7 @@
       "depends_on": [
         "T7"
       ],
-      "brief": "No code change. In the inventory because `contracts.test_mapping` pins `tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving` to it as behavioral owner. No delta behavior touches this file; the task exists so the carried pin stays in-inventory. Acceptance: no working-tree change to this file; the pinned regression test passes untouched.",
+      "brief": "No code change. In the inventory because `contracts.test_mapping` pins `tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving` to it as behavioral owner. No delta behavior touches this file; the task exists so the carried pin stays in-inventory. Self-verify: confirm no working-tree change to this file; the pinned regression test passes untouched.",
       "contracts": [],
       "tests": []
     }
