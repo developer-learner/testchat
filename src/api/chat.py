@@ -44,10 +44,6 @@ async def chat(request: ChatRequest) -> StreamingResponse:
             models_mod.is_router_configured()
             and request.model == models_mod.ROUTER_MODEL_ID
         ):
-            if not models_mod.is_router_model(request.model):
-                raise HTTPException(
-                    status_code=422, detail=f"Model {request.model} is not loaded"
-                )
             endpoint_override = models_mod.router_chat_endpoint()
 
     # Sync generator on purpose: Starlette iterates it in a threadpool, so the
