@@ -1,7 +1,7 @@
 import logging
 from typing import Literal, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
@@ -16,6 +16,25 @@ from src.services.models import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1")
+
+
+def _require_same_origin(request: Request) -> None:
+    """Reject cross-site form posts to bodyless state-changing routes.
+
+    A bodyless POST cannot carry a JSON content type (a cross-site <form>
+    only sends form-encoded data), so the routes below get no CORS preflight
+    protection — a malicious page could trigger a model load/unload with a
+    plain <form> submit. Browsers send an Origin header on cross-site POSTs;
+    when present it must be this app's own origin.
+    """
+    origin = request.headers.get("origin")
+    if not origin:
+        return
+    expected = f"{request.base_url.scheme}://{request.base_url.netloc}"
+    if origin.rstrip("/") != expected.rstrip("/"):
+        raise HTTPException(
+            status_code=403, detail="cross-origin request rejected"
+        )
 
 
 class ModelInfo(BaseModel):
@@ -94,25 +113,25 @@ def _unload_response(model_id: str) -> Response:
     )
 
 
-@router.post("/script-models/{model_id}/load", response_model=ScriptModelLoadResponse)
+@router.post("/script-models/{model_id}/load", response_model=ScriptModelLoadResponse, dependencies=[Depends(_require_same_origin)])
 def load_script_model_endpoint(model_id: str) -> Response:
     _require_script_model(model_id)
     return _load_response(model_id)
 
 
 @router.post(
-    "/script-models/{model_id}/unload", response_model=ScriptModelUnloadResponse
+    "/script-models/{model_id}/unload", response_model=ScriptModelUnloadResponse, dependencies=[Depends(_require_same_origin)]
 )
 def unload_script_model_endpoint(model_id: str) -> Response:
     _require_script_model(model_id)
     return _unload_response(model_id)
 
 
-@router.post("/nemotron/load", response_model=ScriptModelLoadResponse)
+@router.post("/nemotron/load", response_model=ScriptModelLoadResponse, dependencies=[Depends(_require_same_origin)])
 def load_nemotron_model() -> Response:
     return _load_response("nemotron")
 
 
-@router.post("/nemotron/unload", response_model=ScriptModelUnloadResponse)
+@router.post("/nemotron/unload", response_model=ScriptModelUnloadResponse, dependencies=[Depends(_require_same_origin)])
 def unload_nemotron_model() -> Response:
     return _unload_response("nemotron")

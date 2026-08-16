@@ -3,7 +3,7 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, StrictStr
+from pydantic import BaseModel, Field, StrictStr
 
 import src.services.llm as llm_mod
 from src.services import websearch
@@ -16,9 +16,9 @@ class HistoryEntry(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(..., max_length=32_000)
     model: StrictStr | None = None
-    history: list[HistoryEntry] = []
+    history: list[HistoryEntry] = Field(default_factory=list, max_length=100)
     web: bool = False
 
 
