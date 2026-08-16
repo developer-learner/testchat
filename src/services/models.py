@@ -20,26 +20,26 @@ logger = logging.getLogger(__name__)
 NEMOTRON_BASE_URL = os.environ.get("NEMOTRON_URL", "http://localhost:8600")
 NEMOTRON_CHAT_ENDPOINT = NEMOTRON_BASE_URL + "/v1/chat/completions"
 NEMOTRON_READY_URL = NEMOTRON_BASE_URL + "/v1/models"
-NEMOTRON_SCRIPT_PATH = "~/nemotron-vmlx.py"
+NEMOTRON_SCRIPT_PATH = os.environ.get("NEMOTRON_SCRIPT_PATH", "~/nemotron-vmlx.py")
 NEMOTRON_READY_TIMEOUT_SECONDS = 240
 NEMOTRON_TERMINATE_GRACE_SECONDS = 5
 
 DEEPSEEK_0731_BASE_URL = os.environ.get("DS4_0731_URL", "http://127.0.0.1:8005")
 DEEPSEEK_0731_CHAT_ENDPOINT = DEEPSEEK_0731_BASE_URL + "/v1/chat/completions"
 DEEPSEEK_0731_READY_URL = DEEPSEEK_0731_BASE_URL + "/v1/models"
-DEEPSEEK_0731_SCRIPT_PATH = "/Users/arc.elixir/dev/ds4/run-server-0731.sh"
+DEEPSEEK_0731_SCRIPT_PATH = os.environ.get("DS4_0731_SCRIPT_PATH", "/Users/arc.elixir/dev/ds4/run-server-0731.sh")
 DEEPSEEK_0731_READY_TIMEOUT_SECONDS = 300
 
 DEEPSEEK_Q2KXL_BASE_URL = os.environ.get("DS4_Q2KXL_URL", "http://127.0.0.1:8101")
 DEEPSEEK_Q2KXL_CHAT_ENDPOINT = DEEPSEEK_Q2KXL_BASE_URL + "/v1/chat/completions"
 DEEPSEEK_Q2KXL_READY_URL = DEEPSEEK_Q2KXL_BASE_URL + "/v1/models"
-DEEPSEEK_Q2KXL_SCRIPT_PATH = "/Users/arc.elixir/dev/testchat/scripts/run-server-0731-q2.sh"
+DEEPSEEK_Q2KXL_SCRIPT_PATH = os.environ.get("DS4_Q2KXL_SCRIPT_PATH", "/Users/arc.elixir/dev/testchat/scripts/run-server-0731-q2.sh")
 DEEPSEEK_Q2KXL_READY_TIMEOUT_SECONDS = 300
 
 DEEPSEEK_IQ3XXS_BASE_URL = os.environ.get("DS4_IQ3XXS_URL", "http://127.0.0.1:8102")
 DEEPSEEK_IQ3XXS_CHAT_ENDPOINT = DEEPSEEK_IQ3XXS_BASE_URL + "/v1/chat/completions"
 DEEPSEEK_IQ3XXS_READY_URL = DEEPSEEK_IQ3XXS_BASE_URL + "/v1/models"
-DEEPSEEK_IQ3XXS_SCRIPT_PATH = "/Users/arc.elixir/dev/testchat/scripts/run-server-0731-ud.sh"
+DEEPSEEK_IQ3XXS_SCRIPT_PATH = os.environ.get("DS4_IQ3XXS_SCRIPT_PATH", "/Users/arc.elixir/dev/testchat/scripts/run-server-0731-ud.sh")
 DEEPSEEK_IQ3XXS_READY_TIMEOUT_SECONDS = 300
 
 SCRIPT_MODEL_TERMINATE_GRACE_SECONDS = NEMOTRON_TERMINATE_GRACE_SECONDS

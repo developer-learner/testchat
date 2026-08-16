@@ -21,6 +21,18 @@
 
 ## Decisions
 
+## D-150 — 2026-08-15 — Script-model engine paths are env-overridable (testchat-local)
+
+**Decision:** `src/services/models.py` script paths are no longer hardcoded machine absolutes. Each engine's launcher path is now an env var with the current absolute path as the default: `DS4_0731_SCRIPT_PATH`, `DS4_Q2KXL_SCRIPT_PATH`, `DS4_IQ3XXS_SCRIPT_PATH`, `NEMOTRON_SCRIPT_PATH` (the tilde default is expanduser-expanded at Popen, already the standing convention). Frozen tests assert the default paths and remain green; another machine can point the launchers elsewhere without forking the repo.
+
+**Alternatives considered:** (a) Repo-relative defaults via `Path(__file__).parents[...]` — rejected: two of the four launchers live OUTSIDE the repo (`~/nemotron-vmlx.py`, the ds4 sibling repo), so a single relative scheme cannot cover them; env-with-default covers all four uniformly. (b) Leaving the absolutes and documenting — rejected: the review flagged the machine-specificity, and the URL constants already set the env-with-default precedent.
+
+**Reason:** The URLs were already env-ified (`DS4_0731_URL`-style); the launcher paths were the remaining hardcoded surface, making the app un-runnable from any other checkout.
+
+**Do not suggest:** moving the launcher scripts into the repo as a "portable" fix (engine repos are their own; the ds4 one is a sibling repo by design); a single relative-path scheme that special-cases the two external launchers; removing the defaults (the frozen tests pin them).
+
+> Numbering note: this testchat-LOCAL entry uses D-150, which in the blueprint's ledger names a different decision (plan.json synthesis non-clobber). The two ledgers already diverge (testchat missing D-48 + D-56..D-106); the pending ledger back-port pass renumbers this entry to match the blueprint's sequence.
+
 ## D-149 — 2026-08-14 — check-spec-delta's test_mapping pin gate family-matches node-ids (D-116/D-124)
 
 **Decision:** The `check-spec-delta.py` pin gate no longer compares `contracts.test_mapping` keys to frozen `test-nodeids` by raw string equality. Both sides are reduced to the D-116/D-124 node-id family (module-prefix + bare test name, parametrization suffix stripped via the same `_node_family` rule `validate-plan.py`'s `_id_family` uses) before membership testing, so a mapping key of either shape — `name[chromium]` or `name` — satisfies a frozen node-id of the other. The "unknown node-id" rejection still fires for a key whose family is genuinely not frozen (testchat v106 froze `test-nodeids` in bare form while `contracts.json` kept the three `[chromium]`-suffixed keys, and select-2 transport was already family-tolerant; remaining tolerance asymmetry was a latent false-positive trap at the next real freeze).
