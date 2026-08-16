@@ -21,6 +21,26 @@
 
 ## Decisions
 
+## D-162 — 2026-08-15 — Child-owned scripts join .manifest-project; the child ledger mirrors the template's full D-1..D-158
+
+**Decision:** `scripts/.manifest-project` now lists the three testchat-owned scripts that sat in no manifest — `lane-selfcheck.py`, `run-server-0731-q2.sh`, `run-server-0731-ud.sh` — closing the same drift-invisible class the review flagged for the template (bootstrap/new-project, landed blueprint-side as D-158). Separately, the blueprint's D-158 entry was back-ported into this ledger and the child-local script-paths entry was renumbered D-158 → D-161 (the blueprint owns 1..N; children append at N+1), so the child ledger is now blueprint D-1..D-158 plus locals D-159..D-161 — a padded `comm` over entry numbers agrees exactly on the mirror range.
+
+**Alternatives considered:** (a) Waiting for the next template sync to sweep all missing entries at once — rejected: the sync does not add entries to `.manifest-project` (it only mirrors `.manifest-template`), and the three scripts are child-owned, so they are this repo's responsibility. (b) Moving the local launchers into `.manifest-template` — rejected: they are not template files; `update-template.sh` would flag them as foreign.
+
+**Reason:** The correction-log rule treats an unlisted control-plane-adjacent script as invisible drift; these three are tracked, executable, and shipped — exactly the surface the manifest gate exists to cover.
+
+**Do not suggest:** removing the run-server wrappers from `scripts/` (they are the working engine launchers); folding the local launchers into the template manifest; renumbering the mirror (1..N stays the blueprint's; locals grow from N+1).
+
+**Decision:** `src/services/models.py` script paths are no longer hardcoded machine absolutes. Each engine's launcher path is now an env var with the current absolute path as the default: `DS4_0731_SCRIPT_PATH`, `DS4_Q2KXL_SCRIPT_PATH`, `DS4_IQ3XXS_SCRIPT_PATH`, `NEMOTRON_SCRIPT_PATH` (the tilde default is expanduser-expanded at Popen, already the standing convention). Frozen tests assert the default paths and remain green; another machine can point the launchers elsewhere without forking the repo.
+
+**Alternatives considered:** (a) Repo-relative defaults via `Path(__file__).parents[...]` — rejected: two of the four launchers live OUTSIDE the repo (`~/nemotron-vmlx.py`, the ds4 sibling repo), so a single relative scheme cannot cover them; env-with-default covers all four uniformly. (b) Leaving the absolutes and documenting — rejected: the review flagged the machine-specificity, and the URL constants already set the env-with-default precedent.
+
+**Reason:** The URLs were already env-ified (`DS4_0731_URL`-style); the launcher paths were the remaining hardcoded surface, making the app un-runnable from any other checkout.
+
+**Do not suggest:** moving the launcher scripts into the repo as a "portable" fix (engine repos are their own; the ds4 one is a sibling repo by design); a single relative-path scheme that special-cases the two external launchers; removing the defaults (the frozen tests pin them).
+
+> Numbering note: this testchat-LOCAL entry was D-150 when written (2026-08-15, commit a42076a); the first back-port pass renumbered it to D-158, then the blueprint took D-158 for its own manifest-coverage decision, so this entry was renumbered again to D-161. One number names one decision per ledger; the blueprint owns 1..N, children append at N+1.
+
 ## D-160 — 2026-08-15 — Ledger back-port: DECISIONS.md mirrors the blueprint's full D-1..D-157 set
 
 **Decision:** testchat's `docs/DECISIONS.md` now carries a verbatim mirror of every blueprint ledger entry — the missing D-48, D-56..D-106, D-150..D-157 were copied from the template repo by script (D-48 + D-56..D-106 were the drift flagged by the review; D-150..D-157 landed in the same pass since this ledger's head had fallen behind the template's again). The child's own entry that previously occupied D-150 (script-model paths) was renumbered to D-158 with a note, so one number names one decision. A padded `comm` over entry numbers now shows no diff between the two ledgers.
@@ -41,17 +61,15 @@
 
 **Do not suggest:** an allowlist of foreign origins (this app is single-origin by design); raising the message cap (32k chars is well past the longest paste the UI produces, and the LLM context window is the real ceiling); a global middleware once the routes are narrowed (the four bodyless routes are the entire surface).
 
-## D-158 — 2026-08-15 — Script-model engine paths are env-overridable (testchat-local)
+## D-158 — 2026-08-15 — Manifest covers the full script inventory: bootstrap.sh and new-project.sh join the template manifest
 
-**Decision:** `src/services/models.py` script paths are no longer hardcoded machine absolutes. Each engine's launcher path is now an env var with the current absolute path as the default: `DS4_0731_SCRIPT_PATH`, `DS4_Q2KXL_SCRIPT_PATH`, `DS4_IQ3XXS_SCRIPT_PATH`, `NEMOTRON_SCRIPT_PATH` (the tilde default is expanduser-expanded at Popen, already the standing convention). Frozen tests assert the default paths and remain green; another machine can point the launchers elsewhere without forking the repo.
+**Decision:** `scripts/.manifest-template` now lists `scripts/bootstrap.sh` and `scripts/new-project.sh` (the only two `scripts/` files absent from it), so the manifest-drift guard covers the complete control-plane script inventory. Both scripts edit the control plane (bootstrap sets `core.hooksPath`; new-project rewrites placeholders across the template), and neither was drift-checked — a drifted copy in a child would have gone uncaught by the manifest gate. `regen-manifest.sh` preserves the file list, so the coverage gap had to be closed by adding the two lines, then regenerating (64 entries).
 
-**Alternatives considered:** (a) Repo-relative defaults via `Path(__file__).parents[...]` — rejected: two of the four launchers live OUTSIDE the repo (`~/nemotron-vmlx.py`, the ds4 sibling repo), so a single relative scheme cannot cover them; env-with-default covers all four uniformly. (b) Leaving the absolutes and documenting — rejected: the review flagged the machine-specificity, and the URL constants already set the env-with-default precedent.
+**Alternatives considered:** (a) Leaving them out and documenting the exception — rejected: the review flagged the gap as drift-invisible, and the correction-log rule (2026-06-30) treats a vanished control-plane file as a signal, which presumes the manifest lists everything that matters. (b) Adding a separate auxiliary manifest — rejected: one manifest, one gate.
 
-**Reason:** The URLs were already env-ified (`DS4_0731_URL`-style); the launcher paths were the remaining hardcoded surface, making the app un-runnable from any other checkout.
+**Reason:** The completeness check against the on-disk `scripts/` inventory showed exactly two absent files; both are setup/onboarding scripts that a child invokes by hand at bootstrapping time, so a stale copy is the first thing a new environment would run.
 
-**Do not suggest:** moving the launcher scripts into the repo as a "portable" fix (engine repos are their own; the ds4 one is a sibling repo by design); a single relative-path scheme that special-cases the two external launchers; removing the defaults (the frozen tests pin them).
-
-> Numbering note: this testchat-LOCAL entry was D-150 when written (2026-08-15, commit a42076a); the ledger back-port pass brought the blueprint's own D-150 (B3 synthesis non-clobber) into this ledger, so this entry was renumbered to D-158. One number names one decision per ledger.
+**Do not suggest:** excluding them because they are "one-time" scripts (bootstrap is exactly what a fresh child runs — its drift surface is the bootstrapping gate itself); adding them to `.manifest-project` instead (they are template-owned; template sync and drift must cover them).
 
 ## D-157 — 2026-08-15 — LOW batch: parser truncation, fence-strip tolerance, lock race, REMOVED quoting, LLM host override
 
