@@ -434,7 +434,7 @@ def _router_probe() -> list[str] | None:
     if base is None:
         return None
     try:
-        response = httpx.get(base + "/v1/models", timeout=2)
+        response = httpx.get(base + "/v1/models", timeout=5)
     except Exception:
         return None
     if response.status_code != 200:
