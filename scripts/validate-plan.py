@@ -1806,18 +1806,26 @@ def cmd_milestone_scope(delta_paths):
 
 
 def cmd_active_erd_context(delta_paths):
-    """Emit the minimal, complete per-freeze ERD instruction packet."""
+    """Emit the operative freeze instruction packet.
+
+    Freeze instruction slices are immutable, but only the LATEST freeze's
+    capsule is operative: every behavioral freeze is a complete restatement
+    of the standing ERD-DELTA (Task DAG, test mapping, coder briefs), so
+    older slices are historical prose, not instructions. Emitting the latest
+    capsule alone keeps the EM context at a relevant size (the user-assigned
+    68k budget) instead of the full 90k+ palimpsest of near-identical
+    versions. Historical slices remain available via git/legacy recovery.
+    """
     paths = [Path(path) for path in delta_paths]
     contracts = load_json(CONTRACTS, "frozen contracts")
     if not active_inventory_files(paths, contracts):
         print("(active milestone has no behavioral build inventory)")
         return
-    for index, (version, body) in enumerate(active_erd_delta_texts(paths)):
-        if index:
-            print()
-        label = f"v{version}" if version is not None else "unversioned"
-        print(f"## Active freeze instructions — {label}")
-        print(body.rstrip())
+    texts = list(active_erd_delta_texts(paths))
+    version, body = texts[-1]
+    label = f"v{version}" if version is not None else "unversioned"
+    print(f"## Active freeze instructions — {label}")
+    print(body.rstrip())
 
 
 def cmd_active_inventory(delta_paths):

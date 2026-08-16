@@ -37,7 +37,7 @@ def test_context_budget_limits_are_explicit_and_pinned() -> None:
         "tpm-stage1": 88_000,
         "standing-summary": 8_192,
         "interface-index": 16_384,
-        "em-context": 65_536,
+        "em-context": 68_000,
         "escalation-shared": 32_768,
     }
 

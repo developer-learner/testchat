@@ -12,17 +12,33 @@ Usage:
   context-budget.py slice <surface> <slice-file> <source-file> [<source-file> ...]
 """
 
+import os
 import sys
 from pathlib import Path
+
+
+def _env_overrides() -> dict[str, int]:
+    overrides = {}
+    for name, value in os.environ.items():
+        prefix = "SWBP_CONTEXT_BUDGET_"
+        if name.startswith(prefix):
+            try:
+                overrides[name[len(prefix) :].lower().replace("_", "-")] = int(value)
+            except ValueError:
+                sys.stderr.write(
+                    f"context-budget: ERROR ignoring invalid override {name}={value!r}\n"
+                )
+    return overrides
 
 
 SURFACE_BUDGETS: dict[str, int] = {
     "tpm-stage1": 88_000,
     "standing-summary": 8_192,
     "interface-index": 16_384,
-    "em-context": 65_536,
+    "em-context": 68_000,
     "escalation-shared": 32_768,
 }
+SURFACE_BUDGETS.update(_env_overrides())
 
 
 def file_bytes(paths: list[Path]) -> int:
