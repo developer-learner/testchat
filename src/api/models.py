@@ -40,7 +40,7 @@ def _require_same_origin(request: Request) -> None:
 class ModelInfo(BaseModel):
     id: str
     source: Literal[
-        "lmstudio", "nemotron", "deepseek-v4-flash-0731", "Flash_Q2KXL", "Flash_IQ3XXS"
+        "lmstudio", "nemotron", "deepseek-v4-flash-0731", "Flash_Q2KXL", "Flash_IQ3XXS", "router"
     ]
 
 
