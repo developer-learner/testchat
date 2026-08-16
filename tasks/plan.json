@@ -1,12 +1,12 @@
 {
   "version": 2,
-  "erd_version": 112,
+  "erd_version": 113,
   "tasks": [
     {
       "id": "T1",
       "file": "src/services/models.py",
       "depends_on": [],
-      "brief": "Edit the router probe timeout in this file. In the shared probe used by `router_models()` and `is_router_model()`, change the httpx call from `httpx.get(base + \"/v1/models\", timeout=2)` to `httpx.get(base + \"/v1/models\", timeout=5)`. No other change: `ROUTER_MODEL_ID`, `is_router_configured()`, `router_chat_endpoint()`, `router_models()`, `is_router_model()`, and the `list_models()` append position all stand as already accepted. Acceptance: the probe timeout literal is 5; all other router behavior unchanged.",
+      "brief": "No code change. The router service seams (ROUTER_MODEL_ID, is_router_configured, router_chat_endpoint, router_models, is_router_model, list_models append) are already implemented and accepted; the probe timeout is 5s. Do not touch this file. Acceptance: the 9 mapped router service tests pass untouched.",
       "contracts": [
         "src.services.models:is_router_configured",
         "src.services.models:is_router_model",
@@ -31,7 +31,7 @@
       "depends_on": [
         "T1"
       ],
-      "brief": "No code change. The `ModelInfo` source Literal already includes `router` (accepted at v110). This task owns the mapped acceptance tests only. Acceptance: the two mapped tests pass with no working-tree change to this file.",
+      "brief": "No code change. The ModelInfo source Literal already includes \"router\" (accepted). Do not touch this file. Acceptance: the 2 mapped models-API tests pass untouched.",
       "contracts": [],
       "tests": [
         "tests/test_router_route.py::test_get_models_includes_router_when_ready",
@@ -45,7 +45,7 @@
         "T1",
         "T2"
       ],
-      "brief": "No code change. The router branch is already implemented and accepted (commit fb16089); the v110/v111 gate 422 evidence was attributed to the T1 probe timeout, fixed at v112. This task owns the mapped acceptance tests only. Acceptance: the four mapped tests pass with no working-tree change to this file.",
+      "brief": "The current file is CORRUPTED: the router gate was hoisted out of the request.model guard and changed to an env-level check. Repair with ONE edit block.\n\nSEARCH (the corrupted hoisted gate; match indentation exactly):\n```\n    if request.model == models_mod.ROUTER_MODEL_ID:\n        if not models_mod.is_router_configured():\n            raise HTTPException(\n                status_code=422,\n                detail=f\"Model {request.model} is not available\",\n            )\n        endpoint_override = models_mod.router_chat_endpoint()\n```\n\nREPLACED (the accepted gate, indented INSIDE the request.model guard — the elif attaches to the script-model if above it):\n```\n        elif (\n            models_mod.is_router_configured()\n            and request.model == models_mod.ROUTER_MODEL_ID\n        ):\n            if not models_mod.is_router_model(request.model):\n                raise HTTPException(\n                    status_code=422, detail=f\"Model {request.model} is not loaded\"\n                )\n            endpoint_override = models_mod.router_chat_endpoint()\n```\n\nRules: change ONLY this block; do not touch the script-model branch, prompt assembly, generator, or any other file; do not reformat. After the edit, verify that is_router_model appears in src/api/chat.py and that is_router_configured does NOT appear in it. If the SEARCH block does not match the committed file exactly, reply with a full-file === FILE: src/api/chat.py === block whose router gate is the REPLACED form above and everything else matches the committed file.",
       "contracts": [],
       "tests": [
         "tests/test_router_route.py::test_chat_internal_path_untouched_when_vortex_url_unset",
@@ -62,7 +62,7 @@
         "T2",
         "T3"
       ],
-      "brief": "No code change. The existing `fetchModels` flow merges the models list and catalog by id; a list entry with id `qwen3.8-27b-8bit` and source `router` renders as a selectable option without any edit. This task owns the mapped browser test only. Acceptance: the mapped test passes with no working-tree change to this file.",
+      "brief": "No code change. The existing fetchModels flow merges the models list and the catalog by id; a list entry with id qwen3.8-27b-8bit and source router renders as a selectable option without any edit. Acceptance: the mapped browser test passes with no working-tree change to this file.",
       "contracts": [],
       "tests": [
         "tests/test_ui_catalog.py::test_model_dropdown_lists_router_model_from_models_list[chromium]"
@@ -74,7 +74,7 @@
       "depends_on": [
         "T4"
       ],
-      "brief": "No code change. Carried-owner declaration: the mapped regression test pins this file as behavioral owner; the delta touches none of its behavior. Acceptance: no working-tree change; the pinned test passes untouched.",
+      "brief": "No code change. The mapped regression test test_roundtrip_preserves_snapshot pins this file as behavioral owner. Self-verify: no working-tree change; the pinned test passes untouched.",
       "contracts": [],
       "tests": []
     },
@@ -84,7 +84,7 @@
       "depends_on": [
         "T5"
       ],
-      "brief": "No code change. Carried-owner declaration: `contracts.test_mapping` pins the data-safety quarantine test to this file as behavioral owner. Acceptance: no working-tree change; the pinned test passes untouched.",
+      "brief": "No code change. contracts.test_mapping pins test_valid_json_with_invalid_thread_schema_is_quarantined to this file as behavioral owner. Self-verify: no working-tree change; the pinned test passes untouched.",
       "contracts": [],
       "tests": []
     },
@@ -94,7 +94,7 @@
       "depends_on": [
         "T6"
       ],
-      "brief": "No code change. Carried-owner declaration: `contracts.test_mapping` pins the data-safety UI test to this file, and `contracts.smoke_checks` carries the `_enqueueMutation` grep. Acceptance: no working-tree change; the pinned test passes untouched.",
+      "brief": "No code change. contracts.test_mapping pins test_delete_one_thread_survives_reload to it as behavioral owner, and contracts.smoke_checks carries grep -q '_enqueueMutation' src/static/threads.js. Self-verify: no working-tree change; the pinned test passes untouched.",
       "contracts": [],
       "tests": []
     },
@@ -104,7 +104,7 @@
       "depends_on": [
         "T7"
       ],
-      "brief": "No code change. Carried-owner declaration: `contracts.test_mapping` pins the hydration-failure UI test to this file as behavioral owner. Acceptance: no working-tree change; the pinned test passes untouched.",
+      "brief": "No code change. contracts.test_mapping pins test_hydration_failure_warns_retries_and_recovers_saving to it as behavioral owner. Self-verify: no working-tree change; the pinned test passes untouched.",
       "contracts": [],
       "tests": []
     }
