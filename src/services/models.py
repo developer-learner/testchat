@@ -423,7 +423,10 @@ def is_router_configured() -> bool:
 
 
 def router_chat_endpoint() -> str:
-    return _router_base_url() + "/v1/chat/completions"
+    base = _router_base_url()
+    if base is None:
+        return ""
+    return base + "/v1/chat/completions"
 
 
 def _router_probe() -> list[str] | None:
