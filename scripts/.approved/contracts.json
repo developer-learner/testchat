@@ -1,5 +1,5 @@
 {
-  "erd_version": 112,
+  "erd_version": 113,
   "files": [
     "src/services/models.py",
     "src/api/models.py",
