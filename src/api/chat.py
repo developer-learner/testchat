@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, StrictStr
 
 import src.services.llm as llm_mod
+import src.services.models as models_mod
 from src.services import websearch
 from src.services.models import get_script_model, is_script_model_loaded
 
@@ -39,6 +40,15 @@ async def chat(request: ChatRequest) -> StreamingResponse:
                     status_code=422, detail=f"Model {request.model} is not loaded"
                 )
             endpoint_override = script_model["chat_endpoint"]
+        elif (
+            models_mod.is_router_configured()
+            and request.model == models_mod.ROUTER_MODEL_ID
+        ):
+            if not models_mod.is_router_model(request.model):
+                raise HTTPException(
+                    status_code=422, detail=f"Model {request.model} is not loaded"
+                )
+            endpoint_override = models_mod.router_chat_endpoint()
 
     # Sync generator on purpose: Starlette iterates it in a threadpool, so the
     # blocking urllib reads in stream_reply/search_web can't stall the event
