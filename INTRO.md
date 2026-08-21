@@ -29,9 +29,7 @@ You don't run scripts by hand and you don't read code. You approve nothing
 mechanically: the freeze auto-applies on green preflights (D-121) and the
 full-suite is an on-demand regression check (D-112).
 
-**A frontier LLM (the TPM seat).** The CEO assigns who holds the seat per
-session (D-139) — a web chat like Claude.ai or ChatGPT, a scoped repo agent,
-or the same LLM already on the job. You
+**A frontier chat (the TPM seat).** Claude.ai, ChatGPT — any of them. You
 paste your app description here and it writes back four documents: a product
 description, the technical shape, an API contract, and the test suite that
 will decide "is it done." This chat lives outside the pipeline; it's just a
@@ -52,9 +50,7 @@ Podman container: no network, your files mounted read-only, thrown away
 after. This is the actual safety line — even if the AI writes malicious code,
 it can't reach your data or the internet.
 
-Two AI seats you don't install: the **TPM** — the LLM the CEO assigns to the
-spec seat per session (D-139: a web chat, a scoped repo agent, or the same
-LLM already on the job) — and
+Two AI seats you don't install: the **TPM** (the frontier chat, external) and
 the **conductor** — the chat agent you're talking to right now — which drives
 the shell scripts, reads output back to you, and never touches trusted files
 itself.
@@ -95,8 +91,7 @@ disappears — you'd only need Podman.
 Every milestone follows this shape.
 
 **Stage 1 — You describe the app.**
-Tell the TPM seat — the LLM you name for this session (D-139) — what you
-want built.
+You open the frontier chat and tell the TPM what you want built.
 
 **Stage 2 — TPM authors the spec.**
 It writes back the product description, the technical shape, the API
@@ -222,8 +217,7 @@ notices. The docs are as good as the discipline behind them.
 You'll see these terms everywhere. First-time gloss:
 
 - **CEO** — you. Business intent and final acceptance.
-- **TPM** — the LLM in the CEO-assigned spec seat (D-139: a web chat, a
-  scoped repo agent, or the same LLM already on the job). Writes the spec.
+- **TPM** — the frontier chat that writes the spec. External, in a browser.
 - **Conductor** — the chat agent you talk to that runs the scripts.
 - **EM** — the mid-strength AI that plans work.
 - **Coder** — the local AI that writes one file per task.

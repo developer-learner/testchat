@@ -51,8 +51,7 @@ done
 
 # Frozen-spec integrity (D-31). The frozen TPM artifacts (PRD/ERD/contracts/
 # tests) may only change via scripts/refreeze.sh, which regenerates this
-# manifest after every mechanical preflight passes (D-121). Any other change
-# fails closed.
+# manifest under an interactive human approval. Any other change fails closed.
 #
 # Trigger: once a spec has been frozen (VERSION exists), the manifest is
 # required. `[ -f FROZEN ]` alone silently skipped the whole check when the
@@ -89,15 +88,10 @@ if [ -f "$FROZEN_VERSION" ]; then
   # and would run in the frozen suite (and the on-demand --full-suite
   # regression check). Cross-check: every git-visible
   # file (tracked + untracked, gitignore-respecting) under tests/ must be
-  # pinned, PLUS every pytest-collectible *.py on disk (a hand-added
-  # tests/test_*.py matching an existing ignore rule would otherwise bypass
-  # the git-visible scan entirely). gitignored bytecode caches
-  # (__pycache__/*, .pytest_cache/*) are runtime artifacts and correctly
-  # excluded here.
+  # pinned. gitignored bytecode caches (__pycache__/*, .pytest_cache/*) are
+  # runtime artifacts and correctly excluded here.
   pinned_tests=$(awk '{print $2}' "$FROZEN" | grep '^tests/' | sort -u || true)
-  disk_tests=$( ( git ls-files -- tests; git ls-files --others --exclude-standard -- tests; \
-                  find tests -type f \( -name 'test_*.py' -o -name '*_test.py' -o -name 'conftest.py' \) \
-                    -not -path '*/__pycache__/*' 2>/dev/null ) | sort -u )
+  disk_tests=$( ( git ls-files -- tests; git ls-files --others --exclude-standard -- tests ) 2>/dev/null | sort -u )
   unpinned=$(comm -23 <(printf '%s\n' "$disk_tests") <(printf '%s\n' "$pinned_tests"))
   if [ -n "$unpinned" ]; then
     echo "GATE FAIL: unpinned test file(s) — added outside scripts/refreeze.sh (INV-1):"
@@ -135,31 +129,7 @@ case "$PHASE" in
     fi
     ;;
   manifest)
-    # Integrity checks above are the whole job. Plus the placeholder-
-    # completeness gate (D-160): BLUEPRINT.md Step 7 mechanized. Active only
-    # when bootstrap.sh's marker exists — the template repo never runs
-    # bootstrap.sh, so its intentional skeleton rows ([PROJECT_NAME], stack
-    # examples, task templates) cannot trip the gate; a derived repo is on
-    # the enforced side from its first bootstrap, so its first commit cannot
-    # carry an unfilled placeholder. Same command + exclusions as Step 7:
-    # md/json, markdown links filtered, DECISIONS.md/BLUEPRINT.md excluded
-    # (intentional bracket content).
-    if [ -f .placeholder-gate ]; then
-      hits=$({ grep -rnE '\[[A-Z][A-Za-z0-9_ ]+\]|\[[A-Z][a-z]+ [a-z]|\[[a-z][a-z_]+ [a-z]' . \
-          --include='*.md' --include='*.json' --exclude-dir=.git \
-          --exclude-dir=project-trail --exclude-dir=.em-archive \
-          --exclude-dir=.pipeline-state --exclude-dir=.measurement \
-          --exclude-dir=.tpm --exclude-dir='.venv*' --exclude-dir=.cache \
-          --exclude-dir=data \
-          --exclude='HANDOFF-*' --exclude='CURRENT.md' --exclude='BACKLOG.md' \
-          --exclude='DECISIONS.md' --exclude='BLUEPRINT.md' \
-          | grep -vE '\]\(' | grep -vE '^[^:]+:[0-9]+:\| [0-9]{4}-[0-9]{2}-[0-9]{2} ' || true; })
-      if [ -n "$hits" ]; then
-        echo "GATE FAIL: placeholder tokens survived (BLUEPRINT.md Step 7 — fill then re-run):"
-        echo "$hits"
-        exit 1
-      fi
-    fi
+    # Integrity checks above are the whole job.
     ;;
   *)
     echo "usage: phase-gate.sh <em|task|manifest> [phase-start-ref] [task-target]"

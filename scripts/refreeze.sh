@@ -39,9 +39,9 @@
 #   PRD.md  ERD.md  ERD-DELTA.md  contracts.json
 #                                           -> installed to scripts/.approved/
 #                                              (ERD-DELTA.md is required for
-#                                              every behavioral re-freeze;
-#                                              apply also preserves its exact
-#                                              ERD-DELTA-vN.md snapshot.)
+#                                              every behavioral re-freeze and
+#                                              carries the current milestone;
+#                                              ERD.md is standing architecture.)
 #   tests/<file>.py ...                     -> installed to tests/
 #   REMOVED                                 -> repo paths to retire (one per
 #                                              line, tests/*.py only), deleted
@@ -58,30 +58,6 @@ esac
 IN="${1:-$APPROVED/incoming}"
 
 die() { echo "REFREEZE FAIL: $*" >&2; exit 1; }
-
-# D-151: refreeze MUTATES the tree (installs docs/tests, deletes REMOVED
-# files, bumps VERSION) before committing; a commit failure on a missing git
-# identity would leave the tree half-applied with no recovery. orchestrate.sh
-# pre-flights identity for the same reason (its commits deliberately swallow
-# failures); refreeze is the destructive one, so it fails closed BEFORE any
-# mutation. --diff is read-only and skips this.
-if [ "$MODE" != "diff" ]; then
-  { [ -n "$(git config user.email || true)" ] && [ -n "$(git config user.name || true)" ]; } \
-    || die "git identity missing — the freeze commit would fail after the tree was already mutated: git config --global user.email <addr> && git config --global user.name <name>"
-fi
-
-# D-152: fail fast on stock macOS. Operational freezes belong in the Linux
-# dev VM (orchestrate.sh hard-dies on Darwin for the same constraint), and
-# stock macOS lacks sha256sum — the old failure was a confusing "command not
-# found" mid-flow. macOS hosts with GNU coreutils can run the fixture-level
-# apply path (the selftest suite does exactly that), so those proceed with a
-# loud warning instead of a blanket die.
-if [ "$(uname -s)" = "Darwin" ]; then
-  if ! command -v sha256sum >/dev/null 2>&1; then
-    die "sha256sum not found — refreeze needs GNU coreutils (macOS ships shasum -a 256 instead); run operational freezes inside the Linux dev VM (docs/DEV-VM-SETUP.md) or install coreutils"
-  fi
-  echo "WARNING: running refreeze on macOS — operational freezes belong inside the Linux dev VM (docs/DEV-VM-SETUP.md)" >&2
-fi
 
 case "${1:-}" in
   --approve|--interactive)
@@ -134,8 +110,7 @@ CHANGED_CAPTURES=$(cd "$IN" && find captures -type f 2>/dev/null | sed 's|^\./||
 REMOVED_FILES=""
 if [ -f "$IN/REMOVED" ]; then
   REMOVED_FILES=$(grep -vE '^\s*(#|$)' "$IN/REMOVED" || true)
-  while IFS= read -r f; do
-    [ -n "$f" ] || continue
+  for f in $REMOVED_FILES; do
     # Bash case-globs match '/', so a literal `tests/*.py` accepts
     # `tests/../scripts/foo.py` — a whitelist the TPM could bypass to
     # rm -f arbitrary paths at apply. Reject traversal before the pattern.
@@ -146,7 +121,7 @@ if [ -f "$IN/REMOVED" ]; then
     esac
     [ -f "$f" ] || die "REMOVED lists a file that does not exist in the repo: $f"
     [ ! -f "$IN/$f" ] || die "REMOVED lists a file also present in staging (conflict — pick one): $f"
-  done <<< "$REMOVED_FILES"
+  done
 fi
 [ -n "$CHANGED_DOCS$CHANGED_TEST_FILES$CHANGED_CAPTURES$REMOVED_FILES" ] || die "staging dir is empty — nothing to freeze"
 
@@ -233,33 +208,8 @@ fi
 # A non-behavioral standing-ERD refresh retires the prior delta automatically:
 # folding the completed milestone into standing architecture is the explicit
 # consolidation point, and the next EM cannot mistake the old slice for new.
-# --- D-136: staged contracts merge (PRODUCER, never authority) ---------------
-# contracts.json enters as a STAGED MERGE ARTIFACT, not a full-file
-# replacement: the TPM stages only changed/new id-array entries (each
-# `file`-pinned) plus D-137's explicit family-scoped `remove` tombstones;
-# contracts-merge.py reconstructs the full contracts.json by overlaying them
-# onto the standing file, proving mechanically that it touched nothing it did
-# not name (byte-identical carried remainder; a staged entry identical to
-# standing fails closed; omission never deletes). The merge runs BEFORE every
-# contracts-consuming gate so each sees the MERGED file, never the raw partial:
-# check-spec-delta (D-107/D-122 — a partial would read every omitted id-array
-# as changed and defeat the invisible-change guard), D-56, INV-4, the D-78
-# preflight, the DELTA, the apply, the manifest. The merge is transparent — the
-# gates see the same full contracts a return would have produced. At v1 (no
-# standing) the staged file IS the full spec, so no merge runs. Runs in --diff
-# too, so the CEO never previews a merge the pipeline will reject.
-MERGED_CONTRACTS="$IN/contracts.json"
-if [ -f "$IN/contracts.json" ] && [ "$V" -gt 0 ] && [ -f "$APPROVED/contracts.json" ]; then
-  mkdir -p .pipeline-state
-  MERGED_CONTRACTS=".pipeline-state/refreeze-merged-contracts.json"
-  python3 scripts/contracts-merge.py "$APPROVED/contracts.json" "$IN/contracts.json" \
-    > "$MERGED_CONTRACTS" \
-    || die "staged contracts merge rejected (D-136/D-137) — see the id named above; the TPM stages only changed/new entries or explicit removals onto the standing contracts.json"
-fi
-
 if ! SPEC_DELTA_KIND=$(python3 scripts/check-spec-delta.py \
-  --staging "$IN" --approved "$APPROVED" --repo . --current-version "$V" \
-  --contracts "$MERGED_CONTRACTS"); then
+  --staging "$IN" --approved "$APPROVED" --repo . --current-version "$V"); then
   die "current-milestone ERD delta rejected (D-107)"
 fi
 RETIRE_ERD_DELTA=0
@@ -286,18 +236,6 @@ if [ -n "$S5_FILES" ]; then
     || die "S5 rejected: state-changing AC(s) without 'such that' post-condition clause — every AC that spawns/terminates/kills/unloads/evicts/deletes/releases/clears/cancels MUST name an observable check"
 fi
 
-# --- D-136: PRD additive-only guard ------------------------------------------
-# The PRD is the standing product record; a milestone adds to it, never
-# silently drops from it. A staged PRD must carry the standing product capsule
-# unchanged and retain every historical AC id — a vanished criterion is either
-# an accident or an unrecorded supersession, and supersessions go through the
-# ERD-DELTA (D-107), which keeps the id. Runs only over an existing PRD (v>1);
-# fires in --diff too, so the CEO never previews a lossy PRD.
-if [ -f "$IN/PRD.md" ] && [ -f "$APPROVED/PRD.md" ]; then
-  python3 scripts/check-prd-additive.py "$APPROVED/PRD.md" "$IN/PRD.md" \
-    || die "PRD additive guard rejected the delta (D-136) — a staged PRD must carry the standing product capsule and every historical AC id; record supersessions in ERD-DELTA.md, do not delete the criterion"
-fi
-
 # --- Sanity-check incoming contracts against the schema's structural core ---
 if [ -f "$IN/contracts.json" ]; then
   python3 - "$IN/contracts.json" "$NEW" <<'PYEOF' || exit 1
@@ -308,8 +246,8 @@ try:
 except json.JSONDecodeError as e:
     sys.exit(f"REFREEZE FAIL: contracts.json is not valid JSON: {e}")
 errs = []
-if not isinstance(c.get("files"), list):
-    errs.append("contracts.files must be an array (empty means no behavioral build work)")
+if not isinstance(c.get("files"), list) or not c["files"]:
+    errs.append("contracts.files must be a non-empty array (the ERD build inventory)")
 if not isinstance(c.get("entry_points"), list):
     errs.append("contracts.entry_points must be an array")
 if c.get("erd_version") != new_v:
@@ -331,7 +269,7 @@ fi
 # — and is rejected here. Staged captures nobody references are also
 # rejected (dead weight in the frozen spec).
 EXT_CONTRACTS="$APPROVED/contracts.json"
-[ -f "$IN/contracts.json" ] && EXT_CONTRACTS="$MERGED_CONTRACTS"
+[ -f "$IN/contracts.json" ] && EXT_CONTRACTS="$IN/contracts.json"
 if [ -f "$EXT_CONTRACTS" ]; then
   SWBP_IN="$IN" SWBP_APPROVED="$APPROVED" python3 - "$EXT_CONTRACTS" <<'PYD56' || exit 1
 import json, os, sys
@@ -376,9 +314,9 @@ trap 'rm -rf "$PREVIEW"' EXIT
 mkdir -p "$PREVIEW/tests"
 [ -d tests ] && cp -R tests/. "$PREVIEW/tests/" 2>/dev/null || true
 [ -d "$IN/tests" ] && cp -R "$IN/tests/." "$PREVIEW/tests/"
-while IFS= read -r f; do [ -n "$f" ] || continue; rm -f "$PREVIEW/$f"; done <<< "$REMOVED_FILES"   # preview reflects the post-delta suite
+for f in $REMOVED_FILES; do rm -f "$PREVIEW/$f"; done   # preview reflects the post-delta suite
 INV4_CONTRACTS="$APPROVED/contracts.json"
-[ -f "$IN/contracts.json" ] && INV4_CONTRACTS="$MERGED_CONTRACTS"
+[ -f "$IN/contracts.json" ] && INV4_CONTRACTS="$IN/contracts.json"
 python3 scripts/check-test-surface.py --tests-dir "$PREVIEW/tests" --contracts "$INV4_CONTRACTS" \
   || die "INV-4 rejected the delta — fix the tests or lock the surface in contracts.json, then restage"
 
@@ -406,7 +344,7 @@ python3 scripts/check-test-direction.py --tests-dir "$PREVIEW/tests" \
 # provable from the spec alone, so it is proved HERE, before the human reads
 # the diff — in --diff mode too, so the CEO never reviews a doomed delta.
 if [ -f "$IN/contracts.json" ]; then
-  python3 scripts/validate-plan.py --spec-preflight "$APPROVED/contracts.json" "$MERGED_CONTRACTS" \
+  python3 scripts/validate-plan.py --spec-preflight "$APPROVED/contracts.json" "$IN/contracts.json" \
     || die "satisfiability preflight rejected the delta (D-78) — add the named implementing file(s) to contracts.files (or fix the entry_point) and restage"
 fi
 
@@ -444,11 +382,7 @@ show_diff() {  # $1 current-path  $2 incoming-path
   for f in $CHANGED_DOCS; do
     echo ""
     echo "--- $APPROVED/$f ---"
-    if [ "$f" = "contracts.json" ]; then
-      show_diff "$APPROVED/$f" "$MERGED_CONTRACTS"   # D-136: preview the merged result, not the delta
-    else
-      show_diff "$APPROVED/$f" "$IN/$f"
-    fi
+    show_diff "$APPROVED/$f" "$IN/$f"
   done
   for f in $CHANGED_TEST_FILES; do
     echo ""
@@ -469,12 +403,11 @@ show_diff() {  # $1 current-path  $2 incoming-path
     diff -u --label "$APPROVED/ERD-DELTA.md" --label /dev/null \
       "$APPROVED/ERD-DELTA.md" /dev/null || true
   fi
-  while IFS= read -r f; do
-    [ -n "$f" ] || continue
+  for f in $REMOVED_FILES; do
     echo ""
     echo "--- $f (REMOVED) ---"
     diff -u --label "$f" --label /dev/null "$f" /dev/null || true
-  done <<< "$REMOVED_FILES"
+  done
 } > "$DIFF_FILE"
 DIFF_SHA=$(sha256sum "$DIFF_FILE" | awk '{print $1}')
 
@@ -496,7 +429,7 @@ EXT_COUNT=$(SWBP_C="$EXT_CONTRACTS" python3 -c \
   "import json,os; print(len(json.load(open(os.environ['SWBP_C'])).get('externals') or []))" \
   2>/dev/null || echo 0)
 if [ "$EXT_COUNT" -eq 0 ]; then
-  _http_hits=$( { grep -rlE 'https?://' "$IN/tests" "$MERGED_CONTRACTS" 2>/dev/null || true; } | head -5)
+  _http_hits=$( { grep -rlE 'https?://' "$IN/tests" "$IN/contracts.json" 2>/dev/null || true; } | head -5)
   if [ -n "$_http_hits" ]; then
     echo ""
     echo "  WARNING (D-56): staged artifacts reference http(s):// URLs but the"
@@ -538,6 +471,36 @@ if [ -n "$SWEEP_FILES" ]; then
   fi
 fi
 
+# --- S7: ERD section size advisory (brief overrun warning) ---------------
+# An ERD section exceeding 1200 chars will likely overflow MAX_BRIEF_CHARS
+# (2500) downstream when the EM builds the plan brief. Advisory, not a halt:
+# the right response may be to restructure, split, or accept the risk — a
+# TPM call. Fires only on staged files (the approved copy was checked at
+# its own freeze).
+for _s7f in ERD.md ERD-DELTA.md; do
+  [ -f "$IN/$_s7f" ] || continue
+  _S7_OUT=$(python3 - "$IN/$_s7f" 1200 <<'PYS7'
+import re, sys
+path, limit = sys.argv[1], int(sys.argv[2])
+text = open(path).read()
+parts = re.split(r"^(## .+)$", text, flags=re.MULTILINE)
+for i in range(1, len(parts), 2):
+    body = parts[i + 1] if i + 1 < len(parts) else ""
+    chars = len(body.strip())
+    if chars > limit:
+        print(f"  {parts[i].strip()}: {chars} chars (threshold {limit})")
+PYS7
+  )
+  if [ -n "$_S7_OUT" ]; then
+    echo ""
+    echo "  WARNING (S7): ERD section(s) in $_s7f exceed 1200 chars — downstream"
+    echo "  plan briefs will likely exceed MAX_BRIEF_CHARS and trigger the plan"
+    echo "  gate's mass rejection. Trim or restructure before the pipeline burns"
+    echo "  EM calls against an impossible brief:"
+    echo "$_S7_OUT"
+  fi
+done
+
 if [ "$MODE" = "diff" ]; then
   echo ""
   echo "DIFF-SHA: $DIFF_SHA"
@@ -551,7 +514,7 @@ fi
 OLD_NODEIDS=$(cat "$APPROVED/test-nodeids" 2>/dev/null || true)
 DELTA_CONTRACTS=""
 if [ -f "$IN/contracts.json" ]; then
-  DELTA_CONTRACTS=$(python3 - "$APPROVED/contracts.json" "$MERGED_CONTRACTS" <<'PYEOF'
+  DELTA_CONTRACTS=$(python3 - "$APPROVED/contracts.json" "$IN/contracts.json" <<'PYEOF'
 import json, sys
 from pathlib import Path
 old_p, new_p = sys.argv[1], sys.argv[2]
@@ -613,31 +576,10 @@ for f in $CHANGED_TEST_FILES; do
   cp "$f" ".pipeline-state/old-tests/$f"
 done
 
-# --- Transactional guard (D-151) ---
-# The apply below mutates the frozen lane; a failed commit rolls back to HEAD
-# (git restore --source=HEAD), which is only sound if the lane had no
-# pre-existing uncommitted edits to clobber. The frozen lane is committed by
-# every prior refreeze, so dirt here is a real anomaly, not a normal state.
-# The incoming/ staging dir is excluded from the lane by construction: it is
-# untracked in real repos (gitignored), consumed on success, and preserved
-# on failure for retry — the rollback must never touch it.
-if [ -n "$(git status --porcelain --untracked-files=no -- tests/ scripts/.approved/ ':(exclude)scripts/.approved/incoming')" ]; then
-  die "frozen lane is dirty before apply (uncommitted changes in tests/ or scripts/.approved/ outside the incoming/ staging dir) — commit or stash them first; a failed freeze commit must roll back to HEAD safely"
-fi
-
 # --- Apply ---
-VERSIONED_ERD_DELTA=""
 for f in $CHANGED_DOCS; do
-  if [ "$f" = "contracts.json" ]; then
-    cp "$MERGED_CONTRACTS" "$APPROVED/$f"   # D-136: install the merged full file
-  else
-    cp "$IN/$f" "$APPROVED/$f"
-  fi
+  cp "$IN/$f" "$APPROVED/$f"
 done
-if [ -f "$IN/ERD-DELTA.md" ]; then
-  VERSIONED_ERD_DELTA="$APPROVED/ERD-DELTA-v$NEW.md"
-  cp "$IN/ERD-DELTA.md" "$VERSIONED_ERD_DELTA"
-fi
 if [ "$RETIRE_ERD_DELTA" -eq 1 ]; then
   rm -f "$APPROVED/ERD-DELTA.md"
 fi
@@ -645,10 +587,9 @@ for f in $CHANGED_TEST_FILES; do
   mkdir -p "$(dirname "$f")"
   cp "$IN/$f" "$f"
 done
-while IFS= read -r f; do
-  [ -n "$f" ] || continue
+for f in $REMOVED_FILES; do
   rm -f "$f"    # `git add tests/` below stages the deletion
-done <<< "$REMOVED_FILES"
+done
 for f in $CHANGED_CAPTURES; do
   mkdir -p "$APPROVED/$(dirname "$f")"
   cp "$IN/$f" "$APPROVED/$f"
@@ -739,8 +680,8 @@ rm -f "$TMP/refreeze-old-nodeids" "$TMP/refreeze-changed-files" "$TMP/refreeze-r
 # green-suite/broken-app family (v6/M5 imagined mocks; M16's hit-counter
 # counting hidden DOM text). Legitimate early passes exist (no_edit_files
 # acceptance per D-65, carried-forward behavior), so this surfaces a claim
-# for the human, never a halt. changed_tests is the runnable channel; the
-# frozen-set filter remains a defensive backstop for legacy artifacts.
+# for the human, never a halt. changed_tests includes REMOVED node-ids —
+# filter to ids that exist in the new frozen set before running.
 rm -f .cache/redcheck-already-green
 RED_IDS=$(python3 - "$NEW" "$APPROVED/test-nodeids" <<'PYEOF'
 import json, sys
@@ -797,7 +738,7 @@ fi
 # (the D-75 marker above — then the check passes for the right reason and the
 # warning is the verdict, not a halt).
 if [ "$CONTRACTS_STAGED" = "1" ] && [ -f "$IN/contracts.json" ]; then
-  NEW_SMOKE=$(python3 - ".pipeline-state/refreeze-old-contracts.json" "$MERGED_CONTRACTS" <<'PYEOF'
+  NEW_SMOKE=$(python3 - ".pipeline-state/refreeze-old-contracts.json" "$IN/contracts.json" <<'PYEOF'
 import json, sys
 old = json.load(open(sys.argv[1])).get("smoke_checks", {})
 new = json.load(open(sys.argv[2])).get("smoke_checks", {})
@@ -839,11 +780,6 @@ fi
   for f in $(python3 scripts/spec_artifacts.py documents) test-nodeids; do
     [ -f "$APPROVED/$f" ] && sha256sum "$APPROVED/$f"
   done
-  # D-140: an active milestone may span skipped freezes. Keep every immutable
-  # per-freeze instruction slice hash-pinned so later planning never receives
-  # only the newest ERD-DELTA.md and silently loses earlier work.
-  find "$APPROVED" -maxdepth 1 -type f -name 'ERD-DELTA-v*.md' \
-    | sort | while read -r f; do sha256sum "$f"; done
   # Pin every file under tests/ (not only .py): non-.py fixtures a TPM
   # could stage would otherwise install unpinned, and the phase-gate
   # cross-check (INV-1 addition coverage) requires the disk set and
@@ -865,20 +801,9 @@ echo "$NEW" > "$APPROVED/VERSION"
 git add tests/ "$APPROVED/frozen-manifest" "$APPROVED/VERSION" \
   "$APPROVED/test-nodeids" "$APPROVED/DELTA-v$NEW.json"
 for f in $CHANGED_DOCS; do git add "$APPROVED/$f"; done
-[ -n "$VERSIONED_ERD_DELTA" ] && git add "$VERSIONED_ERD_DELTA"
 if [ "$RETIRE_ERD_DELTA" -eq 1 ]; then git add "$APPROVED/ERD-DELTA.md"; fi
 for f in $CHANGED_CAPTURES; do git add "$APPROVED/$f"; done
-git commit -m "[refreeze v$NEW]" || {
-  # D-151: the apply above already mutated the tree; a failed commit must not
-  # leave it half-applied (a retry would freeze as vN+1 against a tree that
-  # already contains this delta — version skip plus a wrong delta). The `||`
-  # block preserves git's real exit code (`if ! cmd` would invert it).
-  commit_rc=$?
-  echo "REFREEZE FAIL: freeze commit failed (rc=$commit_rc) — rolling back the applied freeze to HEAD" >&2
-  git restore --source=HEAD --staged --worktree -- tests/ scripts/.approved/ ':(exclude)scripts/.approved/incoming' \
-    || echo "REFREEZE WARNING: rollback restore failed — inspect tests/ and scripts/.approved/ manually before retrying" >&2
-  exit 1
-}
+git commit -m "[refreeze v$NEW]"
 rm -rf "$IN"
 
 echo ""

@@ -11,9 +11,8 @@ guard lives in and what the selftest pins directly.
 changed_tests granularity (finding-1 fix): the delta records changed tests at
 FUNCTION level, not file level. refreeze.sh snapshots each staged test file's
 pre-apply source under .pipeline-state/old-tests/; the new source is the
-applied tree. A runnable test is changed iff its executable function AST
-changed (or it is newly added); leading test docstrings, comments, formatting,
-and whitespace are nonbehavioral. A content-bearing change OUTSIDE every test function
+applied tree. A test is changed iff its function's source bytes changed (or it
+is newly added); a content-bearing change OUTSIDE every test function
 (fixtures, helpers, imports, module constants) can alter test meaning without
 any test body changing, so it conservatively falls back to file-level scope —
 an over-run, never an under-run that could green a milestone without running
@@ -21,7 +20,7 @@ the affected test. Comment-only and whitespace-only changes are noise (the
 v87 two-comment-line class, D-116): they cannot change meaning and never
 widen the delta. DELTA files written by this producer carry
 "changed_tests_granularity": "function"; consumers slice function-granular
-deltas without ownership trimming (an unpinned new test must never be silently
+deltas without trimming (an unpinned new test must never be silently
 discarded — testchat v99: the AC-161 oracle rode no test_mapping pin, so the
 file-granular slice emptied its task and the default verdict could pass
 without running it).
@@ -29,7 +28,6 @@ without running it).
 from __future__ import annotations
 
 import ast
-import copy
 import difflib
 import json
 import re
@@ -82,56 +80,6 @@ def _slice_lines(src: str, start: int, end: int) -> list[str]:
     ]
 
 
-def _module_docstring_span(tree) -> tuple[int, int] | None:
-    """(start_lineno, end_lineno) of the module docstring, or None. The module
-    docstring is the first statement when it is a bare string literal — a
-    documentation string that cannot change any test's runtime meaning, so an
-    edit confined to it is meaning-neutral like a comment (the v103 class:
-    one docstring edit re-ran five model-lifecycle tests via the file-level
-    fallback). Function/class docstrings are NOT module docstrings: they live
-    inside a test span and are handled by the per-function comparison."""
-    body = getattr(tree, "body", [])
-    if body and isinstance(body[0], ast.Expr) \
-            and isinstance(getattr(body[0].value, "value", None), str):
-        return (body[0].lineno, body[0].end_lineno)
-    return None
-
-
-def _in_span(lineno: int, span: tuple[int, int] | None) -> bool:
-    return span is not None and span[0] <= lineno <= span[1]
-
-
-def _semantic_function(node: ast.AST) -> str:
-    """Stable function meaning for delta scope (D-140).
-
-    Location, formatting, comments, and the function's leading docstring do
-    not affect the executable test body.  Removing that docstring before the
-    AST dump keeps documentation-only edits out of runnable changed_tests.
-    """
-    clone = copy.deepcopy(node)
-    body = getattr(clone, "body", [])
-    if body and isinstance(body[0], ast.Expr) \
-            and isinstance(body[0].value, ast.Constant) \
-            and isinstance(body[0].value.value, str):
-        clone.body = body[1:]
-    return ast.dump(clone, include_attributes=False)
-
-
-def _test_nodes(tree: ast.Module) -> dict[str, ast.AST]:
-    """Test-family suffix -> function node, matching _test_spans."""
-    nodes: dict[str, ast.AST] = {}
-    for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) \
-                and node.name.startswith("test"):
-            nodes[f"::{node.name}"] = node
-        elif isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
-            for method in node.body:
-                if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)) \
-                        and method.name.startswith("test"):
-                    nodes[f"::{node.name}::{method.name}"] = method
-    return nodes
-
-
 def function_changes(
     file_path: str,
     old_src: str,
@@ -140,8 +88,8 @@ def function_changes(
     """Function-level diff of one test file.
 
     Returns (families, infra):
-    - families: node-id families whose executable test-function AST changed or
-      that are newly added (docstring/comment/formatting deltas ignored).
+    - families: node-id families whose test-function source bytes changed or
+      that are newly added (comment/whitespace-only deltas ignored).
     - infra: True when a content-bearing line outside every test-function
       span changed (imports, fixtures, helpers, module constants) — test
       MEANING can change there without any test body changing, so the caller
@@ -158,30 +106,18 @@ def function_changes(
         new_tree = ast.parse(new_src, filename=file_path)
     except SyntaxError:
         return set(), True
-    # A change confined to the MODULE DOCSTRING is meaning-neutral (like a
-    # comment): drop the docstring's lines and re-test equality before the
-    # infra check, so a docstring-only edit scopes nothing instead of tripping
-    # the file-level fallback (v103 re-ran five model-lifecycle tests for one
-    # docstring edit). Fixtures, imports, helpers, and module constants stay
-    # meaning-bearing and keep the conservative fallback below.
-    old_doc = _module_docstring_span(old_tree)
-    new_doc = _module_docstring_span(new_tree)
-    old_lines = [(i, ln) for i, ln in old_lines if not _in_span(i, old_doc)]
-    new_lines = [(i, ln) for i, ln in new_lines if not _in_span(i, new_doc)]
-    if [ln for _, ln in old_lines] == [ln for _, ln in new_lines]:
-        return set(), False
     old_spans = _test_spans(old_tree)
     new_spans = _test_spans(new_tree)
-    old_nodes = _test_nodes(old_tree)
-    new_nodes = _test_nodes(new_tree)
     families: set[str] = set()
     for suffix in sorted(set(old_spans) | set(new_spans)):
         if suffix not in old_spans:
             families.add(file_path + suffix)          # newly added test
         elif suffix in new_spans:
-            if _semantic_function(old_nodes[suffix]) \
-                    != _semantic_function(new_nodes[suffix]):
-                families.add(file_path + suffix)      # executable body changed
+            o_start, o_end = old_spans[suffix]
+            n_start, n_end = new_spans[suffix]
+            if _slice_lines(old_src, o_start, o_end) \
+                    != _slice_lines(new_src, n_start, n_end):
+                families.add(file_path + suffix)      # source bytes changed
         # else: removed test — the removed node-id term below covers it
     infra = False
     matcher = difflib.SequenceMatcher(
@@ -204,15 +140,16 @@ def function_changes(
     return families, infra
 
 
-def compute_test_delta(
+def compute_changed_tests(
     old_nodeids: set[str],
     new_nodeids: set[str],
     changed_files: set[str],
     removed_files: set[str],
     old_sources: dict[str, str] | None = None,
     new_sources: dict[str, str] | None = None,
-) -> tuple[list[str], list[str]]:
-    """Return (runnable_changed_tests, retired_tests) for one freeze.
+) -> list[str]:
+    """The delta's changed_tests: retired/relocated node-ids plus every
+    node-id whose test function this delta actually changed.
 
     D-116: a node-id in (old - new) is a *real* removal only when its source
     FILE actually changed in this delta — a staged byte-different edit
@@ -260,28 +197,7 @@ def compute_test_delta(
         in_changed_files = {
             n for n in new_nodeids if n.split("::")[0] in changed_files
         }
-    return sorted(in_changed_files), sorted(removed)
-
-
-def compute_changed_tests(
-    old_nodeids: set[str],
-    new_nodeids: set[str],
-    changed_files: set[str],
-    removed_files: set[str],
-    old_sources: dict[str, str] | None = None,
-    new_sources: dict[str, str] | None = None,
-) -> list[str]:
-    """Legacy API: union runnable and retired ids.
-
-    New DELTA artifacts keep the two channels separate through
-    compute_test_delta(); this wrapper preserves callers that audit the old
-    combined bookkeeping shape.
-    """
-    runnable, retired = compute_test_delta(
-        old_nodeids, new_nodeids, changed_files, removed_files,
-        old_sources, new_sources,
-    )
-    return sorted(set(runnable) | set(retired))
+    return sorted(removed | in_changed_files)
 
 
 def _erd_pins(text: str) -> dict[str, str]:
@@ -372,7 +288,7 @@ def main(argv: list[str]) -> int:
         new_p = Path(f)
         if new_p.is_file():
             new_sources[f] = new_p.read_text()
-    changed_tests, retired_tests = compute_test_delta(
+    changed_tests = compute_changed_tests(
         old_nodeids, new_nodeids, changed_files, removed_files,
         old_sources, new_sources,
     )
@@ -386,26 +302,21 @@ def main(argv: list[str]) -> int:
     if contracts_staged:
         contracts = json.load(open("scripts/.approved/contracts.json"))
         declared_files = [f for f in contracts.get("changed_files", []) if f]
-    inventory_files: list[str] = []
-    if contracts_staged:
-        contracts = json.load(open("scripts/.approved/contracts.json"))
-        inventory_files = [f for f in contracts.get("files", []) if f]
 
     delta = {
         "changed_contract_ids": _lines(".pipeline-state/refreeze-changed-contracts"),
         "changed_tests": changed_tests,
-        "retired_tests": retired_tests,
         "changed_tests_granularity": "function",
         "changed_files": declared_files,
-        "inventory_files": inventory_files,
     }
     with open(f"scripts/.approved/DELTA-v{new_v}.json", "w") as f:
         json.dump(delta, f, indent=2)
-    if not (delta["changed_contract_ids"] or changed_tests or inventory_files):
-        print("  D-140: this freeze carries no behavioral build work — its exact "
-              "inventory may be empty and the orchestrator will synthesize a "
-              "zero-task plan. If implementation is still required, declare its "
-              "files in contracts.files and contracts.changed_files, then re-freeze.")
+    if not (delta["changed_contract_ids"] or changed_tests or declared_files):
+        print("  WARNING (D-86): this delta scopes NOTHING — no changed tests, no "
+              "changed contract ids, no declared changed_files. With the inverted "
+              "no-edit default every existing file is untouchable, so a run will "
+              "invoke the coder for nothing and report normally. If a milestone is "
+              "unbuilt, declare its files in contracts.changed_files and re-freeze.")
     return 0
 
 
