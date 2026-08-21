@@ -96,11 +96,15 @@ def repo(tmp_path):
     return tmp_path
 
 
-def run_validate(repo, plan, *args):
+def run_validate(repo, plan, *args, env=None):
     (repo / "tasks" / "plan.json").write_text(json.dumps(plan))
+    run_env = os.environ.copy()
+    run_env.pop("SWBP_ACTIVE_DELTA_FILES", None)
+    if env:
+        run_env.update(env)
     return subprocess.run(
         [sys.executable, str(VALIDATE_PLAN), *args],
-        cwd=repo, capture_output=True, text=True,
+        cwd=repo, capture_output=True, text=True, env=run_env,
     )
 
 
@@ -211,7 +215,53 @@ def test_unchanged_self_owned_contract_claim_rejected(repo):
     r = run_validate(repo, plan)
     assert r.returncode == 1
     assert "route-items" in r.stderr
-    assert "unchanged in every delta" in r.stderr
+    assert "unchanged in the active milestone delta range" in r.stderr
+
+
+def test_historical_contract_change_is_not_current_claim_authority(repo):
+    """A historical self-owned change cannot ride the current milestone."""
+    approved = repo / "scripts" / ".approved"
+    _repo_with_changed_contract(repo, ["route-items"])
+    (approved / "VERSION").write_text("2\n")
+    (approved / "DELTA-v2.json").write_text(json.dumps({
+        "changed_contract_ids": ["route-item"],
+        "changed_tests": [],
+        "changed_files": ["src/b.py"],
+    }))
+    plan = good_plan()
+    plan["erd_version"] = 2
+    plan["tasks"][0]["contracts"] = []
+    plan["tasks"][1]["contracts"] = ["route-items", "route-item"]
+    r = run_validate(repo, plan)
+    assert r.returncode == 1
+    assert "claims contract(s) ['route-items']" in r.stderr
+
+
+def test_skipped_freeze_contract_claim_uses_full_active_range(repo):
+    """Every delta since the last success remains current claim authority."""
+    approved = repo / "scripts" / ".approved"
+    _repo_with_changed_contract(repo, [])
+    (approved / "VERSION").write_text("3\n")
+    v2 = approved / "DELTA-v2.json"
+    v3 = approved / "DELTA-v3.json"
+    v2.write_text(json.dumps({
+        "changed_contract_ids": ["route-items"],
+        "changed_tests": [],
+        "changed_files": ["src/b.py"],
+    }))
+    v3.write_text(json.dumps({
+        "changed_contract_ids": ["route-item"],
+        "changed_tests": [],
+        "changed_files": ["src/b.py"],
+    }))
+    plan = good_plan()
+    plan["erd_version"] = 3
+    plan["tasks"][0]["contracts"] = []
+    plan["tasks"][1]["contracts"] = ["route-items", "route-item"]
+    r = run_validate(repo, plan, env={
+        "SWBP_ACTIVE_DELTA_FILES": f"{v2}\n{v3}\n",
+    })
+    assert r.returncode == 0, r.stderr
 
 
 def test_changed_contract_claim_allowed(repo):
@@ -765,6 +815,30 @@ def test_spec_delta_mapping_unknown_nodeid_fails(delta_repo):
     assert "unknown node-id" in r.stderr
 
 
+def test_spec_delta_mapping_chromium_suffix_matches_bare_nodeid(delta_repo):
+    """D-116/D-124 family tolerance: testchat v106 froze test-nodeids with
+    bare node-ids while contracts.test_mapping kept `name[chromium]` keys;
+    the pin gate must match on the family so a suffixed key pins a bare
+    frozen node-id (and vice versa)."""
+    _, approved, staging = delta_repo
+    _stage_delta(staging, {"tests/test_a.py::test_one[chromium]": "src/a.py"})
+    r = run_spec_delta(staging, approved, staging.parents[2])
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "behavioral"
+
+
+def test_spec_delta_mapping_bare_key_matches_parametric_nodeid(delta_repo):
+    """The reverse flip — a bare key must also pin a frozen node-id frozen
+    with a `[chromium]` suffix (collection shape flips both ways)."""
+    _, approved, staging = delta_repo
+    (approved / "test-nodeids").write_text(
+        "tests/test_a.py::test_one[chromium]\n")
+    _stage_delta(staging, {"tests/test_a.py::test_one": "src/a.py"})
+    r = run_spec_delta(staging, approved, staging.parents[2])
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "behavioral"
+
+
 def test_spec_delta_mapping_file_outside_inventory_fails(delta_repo):
     """A mapping pinned to a file outside contracts.files claims the
     delta exercises work the freeze does not plan."""
@@ -773,6 +847,48 @@ def test_spec_delta_mapping_file_outside_inventory_fails(delta_repo):
     r = run_spec_delta(staging, approved, staging.parents[2])
     assert r.returncode == 1
     assert "not in contracts.files" in r.stderr
+
+
+def test_spec_delta_rejects_accumulated_prior_milestone_inventory(delta_repo):
+    """A one-file milestone must not silently retain old inventory members.
+    Every planned file is either changed now or explicitly no-edit; otherwise
+    mechanical synthesis recreates irrelevant tasks for prior milestones."""
+    _, approved, staging = delta_repo
+    (staging / "contracts.json").write_text(json.dumps({
+        "files": ["src/a.py", "src/old.py"],
+        "changed_files": ["src/a.py"],
+        "test_mapping": {"tests/test_a.py::test_one": "src/a.py"},
+    }))
+    (staging / "ERD-DELTA.md").write_text(
+        "## Changed acceptance criteria\nAC-1\n"
+        "## Superseded acceptance criteria\nNone\n"
+        "## Changed files\nsrc/a.py\n"
+        "## Test-to-file mapping\nAC-1 -> src/a.py\n"
+    )
+    r = run_spec_delta(staging, approved, staging.parents[2])
+    assert r.returncode == 1
+    assert "src/old.py" in r.stderr
+    assert "accumulated prior-milestone files" in r.stderr
+
+
+def test_spec_delta_allows_explicit_no_edit_inventory_member(delta_repo):
+    """An acceptance-only file is relevant when the TPM names it no-edit;
+    the minimality gate rejects unexplained carry, not deliberate ratification."""
+    _, approved, staging = delta_repo
+    (staging / "contracts.json").write_text(json.dumps({
+        "files": ["src/a.py", "src/ratified.py"],
+        "changed_files": ["src/a.py"],
+        "no_edit_files": ["src/ratified.py"],
+        "test_mapping": {"tests/test_a.py::test_one": "src/a.py"},
+    }))
+    (staging / "ERD-DELTA.md").write_text(
+        "## Changed acceptance criteria\nAC-1\n"
+        "## Superseded acceptance criteria\nNone\n"
+        "## Changed files\nsrc/a.py\n"
+        "## Test-to-file mapping\nAC-1 -> src/a.py\n"
+    )
+    r = run_spec_delta(staging, approved, staging.parents[2])
+    assert r.returncode == 0, r.stderr
 
 
 def _stage_pinned_delta(staging, routes):
@@ -1009,6 +1125,108 @@ def test_contracts_delta_slices_out_of_scope_pins(tmp_path):
 def test_contracts_delta_missing_input_fails(tmp_path):
     r = run_contracts_delta(tmp_path / "absent.json", tmp_path)
     assert r.returncode == 1
+
+
+def _run_contracts_delta_in(sources, tmp_path, env=None):
+    """Run contracts-delta.py in a tree where the contracts file shares a
+    directory with the given DELTA snapshots (real repos keep DELTA-vN.json
+    beside contracts.json under scripts/.approved)."""
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    for name, payload in sources.items():
+        (cwd / name).write_text(json.dumps(payload))
+    return subprocess.run(
+        [sys.executable, str(SCRIPTS / "contracts-delta.py"),
+         str(cwd / "contracts.json")],
+        cwd=cwd, capture_output=True, text=True, env=env,
+    )
+
+
+def _pinned_contracts(files):
+    return {
+        "files": list(files),
+        # any_pinned true (D-120): entry carries a file pin
+        "routes": [{"id": f"route:{i}", "path": f"/{i}", "method": "GET",
+                    "file": f} for i, f in enumerate(files)],
+        "errors": [
+            {"id": "carried", "status": 500},
+        ],
+        "entry_points": ["src.main:app"],
+    }
+
+
+def test_contracts_delta_default_uses_newest_active_inventory(tmp_path):
+    """D-140: with a modern DELTA snapshot beside the contracts file, the
+    standalone default slices against ITS inventory_files — never the standing
+    contracts.files array."""
+    sources = {
+        "contracts.json": _pinned_contracts(["src/a.py", "src/b.py", "src/c.py"]),
+        "DELTA-v1.json": {"version": 1, "inventory_files": ["src/a.py"]},
+    }
+    r = _run_contracts_delta_in(sources, tmp_path)
+    assert r.returncode == 0, r.stderr
+    kept = json.loads(r.stdout)
+    assert kept["files"] == ["src/a.py", "src/b.py", "src/c.py"]
+    assert [e["id"] for e in kept["routes"]] == ["route:0"]
+    assert "route:1" not in r.stdout and "route:2" not in r.stdout
+
+
+def test_contracts_delta_modern_empty_inventory_keeps_no_standing_pins(tmp_path):
+    """v105 class: a consolidation snapshot with inventory_files: [] keeps NO
+    standing pinned entry — the slice is not the accumulated surface no matter
+    what contracts.files says. Unpinned carries still pass (D-120 conservative
+    carry)."""
+    sources = {
+        "contracts.json": _pinned_contracts(["src/a.py", "src/b.py"]),
+        "DELTA-v3.json": {"version": 3, "inventory_files": []},
+    }
+    r = _run_contracts_delta_in(sources, tmp_path)
+    assert r.returncode == 0, r.stderr
+    kept = json.loads(r.stdout)
+    assert kept["files"] == ["src/a.py", "src/b.py"]
+    assert not kept["routes"]
+    assert [e["id"] for e in kept["errors"]] == ["carried"]  # unpinned carry
+    assert "route:0" not in r.stdout and "route:1" not in r.stdout
+
+
+def test_contracts_delta_malformed_inventory_fails_closed(tmp_path):
+    """A modern snapshot whose inventory_files is not an array of strings never
+    silently re-slices against standing surface — it fails closed."""
+    sources = {
+        "contracts.json": _pinned_contracts(["src/a.py"]),
+        "DELTA-v2.json": {"version": 2, "inventory_files": "src/a.py"},
+    }
+    r = _run_contracts_delta_in(sources, tmp_path)
+    assert r.returncode == 1
+
+
+def test_contracts_delta_all_legacy_keeps_standing_default(tmp_path):
+    """D-140 backward compat: with only legacy DELTAs (no inventory_files) or
+    none at all, the historical contracts.files behavior is preserved."""
+    sources = {
+        "contracts.json": _pinned_contracts(["src/a.py", "src/b.py"]),
+        "DELTA-v1.json": {"version": 1, "changed_files": ["src/a.py"],
+                          "changed_contract_ids": []},
+    }
+    r = _run_contracts_delta_in(sources, tmp_path)
+    assert r.returncode == 0, r.stderr
+    kept = json.loads(r.stdout)
+    assert [e["id"] for e in kept["routes"]] == ["route:0", "route:1"]
+
+
+def test_contracts_delta_default_picks_numeric_newest_snapshot(tmp_path):
+    """The newest snapshot is NUMERIC, not lexicographic: DELTA-v105.json is
+    newer than DELTA-v99.json even though '1' < '9' sorts v99 later."""
+    sources = {
+        "contracts.json": _pinned_contracts(["src/a.py", "src/b.py"]),
+        "DELTA-v99.json": {"version": 99, "changed_files": ["src/a.py"]},
+        "DELTA-v105.json": {"version": 105, "inventory_files": ["src/a.py"]},
+    }
+    r = _run_contracts_delta_in(sources, tmp_path)
+    assert r.returncode == 0, r.stderr
+    kept = json.loads(r.stdout)
+    assert [e["id"] for e in kept["routes"]] == ["route:0"]
+    assert "route:1" not in r.stdout
 
 
 def test_route_check_fails_open_on_dynamic_path(repo):
@@ -2028,7 +2246,7 @@ def run_tpm_pack(tmp_path, with_delta=True, with_summary_generator=True):
     (repo / "scripts" / ".approved").mkdir(parents=True)
     (repo / "scripts" / "schemas").mkdir(parents=True)
     (repo / "docs").mkdir(parents=True)
-    for name in ("tpm-pack.sh", "spec_artifacts.py"):
+    for name in ("tpm-pack.sh", "spec_artifacts.py", "context-budget.py"):
         shutil.copy(SCRIPTS / name, repo / "scripts" / name)
     if with_summary_generator:
         shutil.copy(SCRIPTS / "standing-summary.py",
@@ -2064,10 +2282,7 @@ def run_tpm_pack(tmp_path, with_delta=True, with_summary_generator=True):
 
 
 def test_tpm_pack_ships_milestone_slice_not_standing_erd(tmp_path):
-    """D-117: with a delta in flight, the TPM bundle carries the product
-    capsule + current criteria (from ERD-DELTA.md), the generated standing
-    summary (rules + per-file map), the contracts slice, and ERD-DELTA —
-    never the accumulated standing PRD or ERD."""
+    """The full PRD remains visible; ERD context stays milestone-scoped."""
     r = run_tpm_pack(tmp_path, with_delta=True)
     assert r.returncode == 0, r.stderr
     out = r.stdout
@@ -2081,19 +2296,104 @@ def test_tpm_pack_ships_milestone_slice_not_standing_erd(tmp_path):
     assert "=== CONTEXT FILE: scripts/.approved/PRD.md ===" in out
     assert "Fixture is a local product with one current milestone." in out
     assert "AC-117" in out
-    assert "AC-OLD" not in out
-    assert "DISTINCT_ACCUMULATED_PRODUCT_DETAIL" not in out
+    assert "AC-OLD" in out
+    assert "DISTINCT_ACCUMULATED_PRODUCT_DETAIL" in out
     assert "=== CONTEXT FILE: scripts/.approved/contracts.json ===" in out
 
 
-def test_tpm_pack_no_delta_ships_full_standing_erd(tmp_path):
-    """D-117: no delta (initial freeze / consolidation) — the standing ERD
-    is the reference and ships in full."""
+def test_tpm_pack_no_delta_ships_standing_summary_not_full_erd(tmp_path):
+    """D-147 amended: no-delta still trims ERD but always ships full PRD."""
     r = run_tpm_pack(tmp_path, with_delta=False)
     assert r.returncode == 0, r.stderr
-    assert "=== CONTEXT FILE: scripts/.approved/ERD.md ===" in r.stdout
-    assert "no informational value left in it" in r.stdout
+    assert "standing-summary.md (generated from ERD.md" in r.stdout
+    assert "=== CONTEXT FILE: scripts/.approved/ERD.md ===" not in r.stdout
     assert "=== CONTEXT FILE: scripts/.approved/ERD-DELTA.md ===" not in r.stdout
+    assert "AC-OLD" in r.stdout
+    assert "DISTINCT_ACCUMULATED_PRODUCT_DETAIL" in r.stdout
+
+
+def run_tpm_view(tmp_path, with_escalation=True):
+    """D-162 fixture: a fake child repo with tpm-view.sh + spec_artifacts.py,
+    so the real script runs against a controlled tree."""
+    repo = tmp_path / "repo"
+    (repo / "scripts" / ".approved" / "captures").mkdir(parents=True)
+    (repo / "tests").mkdir(parents=True)
+    (repo / "docs").mkdir(parents=True)
+    (repo / ".tpm").mkdir(parents=True)
+    (repo / ".pipeline-state" / "escalations" / "t1").mkdir(parents=True)
+    for name in ("tpm-view.sh", "spec_artifacts.py"):
+        shutil.copy(SCRIPTS / name, repo / "scripts" / name)
+    (repo / "scripts" / ".approved" / "PRD.md").write_text("# PRD\n")
+    (repo / "scripts" / ".approved" / "ERD.md").write_text("# ERD\n")
+    (repo / "scripts" / ".approved" / "contracts.json").write_text("{}\n")
+    (repo / "scripts" / ".approved" / "captures" / "probe.log").write_text("raw\n")
+    (repo / "tests" / "test_a.py").write_text("def test_a(): assert 1\n")
+    (repo / "docs" / "TPM-ROLE.md").write_text("# TPM role\n")
+    if with_escalation:
+        (repo / ".pipeline-state" / "escalations" / "BATCH.md").write_text(
+            "# BATCH\nsrc/api/foo.py:12 broken\nbundle evidence text\n")
+        (repo / ".pipeline-state" / "escalations" / "t1" / "bundle.md").write_text(
+            "frozen test excerpt\nsrc/services/x.py quoted\n")
+    return subprocess.run(
+        ["bash", str(repo / "scripts" / "tpm-view.sh")],
+        capture_output=True, text=True, cwd=str(repo))
+
+
+def test_tpm_view_materializes_spec_tests_escalations_without_src(tmp_path):
+    """D-162: the materialized view carries the spec policy set, the frozen
+    tests, TPM-ROLE.md and a sanitized escalation batch — and no src/."""
+    r = run_tpm_view(tmp_path)
+    assert r.returncode == 0, r.stderr
+    view = tmp_path / "repo" / ".tpm" / "view"
+    assert (view / "PRD.md").exists()
+    assert (view / "ERD.md").exists()
+    assert (view / "contracts.json").exists()
+    assert (view / "captures" / "probe.log").exists()
+    assert (view / "tests" / "test_a.py").exists()
+    assert (view / "TPM-ROLE.md").exists()
+    assert not (view / "src").exists()
+    assert (view / "outbox").is_symlink()
+    assert (view / "outbox").resolve() \
+        == (tmp_path / "repo" / ".tpm" / "outbox").resolve()
+
+
+def test_tpm_view_sanitizes_src_lines_and_rebuild_is_deterministic(tmp_path):
+    """D-162: escalation copies drop src/ path lines; a rebuild removes
+    stale files (deterministic materialization, no accumulation)."""
+    r = run_tpm_view(tmp_path)
+    assert r.returncode == 0, r.stderr
+    view = tmp_path / "repo" / ".tpm" / "view"
+    batch = (view / "escalations" / "BATCH.md").read_text()
+    assert "src/api/foo.py:12 broken" not in batch
+    assert "bundle evidence text" in batch
+    bundle = (view / "escalations" / "t1-bundle.md").read_text()
+    assert "src/services/x.py quoted" not in bundle
+    assert "frozen test excerpt" in bundle
+    (view / "stale.md").write_text("x")
+    r2 = subprocess.run(
+        ["bash", str(tmp_path / "repo" / "scripts" / "tpm-view.sh")],
+        capture_output=True, text=True, cwd=str(tmp_path / "repo"))
+    assert r2.returncode == 0, r2.stderr
+    assert not (view / "stale.md").exists()
+
+
+def test_tpm_view_warns_and_succeeds_without_frozen_spec(tmp_path):
+    """D-162: a tree with no scripts/.approved (template repo, pre-freeze)
+    warns per absent artifact and still builds tests/ + TPM-ROLE.md."""
+    r = run_tpm_view(tmp_path)
+    assert r.returncode == 0, r.stderr
+    repo = tmp_path / "repo"
+    shutil.rmtree(repo / "scripts" / ".approved")
+    r2 = subprocess.run(
+        ["bash", str(repo / "scripts" / "tpm-view.sh")],
+        capture_output=True, text=True, cwd=str(repo))
+    assert r2.returncode == 0, r2.stderr
+    assert "no scripts/.approved/PRD.md to materialize" in r2.stderr
+    view = repo / ".tpm" / "view"
+    assert not (view / "PRD.md").exists()
+    assert (view / "tests" / "test_a.py").exists()
+    assert (view / "TPM-ROLE.md").exists()
+    assert not (view / "src").exists()
 
 
 def test_tpm_pack_generator_failure_falls_back_to_full_erd(tmp_path):
@@ -2294,9 +2594,13 @@ def test_run_exit_trap_records_every_termination_path(tmp_path):
     reliable ground truth for the next feature-summary. Not an escalation
     substitute: unexpected rc must not fabricate a bundle."""
     source = (SCRIPTS / "orchestrate.sh").read_text()
+    measurement_fn = re.search(
+        r"^record_measurement\(\) \{.*?^\}$", source, re.M | re.S,
+    )
+    assert measurement_fn, "record_measurement not found — extractor drift"
     fn = re.search(r"^record_exit\(\) \{.*?^\}$", source, re.M | re.S)
     assert fn, "record_exit not found — extractor drift"
-    fn_body = fn.group(0)
+    fn_body = measurement_fn.group(0) + "\n\n" + fn.group(0)
     trap_line = re.search(r"^trap 'record_exit' EXIT$", source, re.M)
     assert trap_line, "EXIT trap not installed"
 
@@ -2350,6 +2654,179 @@ trap 'record_exit' EXIT
     (state / "logs" / "run-exit.log").unlink(missing_ok=True)
     rc, log = run("echo halted >&2; exit 3")
     assert rc == 3 and "rc=3" in log and "phase=plan" in log
+
+
+def test_success_metrics_are_persisted_before_teardown_and_report(tmp_path):
+    """Regression: the success path used to delete timings.tsv, run the
+    idempotent metrics reporter, and only then let the EXIT trap persist the
+    current rc=0 row. The milestone row therefore froze without its own run.
+
+    Exercise the production measurement producer through the real ordering:
+    capture -> teardown -> metrics-report -> EXIT trap. The report must count
+    the current success once, retain its timing copy, and the trap must not
+    append a duplicate terminal event.
+    """
+    source = (SCRIPTS / "orchestrate.sh").read_text()
+    measurement_fn = re.search(
+        r"^record_measurement\(\) \{.*?^\}$", source, re.M | re.S,
+    )
+    exit_fn = re.search(r"^record_exit\(\) \{.*?^\}$", source, re.M | re.S)
+    assert measurement_fn and exit_fn, "measurement producer extractor drift"
+
+    capture_at = source.index('  record_measurement 0 "" ""')
+    recorded_at = source.index("  SUCCESS_RECORDED=1", capture_at)
+    teardown_at = source.index('  rm -rf "$STATE_DIR"', recorded_at)
+    report_at = source.index(
+        '  if ! python3 "$METRICS_REPORT_TOOL"', teardown_at,
+    )
+    assert capture_at < recorded_at < teardown_at < report_at
+
+    state = tmp_path / ".pipeline-state"
+    logs = state / "logs"
+    logs.mkdir(parents=True)
+    (logs / "timings.tsv").write_text(
+        "10:00:00\t0s\trun start (budget 1200s)\n"
+        "10:00:05\t5s\tpre-flight done (spec v106)\n"
+        "10:00:20\t20s\tpytest selftest\n"
+    )
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@t",
+         "commit", "-q", "--allow-empty", "-m", "[success] spec v106"],
+        cwd=tmp_path, check=True,
+    )
+
+    script = f"""#!/usr/bin/env bash
+set -euo pipefail
+STATE_DIR="{state}"
+LOG_DIR="$STATE_DIR/logs"
+MEAS_DIR="{tmp_path / '.measurement'}"
+METRICS_REPORT_TOOL="{SCRIPTS / 'metrics-report.py'}"
+RUN_T0=$(date +%s)
+run_elapsed() {{ echo $(( $(date +%s) - RUN_T0 )); }}
+meas() {{ printf '%s\\t%s\\n' "$(date -u +%FT%TZ)" "$1" >> "$MEAS_DIR/counters" 2>/dev/null || true; }}
+plan_revisions_used() {{ echo 0; }}
+FROZEN_V=106
+
+{measurement_fn.group(0)}
+
+{exit_fn.group(0)}
+
+trap 'record_exit' EXIT
+record_measurement 0 "" ""
+SUCCESS_RECORDED=1
+rm -rf "$STATE_DIR"
+python3 "$METRICS_REPORT_TOOL" --root "$PWD" --milestone HEAD --feature "v$FROZEN_V"
+exit 0
+"""
+    result = subprocess.run(
+        ["bash", "-c", script], cwd=tmp_path, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, (result.stdout, result.stderr)
+
+    counters = (tmp_path / ".measurement" / "counters").read_text()
+    assert counters.count("exit rc=0") == 1, counters
+    timing_copies = list((tmp_path / ".measurement").glob("timings-*.tsv"))
+    assert len(timing_copies) == 1
+    assert "pytest selftest" in timing_copies[0].read_text()
+
+    rows = (tmp_path / ".measurement" / "metrics.tsv").read_text().splitlines()
+    assert len(rows) == 2
+    metrics = dict(zip(rows[0].split("\t"), rows[1].split("\t")))
+    assert metrics["feature"] == "v106"
+    assert metrics["success_runs"] == "1"
+    assert metrics["retry_runs"] == "0"
+    assert metrics["selftest_count"] == "1"
+
+
+def test_metrics_guard_binds_to_this_runs_success_commit(tmp_path):
+    """P3-5: `--milestone HEAD` must bind to the commit THIS run made. A
+    subject-only `git log -1 --format=%s` check passes when the PREVIOUS
+    milestone already carries a `[success] spec vN` subject and today's
+    guarded commit silently failed (identity, hook abort — all muffled by
+    the `|| true`). The guard requires the pre-commit SHA to advance AND the
+    new subject to be exact. Arm A: the commit lands -> row recorded. Arm B:
+    a failing pre-commit hook aborts the commit -> HEAD unchanged -> loud
+    SKIPPED warning, no row, still exit 0."""
+    source = (SCRIPTS / "orchestrate.sh").read_text()
+    guard = re.search(
+        r"^  # P3-5: the metrics row must bind to THIS milestone's \[success\] commit.*?"
+        r"^  exit 0$",
+        source, re.M | re.S,
+    )
+    assert guard, "P3-5 metrics guard not found in orchestrate.sh — extractor drift"
+    block = guard.group(0)
+
+    def run_arm(arm, hook_aborts):
+        arm_dir = tmp_path / arm
+        arm_dir.mkdir()
+        state = arm_dir / ".pipeline-state"
+        mea = arm_dir / ".measurement"
+        logs = state / "logs"
+        logs.mkdir(parents=True)
+        (logs / "timings.tsv").write_text(
+            "10:00:00\t0s\trun start (budget 1200s)\n"
+            "10:00:05\t5s\tpre-flight done (spec v106)\n"
+        )
+        subprocess.run(["git", "init", "-q"], cwd=arm_dir, check=True)
+        subprocess.run(["git", "config", "user.name", "t"], cwd=arm_dir, check=True)
+        subprocess.run(["git", "config", "user.email", "t@t"], cwd=arm_dir, check=True)
+        # seed HEAD with the PRIOR milestone's commit: a subject-only guard
+        # would pass against it once today's commit fails
+        subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@t",
+             "commit", "-q", "--allow-empty", "-m", "[success] spec v105"],
+            cwd=arm_dir, check=True,
+        )
+        if hook_aborts:
+            hooks = arm_dir / ".git" / "hooks"
+            hooks.mkdir(exist_ok=True)
+            (hooks / "pre-commit").write_text("#!/usr/bin/env bash\nexit 1\n")
+            (hooks / "pre-commit").chmod(0o755)
+        # The production path `git add`s the success artifacts before the
+        # guard; stage a file the same way so the commit actually fires.
+        (state / "ledger.md").write_text("row\n")
+        subprocess.run(["git", "add", ".pipeline-state/ledger.md"],
+                       cwd=arm_dir, check=True)
+        script = """#!/usr/bin/env bash
+set -euo pipefail
+STATE_DIR="{state}"
+LOG_DIR="$STATE_DIR/logs"
+MEAS_DIR="{mea}"
+METRICS_REPORT_TOOL="{tool}"
+FROZEN_V=106
+__GUARD_BLOCK__
+""".format(state=state, mea=mea, tool=SCRIPTS / "metrics-report.py")
+        script = script.replace("__GUARD_BLOCK__", block)
+        return subprocess.run(
+            ["bash", "-c", script], cwd=arm_dir, capture_output=True, text=True,
+        )
+
+    r = run_arm("a", hook_aborts=False)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "metrics row NOT recorded" not in r.stderr
+    rows = (tmp_path / "a" / ".measurement" / "metrics.tsv").read_text().splitlines()
+    assert len(rows) == 2 and "feature" in rows[0], rows
+    metrics = dict(zip(rows[0].split("\t"), rows[1].split("\t")))
+    assert metrics["feature"] == "v106"
+    head = subprocess.run(
+        ["git", "log", "-1", "--format=%s"], cwd=tmp_path / "a",
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert head == "[success] spec v106", "arm A must advance HEAD"
+
+    r = run_arm("b", hook_aborts=True)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "metrics row SKIPPED" in r.stderr, r.stderr
+    assert "HEAD " in r.stderr and "->" in r.stderr, r.stderr
+    assert not (tmp_path / "b" / ".measurement" / "metrics.tsv").exists(), \
+        "a failed [success] commit must not produce a row bound to a stale HEAD"
+    head = subprocess.run(
+        ["git", "log", "-1", "--format=%s"], cwd=tmp_path / "b",
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert head == "[success] spec v105", \
+        "the ARM B guard must not have committed anything"
 
 
 def test_full_suite_execution_is_confined_to_tests_directory():
@@ -2428,6 +2905,12 @@ PHASE_GATE = SCRIPTS / "phase-gate.sh"
 
 def _init_git(repo):
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    # Local identity so refreeze.sh's D-151 fail-closed preflight sees a
+    # configured machine (it reads `git config user.email`, which falls back
+    # to global config — absent on CI runners, so a fixture without local
+    # identity dies at the preflight instead of the check under test).
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
     subprocess.run(
         ["git", "-c", "user.email=t@t", "-c", "user.name=t", "add", "-A"],
         cwd=repo, check=True,
@@ -2522,6 +3005,114 @@ def test_phase_gate_gitignored_bytecode_does_not_trip(frozen_repo):
     )
     (frozen_repo / "tests" / "__pycache__").mkdir()
     (frozen_repo / "tests" / "__pycache__" / "test_x.cpython-314.pyc").write_bytes(b"\x00")
+    r = _run_gate(frozen_repo)
+    assert r.returncode == 0, r.stdout
+
+
+# --- placeholder-completeness gate (D-160) ---------------------------------
+# BLUEPRINT.md Step 7 mechanized: bootstrap.sh arms `.placeholder-gate`, and
+# phase-gate `manifest` fails when the tree still carries a Step-7 hit. The
+# template repo itself never runs bootstrap.sh, so its intentional skeleton
+# rows are exempt by construction — the gate is dormant without the marker.
+
+
+def _write_md(repo, name, text):
+    (repo / name).parent.mkdir(parents=True, exist_ok=True)
+    (repo / name).write_text(text)
+
+
+def test_placeholder_gate_dormant_without_marker(frozen_repo):
+    """No marker -> no enforcement: the template repo (and any repo that
+    skipped bootstrap) can carry skeleton rows without blocking commits."""
+    _write_md(frozen_repo, "docs/TEMPLATE.md", "## [PLACEHOLDER] block\n")
+    r = _run_gate(frozen_repo)
+    assert r.returncode == 0, r.stdout
+
+
+def test_placeholder_gate_blocks_hits_when_armed(frozen_repo):
+    _write_md(frozen_repo, "docs/TEMPLATE.md", "## [PLACEHOLDER] block\n")
+    (frozen_repo / ".placeholder-gate").write_text("")
+    r = _run_gate(frozen_repo)
+    assert r.returncode == 1
+    assert "placeholder tokens survived" in r.stdout
+    assert "PLACEHOLDER" in r.stdout
+
+
+def test_placeholder_gate_passes_clean_when_armed(frozen_repo):
+    _write_md(frozen_repo, "docs/TEMPLATE.md", "## Fully filled block\n")
+    (frozen_repo / ".placeholder-gate").write_text("")
+    r = _run_gate(frozen_repo)
+    assert r.returncode == 0, r.stdout
+
+
+def test_placeholder_gate_ignores_markdown_links_when_armed(frozen_repo):
+    _write_md(frozen_repo, "docs/TEMPLATE.md", "[see docs](docs/ARCHITECTURE.md)\n")
+    (frozen_repo / ".placeholder-gate").write_text("")
+    r = _run_gate(frozen_repo)
+    assert r.returncode == 0, r.stdout
+
+
+def test_placeholder_gate_exempts_project_trail_when_armed(frozen_repo):
+    """Verbatim-record surfaces (doc-consistency.sh parity): a mature
+    child's project-trail history quotes tokens like `[refreeze vN]` —
+    those are records, not unfilled slots, and never exist in a fresh
+    child, so exempting them costs nothing on the protected case."""
+    _write_md(
+        frozen_repo, "project-trail/2026-08-15-milestone.md",
+        "closed by `[success v99]` at 23:14\n",
+    )
+    (frozen_repo / ".placeholder-gate").write_text("")
+    r = _run_gate(frozen_repo)
+    assert r.returncode == 0, r.stdout
+
+
+def test_placeholder_gate_exempts_correction_log_rows_when_armed(frozen_repo):
+    """Date-led table rows are correction-log entries (verbatim by rule);
+    the same filter must NOT exempt a real unfilled [NAME] on a
+    non-date-led row like CLAUDE.md's Key Contacts table."""
+    _write_md(
+        frozen_repo, "CLAUDE.md",
+        "| 2026-06-04 | ...; `[NAME]` survived. | grep-gate |\n"
+        "| Product owner | [NAME] |\n",
+    )
+    (frozen_repo / ".placeholder-gate").write_text("")
+    r = _run_gate(frozen_repo)
+    assert r.returncode == 1
+    assert "Product owner" in r.stdout
+
+
+def test_placeholder_gate_exempts_session_notes_and_archives_when_armed(frozen_repo):
+    """A mature child's session notes quote commit subjects
+    (`[refreeze vN]`) and its .em-archive holds archived EM plans — both
+    are verbatim/archive surfaces that do not exist in a fresh child."""
+    _write_md(
+        frozen_repo, "tasks/CURRENT.md",
+        "## State at 2026-08-15\n- closed by `d7caf3b [refreeze v83]`\n",
+    )
+    _write_md(
+        frozen_repo, ".em-archive/2026-08-15_plan/plan.json",
+        '{"brief": "carry forward, class [SourceLink] verbatim"}\n',
+    )
+    _write_md(
+        frozen_repo, ".venv-linux/lib/python3.12/site-packages/fastapi/SKILL.md",
+        "async def stream_items() -> AsyncIterable[Item]:\n",
+    )
+    (frozen_repo / ".placeholder-gate").write_text("")
+    r = _run_gate(frozen_repo)
+    assert r.returncode == 0, r.stdout
+
+
+def test_placeholder_gate_exempts_date_led_row_alone_when_armed(frozen_repo):
+    """Absence assertion (Rule 6): the date-led row BY ITSELF must not trip
+    the gate — the mixed test above passes even if the filter is broken
+    (the Product owner row guarantees rc=1), so this is the detecting
+    direction. Grep prefixes hits with path:line:, so the filter must
+    account for `./file:NN:` before the `|`."""
+    _write_md(
+        frozen_repo, "CLAUDE.md",
+        "| 2026-06-04 | ...; `[NAME]` survived. | grep-gate |\n",
+    )
+    (frozen_repo / ".placeholder-gate").write_text("")
     r = _run_gate(frozen_repo)
     assert r.returncode == 0, r.stdout
 
@@ -2840,6 +3431,44 @@ def test_module_level_fixture_change_falls_back_to_file():
     assert out == sorted(ids), out
 
 
+def test_module_docstring_only_change_is_noise():
+    """v103: a module-docstring edit is meaning-neutral like a comment and must
+    NOT trip the file-level fallback (it re-ran five model-lifecycle tests for
+    one changed body). Distinct from the fixture case above, which still falls
+    back — see test_module_level_fixture_change_falls_back_to_file."""
+    old_src = '"""Model-lifecycle tests."""\n' + _src_a_v1()
+    new_src = old_src.replace(
+        '"""Model-lifecycle tests."""\n',
+        '"""Model-lifecycle tests. Rewritten docstring, no body change."""\n', 1)
+    fams, infra = refreeze_delta.function_changes(
+        "tests/test_a.py", old_src, new_src)
+    assert fams == set()
+    assert infra is False
+    ids = {"tests/test_a.py::test_first", "tests/test_a.py::test_second",
+           "tests/test_a.py::test_third"}
+    out = refreeze_delta.compute_changed_tests(
+        old_nodeids=ids, new_nodeids=ids,
+        changed_files={"tests/test_a.py"}, removed_files=set(),
+        old_sources={"tests/test_a.py": old_src},
+        new_sources={"tests/test_a.py": new_src},
+    )
+    assert out == [], out
+
+
+def test_module_docstring_change_does_not_mask_a_real_body_change():
+    """Stripping the module docstring must not swallow a concurrent real edit:
+    a docstring rewrite PLUS one changed test body scopes exactly that test."""
+    old_src = '"""Model-lifecycle tests."""\n' + _src_a_v1()
+    new_src = old_src.replace(
+        '"""Model-lifecycle tests."""\n', '"""Rewritten."""\n', 1).replace(
+        "def test_second():\n    assert True\n",
+        "def test_second():\n    assert False\n", 1)
+    fams, infra = refreeze_delta.function_changes(
+        "tests/test_a.py", old_src, new_src)
+    assert fams == {"tests/test_a.py::test_second"}
+    assert infra is False
+
+
 def test_decorator_change_counts_as_function_change():
     """Parametrization decorators belong to the function's span: changing the
     parameter list changes the test's meaning and must ride."""
@@ -3109,6 +3738,24 @@ def v51_new(files):
         "files": files,
         "entry_points": [],
         "routes": V51_OLD["routes"] + [
+            {"id": "route:GET /api/v1/models/catalog",
+             "method": "GET", "path": "/api/v1/models/catalog",
+             "file": "src/api/models.py"}],
+    }
+
+
+def v51_incoming_partial(files):
+    """D-136 staged-merge shape of v51_new: stage ONLY the new catalog route
+    (the carried GET /api/v1/models entry rides from standing, and re-staging
+    it byte-identical would trip the merge's touched-unchanged guard). The
+    merged result equals v51_new, so the D-78 preflight still fires on the
+    catalog route whose implementing file is outside the inventory."""
+    return {
+        "erd_version": 2,
+        "files": files,
+        "no_edit_files": files,
+        "entry_points": [],
+        "routes": [
             {"id": "route:GET /api/v1/models/catalog",
              "method": "GET", "path": "/api/v1/models/catalog",
              "file": "src/api/models.py"}],
@@ -3414,7 +4061,7 @@ def test_orchestrate_em_context_fallbacks_are_loud(tmp_path):
     assert ("WARNING: standing summary generation failed — EM context "
             "falls back to the full standing ERD" in src), src
     # success echo for contracts slice
-    assert ("echo \"  contracts context: generated milestone slice" in src), src
+    assert ("echo \"  contracts context: generated active-milestone slice" in src), src
     assert ("CONTRACTS_DELTA=\"$APPROVED/contracts.json\"" in src), src
     assert ("WARNING: contracts slice generation failed — EM context falls "
             "back to the full contracts.json" in src), src
@@ -3440,6 +4087,12 @@ def test_contract_id_rule_present_at_all_plan_sites():
         "verbatim id list must be injected at all 4 plan-emission sites"
     )
     assert "never convert a file path to dotted form" in orch
+    assert 'os.environ.get("SWBP_CONTRACT_FILES")' in orch, (
+        "contract ids must use the exact active inventory, not standing files"
+    )
+    assert '"${ACTIVE_ERD_CONTEXT:-$APPROVED/ERD-DELTA.md}"' in orch, (
+        "contract ids must recognize every active freeze's instruction packet"
+    )
 
 
 def test_contracts_delta_wired_at_plan_sites():
@@ -3849,7 +4502,8 @@ def refreeze_scripts(repo):
     for name in ("validate-plan.py", "check-test-surface.py",
                  "check-swallowed-errors.py", "check-spec-delta.py",
                  "check-ac-postconditions.py", "check-test-direction.py",
-                 "refreeze_delta.py"):
+                 "refreeze_delta.py", "contracts-merge.py",
+                 "check-prd-additive.py"):
         (repo / "scripts" / name).write_bytes((SCRIPTS / name).read_bytes())
     (repo / "scripts" / ".approved" / "incoming"
      / "ERD-DELTA.md").write_text(VALID_ERD_DELTA)
@@ -3865,7 +4519,7 @@ def test_refreeze_diff_mode_runs_preflight(stageable_repo):
     (repo / "scripts" / ".approved" / "contracts.json").write_text(
         json.dumps(V51_OLD))
     (repo / "scripts" / ".approved" / "incoming" / "contracts.json").write_text(
-        json.dumps(v51_new(["src/api/chat.py"])))
+        json.dumps(v51_incoming_partial(["src/api/chat.py"])))
     r = _run_refreeze_diff(repo)
     assert r.returncode != 0, (r.stdout, r.stderr)
     combined = r.stdout + r.stderr
@@ -3889,7 +4543,8 @@ def debt_delta(repo, app_source):
     refreeze_scripts(repo)
     (repo / "src").mkdir()
     (repo / "src" / "app.py").write_text(app_source)
-    contracts = {"erd_version": 2, "files": ["src/app.py"], "entry_points": []}
+    contracts = {"erd_version": 2, "files": ["src/app.py"], "entry_points": [],
+                 "no_edit_files": ["src/app.py"]}
     (repo / "scripts" / ".approved" / "incoming" / "contracts.json").write_text(
         json.dumps(contracts))
 
@@ -4002,7 +4657,7 @@ def test_coder_wrong_path_reply_is_strike_not_commit(tmp_path):
 
 
 def archive_names(tmp_path):
-    arch = tmp_path / ".pipeline-state" / "logs" / "archive"
+    arch = tmp_path / ".coder-archive"
     return sorted(p.name for p in arch.glob("*")) if arch.exists() else []
 
 
@@ -4012,16 +4667,25 @@ def test_coder_evidence_archive_survives_brief_revision(tmp_path):
     revision resets the strike counter (drive-coder paths key off it), so a
     same-slot retry after a revision would OVERWRITE the flat log file the
     run used — the archive is what keeps the earlier brief's transcript.
-    Assert both revisions' transcripts coexist under distinct names."""
+    Assert both revisions' transcripts coexist under distinct names.
+    P3-1: the archive lives in .coder-archive/ OUTSIDE .pipeline-state —
+    a simulated success teardown (rm -rf .pipeline-state) must not erase
+    the evidence (the pre-P3-1 location, $LOG_DIR/archive, died that way)."""
     r = run_coder_drive(tmp_path, CODER_GOOD_REPLY, gate_rc=0)
     assert r.returncode == 0, (r.stdout, r.stderr)
     first = archive_names(tmp_path)
     assert "42.T7.0.1.raw" in first, first          # version=42 (drive-coder FROZEN_V)
     assert "42.T7.0.1.log" in first, first
-    assert (tmp_path / ".pipeline-state" / "logs" / "archive" / "42.T7.0.1.raw"
+    assert (tmp_path / ".coder-archive" / "42.T7.0.1.raw"
             ).read_text() == CODER_GOOD_REPLY
+    # P3-1: the success teardown must not touch the evidence archive.
+    import shutil
+    shutil.rmtree(tmp_path / ".pipeline-state")
+    assert "42.T7.0.1.raw" in archive_names(tmp_path), \
+        "coder evidence must survive rm -rf .pipeline-state (P3-1)"
     # Simulate a brief_wrong revision: the EM bumps revisions and resets
     # strikes to 0, so the next attempt is again "attempt 1" of a new brief.
+    (tmp_path / ".pipeline-state" / "tasks").mkdir(parents=True)
     (tmp_path / ".pipeline-state" / "tasks" / "T7.revisions").write_text("1")
     (tmp_path / ".pipeline-state" / "tasks" / "T7.strikes").write_text("0")
     # Reset the created file so the second drive is CREATE-mode again (edit
@@ -4033,7 +4697,7 @@ def test_coder_evidence_archive_survives_brief_revision(tmp_path):
     second = archive_names(tmp_path)
     assert "42.T7.0.1.raw" in second               # first brief's transcript retained
     assert "42.T7.1.1.raw" in second               # second brief, distinct name
-    assert (tmp_path / ".pipeline-state" / "logs" / "archive" / "42.T7.1.1.raw"
+    assert (tmp_path / ".coder-archive" / "42.T7.1.1.raw"
             ).read_text() == CODER_GOOD_REPLY
 
 
@@ -4131,17 +4795,20 @@ def test_run_tests_mypy_gate_green_runs_pytest(tmp_path):
 # The whole-tree `mypy src/` on every acceptance run let a type error in a file
 # the task never touched block its verdict. A targeted run (node-ids passed)
 # now scopes mypy to the active delta's changed source files; the full-suite
-# regression check (no node-ids) and a src-free delta keep the whole-tree
-# check. drive-runtime.sh calls run_tests with no args and sets no
-# ACTIVE_DELTA_FILES, so it cannot reach the scoped path — this focused driver
-# extracts the SAME run_tests (anti-drift) and drives it with a delta range +
-# node-ids. mypy is a sandbox-only tool (it does not exist on the dev host —
-# the correction-log class of a template selftest growing a transitive tool
-# dependency without CI installs), so the stub FAKES the mypy outcome via
-# SANDBOX_MYPY_RC exactly like the drive-runtime stub; the arg log still pins
-# EXACTLY which targets the gate selected, which is the scoping contract
-# (a regression that leaked src/z.py into a scoped call changes the arg line
-# and fails these tests).
+# regression check (no node-ids) keeps the whole-tree check, and a targeted run
+# whose active delta changed no src/*.py has nothing new to type-check — the
+# gate is skipped rather than paying whole-app mypy (review 2026-08-13 P2).
+# Unknown delta state still falls back to the whole tree: absence of state
+# reads as unknown, never as nothing-to-do. drive-runtime.sh calls run_tests
+# with no args and sets no ACTIVE_DELTA_FILES, so it cannot reach the scoped
+# path — this focused driver extracts the SAME run_tests (anti-drift) and
+# drives it with a delta range + node-ids. mypy is a sandbox-only tool (it
+# does not exist on the dev host — the correction-log class of a template
+# selftest growing a transitive tool dependency without CI installs), so the
+# stub FAKES the mypy outcome via SANDBOX_MYPY_RC exactly like the
+# drive-runtime stub; the arg log still pins EXACTLY which targets the gate
+# selected, which is the scoping contract (a regression that leaked src/z.py
+# into a scoped call changes the arg line and fails these tests).
 
 _SCOPED_STUB = (
     "#!/usr/bin/env bash\n"
@@ -4277,10 +4944,13 @@ def test_scoped_mypy_full_suite_checks_whole_tree(tmp_path):
         "--cache-dir=/tmp/mypy-cache", "src/"], _mypy_call_line(arg_log)
 
 
-def test_scoped_mypy_no_src_change_falls_back_to_whole_tree(tmp_path):
-    """Fail-closed default: a delta that changed no src/*.py (only a test file)
-    yields an empty scope, so the gate falls back to the whole-tree `src/`
-    check rather than skipping — src/z.py's error is still caught."""
+def test_scoped_mypy_no_src_change_skips_gate(tmp_path):
+    """Review 2026-08-13 P2: a targeted run whose active delta changed no
+    src/*.py (only a test file) has nothing new to type-check, so the gate is
+    SKIPPED — the whole-app fallback is gone. mypy_rc=1 provokes the stub: if
+    the gate regressed to a whole-tree call the arg log would show it and the
+    verdict would go red; a clean run shows no mypy line and pytest alone
+    decides."""
     r, arg_log = _drive_scoped_run_tests(
         tmp_path,
         src_files={"src/a.py": _MYPY_CLEAN_SRC, "src/z.py": _MYPY_ERR_SRC},
@@ -4288,9 +4958,10 @@ def test_scoped_mypy_no_src_change_falls_back_to_whole_tree(tmp_path):
         node_ids=["tests/test_a.py::t"],
         mypy_rc=1,
     )
-    assert "FINAL_TESTS_RC=1" in r.stdout, (r.stdout, r.stderr)
-    assert "FINAL_FAILING=mypy:src" in r.stdout, r.stdout
-    assert _mypy_call_line(arg_log)[-1] == "src/", _mypy_call_line(arg_log)
+    assert "FINAL_TESTS_RC=0" in r.stdout, (r.stdout, r.stderr)
+    lines = _mypy_call_line(arg_log)
+    assert not any("mypy" in line for line in lines), lines
+    assert any("pytest" in line for line in lines), lines
 
 
 def test_scoped_mypy_unions_changed_src_across_deltas(tmp_path):
@@ -4565,6 +5236,8 @@ def _run_active_delta_resolution(
 die() {{ echo "FAIL: $*" >&2; exit 1; }}
 {block}
 printf 'DELTA=%s\n' "${{ACTIVE_DELTA_FILES[@]}}"
+python3 -c 'import os; print("ACTIVE_ENV=" + os.environ.get(
+    "SWBP_ACTIVE_DELTA_FILES", "").replace("\\n", "|"))'
 """
     return subprocess.run(
         ["bash", "-c", script], cwd=tmp_path,
@@ -4752,6 +5425,9 @@ def test_active_delta_range_spans_every_freeze_since_success(tmp_path):
     assert "DELTA=" in resolved.stdout
     assert "DELTA-v2.json" in resolved.stdout
     assert "DELTA-v3.json" in resolved.stdout
+    active_env = resolved.stdout.split("ACTIVE_ENV=", 1)[1].strip()
+    assert "DELTA-v2.json|" in active_env
+    assert "DELTA-v3.json|" in active_env
 
 
 def test_active_delta_range_fails_closed_when_history_is_missing(tmp_path):
@@ -5390,6 +6066,8 @@ def freezable_repo(tmp_path):
     for name in (
         "refreeze.sh",
         "refreeze_delta.py",
+        "contracts-merge.py",
+        "check-prd-additive.py",
         "check-test-surface.py",
         "spec_artifacts.py",
         "check-spec-delta.py",
@@ -5564,6 +6242,445 @@ def test_refreeze_ui_change_reaches_delta(freezable_repo):
     delta = json.loads((freezable_repo / "scripts" / ".approved"
                         / "DELTA-v2.json").read_text())
     assert "ui:new-badge" in delta["changed_contract_ids"], delta
+    assert delta["inventory_files"] == ["src/app.py"], delta
+
+
+# --- D-136: staged contracts merge + PRD additive guard ----------------------
+# contracts.json enters refreeze as a staged merge artifact (only changed/new
+# id-array entries), reconstructed onto the standing file by contracts-merge.py
+# and proved to touch nothing it did not name. D-137 adds explicit removals
+# while omission remains carry. Unit pins cover the producer contract; the
+# end-to-end pins arm it inside the real refreeze path (Rule 6: a fixture-green
+# producer and a suite-armed gate are separate claims).
+
+_MERGE_STANDING = {
+    "erd_version": 1, "files": ["src/app.py"],
+    "entry_points": ["src.app:app"],
+    "routes": [
+        {"id": "route:GET /a", "method": "GET", "path": "/a",
+         "file": "src/app.py"},
+        {"id": "route:GET /b", "method": "GET", "path": "/b",
+         "file": "src/app.py"}],
+    "ui": [
+        {"id": "ui:x", "testid": "x", "description": "X"},
+        {"id": "ui:y", "testid": "y", "description": "Y"}],
+}
+
+
+def _run_merge(tmp_path, standing, staged):
+    (tmp_path / "standing.json").write_text(json.dumps(standing))
+    (tmp_path / "staged.json").write_text(json.dumps(staged))
+    return subprocess.run(
+        [sys.executable, str(SCRIPTS / "contracts-merge.py"),
+         str(tmp_path / "standing.json"), str(tmp_path / "staged.json")],
+        capture_output=True, text=True,
+    )
+
+
+def test_contracts_merge_clean_preserves_carried(tmp_path):
+    """A delta naming two ids (one changed, one new) merges; every entry it
+    does NOT name stays byte-identical to standing — the untouched-remainder
+    checksum (D-136), the 15-routes/46-UI-carried-intact property in miniature."""
+    staged = {
+        "erd_version": 2, "files": ["src/app.py"], "entry_points": [],
+        "routes": [
+            {"id": "route:GET /a", "method": "GET", "path": "/a",
+             "file": "src/api/v2.py"},                       # changed
+            {"id": "route:GET /c", "method": "GET", "path": "/c",
+             "file": "src/app.py"}],                         # new
+    }
+    r = _run_merge(tmp_path, _MERGE_STANDING, staged)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    merged = json.loads(r.stdout)
+    assert [e["id"] for e in merged["routes"]] == [
+        "route:GET /a", "route:GET /b", "route:GET /c"], merged
+    assert merged["routes"][0]["file"] == "src/api/v2.py"   # /a updated
+    assert merged["routes"][1] == _MERGE_STANDING["routes"][1]  # /b carried
+    assert merged["ui"] == _MERGE_STANDING["ui"]            # ui omitted -> carried
+    assert merged["entry_points"] == ["src.app:app"]        # unioned onto standing
+
+
+def test_contracts_merge_touched_unchanged_fails_closed(tmp_path):
+    """A staged entry byte-identical to standing changed nothing — the delta
+    must carry only genuine changes, so it fails closed with the id named."""
+    staged = {
+        "erd_version": 2, "files": ["src/app.py"], "entry_points": [],
+        "routes": [
+            {"id": "route:GET /b", "method": "GET", "path": "/b",
+             "file": "src/app.py"}],                         # == standing /b
+    }
+    r = _run_merge(tmp_path, _MERGE_STANDING, staged)
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    assert "route:GET /b" in r.stderr, r.stderr
+    assert "byte-identical" in r.stderr, r.stderr
+
+
+def test_contracts_merge_carry_only_zero_churn(tmp_path):
+    """An empty changed set (the delta stages no id-array entries) merges to
+    zero churn: every carried array is byte-identical to standing."""
+    staged = {"erd_version": 2, "files": ["src/app.py"], "entry_points": []}
+    r = _run_merge(tmp_path, _MERGE_STANDING, staged)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    merged = json.loads(r.stdout)
+    assert merged["routes"] == _MERGE_STANDING["routes"], merged
+    assert merged["ui"] == _MERGE_STANDING["ui"], merged
+    assert merged["entry_points"] == ["src.app:app"], merged
+
+
+def test_contracts_merge_omitted_scalars_carry(tmp_path):
+    """D-136's remainder check extends to the scalar accumulators: an
+    artifact that omits no_edit_files/externals/test_mapping/smoke_checks
+    carries the standing values intact — a silent omission must not strip
+    the frozen spec of coder protections, captures, test pins, or smoke
+    checks when a behavioural freeze forgets to restate them."""
+    standing = dict(_MERGE_STANDING)
+    standing.update({
+        "no_edit_files": ["src/app.py"],
+        "externals": [{"id": "external:db", "probe": "probe",
+                       "capture": "captures/db.json"}],
+        "test_mapping": {"tests/test_app.py::test_x": "src/app.py"},
+        "smoke_checks": {"src/app.py": "grep health"},
+    })
+    staged = {"erd_version": 2, "files": ["src/app.py"], "entry_points": []}
+    r = _run_merge(tmp_path, standing, staged)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    merged = json.loads(r.stdout)
+    assert merged["no_edit_files"] == standing["no_edit_files"]
+    assert merged["externals"] == standing["externals"]
+    assert merged["test_mapping"] == standing["test_mapping"]
+    assert merged["smoke_checks"] == standing["smoke_checks"]
+
+
+def test_contracts_merge_explicit_empty_clears_scalar(tmp_path):
+    """The only way to clear a carried accumulator is to stage it EXPLICITLY
+    empty — an intentional retirement stays expressible (D-136 shape)."""
+    standing = dict(_MERGE_STANDING)
+    standing["smoke_checks"] = {"src/app.py": "grep health"}
+    staged = {"erd_version": 2, "files": ["src/app.py"], "entry_points": [],
+              "smoke_checks": {}}
+    r = _run_merge(tmp_path, standing, staged)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    merged = json.loads(r.stdout)
+    assert merged["smoke_checks"] == {}
+
+
+def test_contracts_merge_explicit_removals(tmp_path):
+    """D-137 removes only exact family-scoped tombstones; omitted siblings
+    remain byte-identical, entry points use the same explicit operation, and
+    the transient directive never reaches the installed artifact."""
+    staged = {
+        "erd_version": 2, "files": ["src/app.py"], "entry_points": [],
+        "remove": {
+            "routes": ["route:GET /a"],
+            "ui": ["ui:x"],
+            "entry_points": ["src.app:app"],
+        },
+    }
+    r = _run_merge(tmp_path, _MERGE_STANDING, staged)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    merged = json.loads(r.stdout)
+    assert [e["id"] for e in merged["routes"]] == ["route:GET /b"]
+    assert [e["id"] for e in merged["ui"]] == ["ui:y"]
+    assert merged["entry_points"] == []
+    assert "remove" not in merged
+
+
+def test_contracts_merge_unknown_removal_fails_closed(tmp_path):
+    """A misspelled or wrong-family tombstone is not an idempotent no-op:
+    it fails named, otherwise the obsolete standing contract would survive
+    while the freeze falsely appeared to retire it."""
+    staged = {
+        "erd_version": 2, "files": ["src/app.py"], "entry_points": [],
+        "remove": {"routes": ["route:GET /missing"]},
+    }
+    r = _run_merge(tmp_path, _MERGE_STANDING, staged)
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    assert "route:GET /missing" in r.stderr, r.stderr
+    assert "not present" in r.stderr, r.stderr
+
+
+def test_contracts_merge_rejects_update_and_remove_conflict(tmp_path):
+    """One id cannot be changed and retired in the same staged delta."""
+    staged = {
+        "erd_version": 2, "files": ["src/app.py"], "entry_points": [],
+        "routes": [
+            {"id": "route:GET /a", "method": "POST", "path": "/a",
+             "file": "src/app.py"}],
+        "remove": {"routes": ["route:GET /a"]},
+    }
+    r = _run_merge(tmp_path, _MERGE_STANDING, staged)
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    assert "route:GET /a" in r.stderr, r.stderr
+    assert "both staged and removed" in r.stderr, r.stderr
+
+
+def test_contracts_merge_rejects_malformed_remove_directive(tmp_path):
+    """The transient instruction is closed over known families and unique
+    string arrays; procedural typos never leak into the merged full schema."""
+    cases = [
+        ({"route": ["route:GET /a"]}, "unknown family"),
+        ({"routes": ["route:GET /a", "route:GET /a"]}, "names route:GET /a twice"),
+        ({"routes": "route:GET /a"}, "must be an array"),
+    ]
+    for i, (directive, expected) in enumerate(cases):
+        case_dir = tmp_path / str(i)
+        case_dir.mkdir()
+        staged = {
+            "erd_version": 2, "files": ["src/app.py"], "entry_points": [],
+            "remove": directive,
+        }
+        r = _run_merge(case_dir, _MERGE_STANDING, staged)
+        assert r.returncode != 0, (r.stdout, r.stderr)
+        assert expected in r.stderr, r.stderr
+
+
+_PRD_STANDING = (
+    "# What\n\nAcme tracks widgets for teams.\n\n"
+    "## Acceptance criteria\n\n"
+    "- **AC-1:** WHEN a user logs in, THE SYSTEM SHALL open the workspace.\n"
+    "  The session remains active after navigation.\n\n"
+    "- **AC-2:** WHEN a user logs out, THE SYSTEM SHALL end the session.\n"
+)
+
+
+def _run_prd_guard(tmp_path, standing, staged):
+    (tmp_path / "prd_standing.md").write_text(standing)
+    (tmp_path / "prd_staged.md").write_text(staged)
+    return subprocess.run(
+        [sys.executable, str(SCRIPTS / "check-prd-additive.py"),
+         str(tmp_path / "prd_standing.md"), str(tmp_path / "prd_staged.md")],
+        capture_output=True, text=True,
+    )
+
+
+def test_prd_additive_guard_rejects_silent_removal(tmp_path):
+    """An additive PRD (adds AC-3, keeps the capsule + AC-1/AC-2) passes; a PRD
+    that silently drops a historical AC id fails closed naming it (supersessions
+    go through ERD-DELTA, D-136)."""
+    additive = _PRD_STANDING + (
+        "\n- **AC-3:** WHEN reset is requested, THE SYSTEM SHALL reset.\n"
+    )
+    ok = _run_prd_guard(tmp_path, _PRD_STANDING, additive)
+    assert ok.returncode == 0, (ok.stdout, ok.stderr)
+    dropped = (
+        "# What\n\nAcme tracks widgets for teams.\n\n"
+        "## Acceptance criteria\n\n"
+        "- **AC-1:** WHEN a user logs in, THE SYSTEM SHALL open the workspace.\n"
+        "  The session remains active after navigation.\n"
+    )
+    bad = _run_prd_guard(tmp_path, _PRD_STANDING, dropped)
+    assert bad.returncode != 0, (bad.stdout, bad.stderr)
+    assert "AC-2" in bad.stderr, bad.stderr
+
+
+def test_prd_additive_guard_rejects_historical_body_rewrite(tmp_path):
+    """D-148: retaining an AC id does not authorize rewriting its behavior."""
+    rewritten = _PRD_STANDING.replace(
+        "end the session", "leave the session active")
+    bad = _run_prd_guard(tmp_path, _PRD_STANDING, rewritten)
+    assert bad.returncode != 0, (bad.stdout, bad.stderr)
+    assert "altered or split" in bad.stderr, bad.stderr
+    assert "AC-2" in bad.stderr, bad.stderr
+
+
+def test_prd_additive_guard_rejects_interleaved_historical_blocks(tmp_path):
+    """D-148: a new AC inserted inside an old body cannot split the old block."""
+    interleaved = _PRD_STANDING.replace(
+        "  The session remains active after navigation.\n",
+        "- **AC-3:** WHEN reset is requested, THE SYSTEM SHALL reset.\n\n"
+        "  The session remains active after navigation.\n",
+    )
+    bad = _run_prd_guard(tmp_path, _PRD_STANDING, interleaved)
+    assert bad.returncode != 0, (bad.stdout, bad.stderr)
+    assert "altered or split" in bad.stderr, bad.stderr
+    assert "AC-1" in bad.stderr, bad.stderr
+
+
+def test_prd_additive_guard_rejects_duplicate_ac_id(tmp_path):
+    """D-148: duplicate AC starts are ambiguous even when one block is intact."""
+    duplicated = _PRD_STANDING + (
+        "\n- **AC-2:** WHEN duplicated, THE SYSTEM SHALL fail review.\n"
+    )
+    bad = _run_prd_guard(tmp_path, _PRD_STANDING, duplicated)
+    assert bad.returncode != 0, (bad.stdout, bad.stderr)
+    assert "duplicated" in bad.stderr, bad.stderr
+    assert "AC-2" in bad.stderr, bad.stderr
+
+
+def test_prd_additive_guard_allows_historical_block_reflow(tmp_path):
+    """D-148 compares normalized text, so harmless Markdown wrapping remains valid."""
+    reflowed = _PRD_STANDING.replace(
+        "THE SYSTEM SHALL open the workspace.\n  The session remains active",
+        "THE SYSTEM SHALL open the\n  workspace. The session remains active",
+    )
+    ok = _run_prd_guard(tmp_path, _PRD_STANDING, reflowed)
+    assert ok.returncode == 0, (ok.stdout, ok.stderr)
+
+
+def _seed_standing_route(approved):
+    """Give the freezable fixture a non-empty standing routes array so the
+    merge has a carried entry to preserve (its default contracts are empty).
+    Committed like a real standing freeze — the D-151 clean-lane guard treats
+    uncommitted lane edits as an anomaly, not fixture setup."""
+    repo = approved.parents[1]
+    standing = json.loads((approved / "contracts.json").read_text())
+    standing["routes"] = [
+        {"id": "route:GET /a", "method": "GET", "path": "/a",
+         "file": "src/app.py"}]
+    (approved / "contracts.json").write_text(json.dumps(standing))
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                    "add", "scripts/.approved/contracts.json"],
+                   cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                    "commit", "-qm", "seed standing route"],
+                   cwd=repo, check=True)
+
+
+def test_refreeze_merges_staged_contracts_delta(freezable_repo):
+    """End-to-end: standing carries route /a; a staged PARTIAL adds route /b;
+    the freeze applies and the INSTALLED contracts.json carries BOTH — the
+    carried entry survived and the delta entry merged in through the real
+    refreeze path (arms the wiring, not just the producer)."""
+    approved = freezable_repo / "scripts" / ".approved"
+    _seed_standing_route(approved)
+    (approved / "incoming" / "contracts.json").write_text(json.dumps({
+        "files": ["src/app.py"], "entry_points": [], "erd_version": 2,
+        "routes": [{"id": "route:GET /b", "method": "GET", "path": "/b",
+                    "file": "src/app.py"}],
+    }))
+    r = _run_refreeze_install(freezable_repo)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    merged = json.loads((approved / "contracts.json").read_text())
+    assert [e["id"] for e in merged["routes"]] == [
+        "route:GET /a", "route:GET /b"], merged
+
+
+def test_refreeze_rejects_touched_unchanged_contract(freezable_repo):
+    """End-to-end negative: re-staging a carried entry byte-identical to
+    standing fails the freeze with the id named — the merge guard is armed
+    inside refreeze, not only in the standalone producer."""
+    approved = freezable_repo / "scripts" / ".approved"
+    _seed_standing_route(approved)
+    (approved / "incoming" / "contracts.json").write_text(json.dumps({
+        "files": ["src/app.py"], "entry_points": [], "erd_version": 2,
+        "routes": [{"id": "route:GET /a", "method": "GET", "path": "/a",
+                    "file": "src/app.py"}],   # identical to standing
+    }))
+    r = _run_refreeze_install(freezable_repo)
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    combined = r.stdout + r.stderr
+    assert "D-136" in combined, combined
+    assert "route:GET /a" in combined, combined
+
+
+def test_refreeze_applies_contract_removal_and_records_delta(freezable_repo):
+    """End-to-end D-137: refreeze installs the merged artifact without the
+    retired route or transient tombstone, and DELTA-v2 records the removed id
+    through the existing changed_contract_ids channel."""
+    approved = freezable_repo / "scripts" / ".approved"
+    _seed_standing_route(approved)
+    standing = json.loads((approved / "contracts.json").read_text())
+    standing["entry_points"] = ["src.app:app"]
+    (approved / "contracts.json").write_text(json.dumps(standing))
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                    "add", "scripts/.approved/contracts.json"],
+                   cwd=freezable_repo, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                    "commit", "-qm", "seed entry point"],
+                   cwd=freezable_repo, check=True)
+    (approved / "incoming" / "contracts.json").write_text(json.dumps({
+        "files": ["src/app.py"], "entry_points": [], "erd_version": 2,
+        "changed_files": ["src/app.py"],
+        "remove": {
+            "routes": ["route:GET /a"],
+            "entry_points": ["src.app:app"],
+        },
+    }))
+    r = _run_refreeze_install(freezable_repo)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    merged = json.loads((approved / "contracts.json").read_text())
+    assert merged["routes"] == []
+    assert merged["entry_points"] == []
+    assert "remove" not in merged
+    delta = json.loads((approved / "DELTA-v2.json").read_text())
+    assert "route:GET /a" in delta["changed_contract_ids"], delta
+    assert "src.app:app" in delta["changed_contract_ids"], delta
+
+
+def test_contract_removal_docs_match_staged_directive():
+    """Code, TPM instructions, and decision ledger travel together (D-137)."""
+    role = (SCRIPTS.parent / "docs" / "TPM-ROLE.md").read_text()
+    decisions = (SCRIPTS.parent / "docs" / "DECISIONS.md").read_text()
+    compact_role = " ".join(role.split())
+    assert '"remove"' in compact_role
+    assert "`routes`, `schemas`, `errors`, `ui`, and `entry_points`" in compact_role
+    assert "D-137" in compact_role
+    assert "D-137" in decisions
+
+
+def test_check_spec_delta_validates_merged_not_partial_contracts(tmp_path):
+    """Regression (D-136): check-spec-delta must validate the MERGED contracts,
+    not the raw staged partial. A partial changing only an invisible key
+    (smoke_checks) omits the id-arrays; compared against the full standing those
+    omitted arrays read as 'changed' and falsely satisfy D-122's visibility
+    test, so the invisible-only change slips through. Given the MERGED file
+    (id-arrays carried), D-122 correctly fires — which is why refreeze feeds the
+    merge result here, not the partial."""
+    approved = tmp_path / "approved"
+    approved.mkdir()
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    standing = {
+        "erd_version": 1, "files": ["src/app.py"], "entry_points": [],
+        "no_edit_files": ["src/app.py"],
+        "routes": [{"id": "route:GET /a", "method": "GET", "path": "/a",
+                    "file": "src/app.py"}],
+    }
+    (approved / "contracts.json").write_text(json.dumps(standing))
+    (approved / "test-nodeids").write_text("")
+    (staging / "ERD-DELTA.md").write_text(VALID_ERD_DELTA)
+
+    def run(contracts):
+        p = tmp_path / "c.json"
+        p.write_text(json.dumps(contracts))
+        return subprocess.run(
+            [sys.executable, str(SCRIPTS / "check-spec-delta.py"),
+             "--staging", str(staging), "--approved", str(approved),
+             "--repo", str(tmp_path), "--current-version", "1",
+             "--contracts", str(p)],
+            capture_output=True, text=True)
+
+    # MERGED: standing + an invisible-only change (smoke_checks), id-arrays
+    # carried identical -> D-122 must fire.
+    merged = dict(standing)
+    merged["erd_version"] = 2
+    merged["smoke_checks"] = {"src/app.py": "true"}
+    r = run(merged)
+    assert r.returncode != 0, (r.stdout, r.stderr)
+    assert "D-122" in r.stderr, r.stderr
+    assert "smoke_checks" in r.stderr, r.stderr
+
+    # The raw PARTIAL (id-arrays omitted) slips past D-122 — the exact defect
+    # the merged path closes.
+    partial = {"erd_version": 2, "files": ["src/app.py"], "entry_points": [],
+               "no_edit_files": ["src/app.py"],
+               "smoke_checks": {"src/app.py": "true"}}
+    r2 = run(partial)
+    assert r2.returncode == 0, (r2.stdout, r2.stderr)
+
+
+def test_refreeze_feeds_merged_contracts_to_check_spec_delta(tmp_path):
+    """D-136 wiring pin: the staged merge must run BEFORE check-spec-delta and
+    the merged file must be what check-spec-delta validates (--contracts). If
+    refreeze reverts to handing check-spec-delta the raw partial, D-122's
+    invisible-change guard is defeated (see the unit test above)."""
+    src = REFREEZE.read_text()
+    merge_at = src.index("scripts/contracts-merge.py")
+    spec_at = src.index("scripts/check-spec-delta.py")
+    assert merge_at < spec_at, \
+        "contracts-merge.py must run before check-spec-delta.py"
+    spec_call = src[spec_at:spec_at + 400]
+    assert '--contracts "$MERGED_CONTRACTS"' in spec_call, spec_call
 
 
 # --- refreeze.sh D-95 auto mode (retires the ceremonial y/N) -----------------
@@ -5611,7 +6728,7 @@ def test_refreeze_auto_halts_on_preflight_fail(stageable_repo):
     (repo / "scripts" / ".approved" / "contracts.json").write_text(
         json.dumps(V51_OLD))
     (repo / "scripts" / ".approved" / "incoming" / "contracts.json").write_text(
-        json.dumps(v51_new(["src/api/chat.py"])))
+        json.dumps(v51_incoming_partial(["src/api/chat.py"])))
     r = subprocess.run(
         ["bash", "scripts/refreeze.sh", "scripts/.approved/incoming"],
         cwd=repo, capture_output=True, text=True,
@@ -5693,6 +6810,34 @@ SUB_GOOD_REPLY = {
          "tests": ["tests/test_c.py::test_four"]},
     ],
 }
+
+# The FULL-plan counterpart for the P2-1 abandon drive: every inventory
+# file, carried T1 included (revision two is a full emission, not a merge).
+SUB_FULL_PLAN = {
+    "version": 2,
+    "erd_version": 2,
+    "tasks": [
+        {"id": "T1", "file": "src/a.py", "depends_on": [],
+         "brief": "build a", "contracts": [],
+         "tests": ["tests/test_a.py::test_one"]},
+        {"id": "T2", "file": "src/b.py", "depends_on": ["T1"],
+         "brief": "rebuild b", "contracts": [],
+         "tests": ["tests/test_b.py::test_two",
+                   "tests/test_b.py::test_three"]},
+        {"id": "T3", "file": "src/c.py", "depends_on": ["T2"],
+         "brief": "build c", "contracts": [],
+         "tests": ["tests/test_c.py::test_four"]},
+    ],
+}
+
+
+def bad_keep_id_reply():
+    """Copy of SUB_GOOD_REPLY with the re-planned file under a WRONG id —
+    the exact shape --merge-subtree rejects loud (D-91 id discipline:
+    rejected, never repaired)."""
+    bad = json.loads(json.dumps(SUB_GOOD_REPLY))
+    bad["tasks"][0]["id"] = "T9"
+    return bad
 
 
 @pytest.fixture()
@@ -6158,6 +7303,44 @@ def test_plan_subtree_replan_one_em_call(tmp_path):
     assert not (work / "tasks" / "plan-subtree.json").exists()
 
 
+def test_plan_subtree_first_rejected_merge_abandons_to_full(tmp_path):
+    """P2-1 (amends D-91): the FIRST rejected subtree merge abandons subtree
+    mode — revision two is a FULL-plan call, within the default
+    MAX_PLAN_REVISIONS=2 budget. The old promise of two rejected merges was
+    unreachable: `revs` and SUBTREE_ATTEMPTS increment in lockstep before the
+    second attempt, so at the cap the budget die ran before the abandon
+    branch ever could. Here reply 1 is a subtree reply the merge rejects
+    (wrong keep-id — emitted verbatim as T9, D-97 id discipline), reply 2 is
+    a valid FULL plan: the second call must be the full emission prompt, and
+    both revisions must fit the budget."""
+    work = plan_workdir(tmp_path, dict(SUB_CONTRACTS),
+                        [json.dumps(bad_keep_id_reply()),
+                         json.dumps(SUB_FULL_PLAN)])
+    (work / "scripts" / ".approved" / "test-nodeids").write_text(
+        "\n".join(SUB_NODEIDS) + "\n")
+    (work / "scripts" / ".approved" / "DELTA-v2.json").write_text(
+        json.dumps(SUB_DELTA))
+    (work / "tasks").mkdir()
+    (work / "tasks" / "plan.json").write_text(json.dumps(SUB_PRIOR))
+    r = run_drive_plan(work)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "subtree re-plan armed" in r.stdout, r.stdout
+    assert "abandoned after 1 rejected merge" in r.stdout, r.stdout
+    assert (work / ".calls").read_text().strip() == "2", r.stdout
+    subtree_prompt = (work / "prompts" / "1").read_text()
+    full_prompt = (work / "prompts" / "2").read_text()
+    assert "Delta re-plan" in subtree_prompt
+    assert "Decompose the frozen ERD" in full_prompt, \
+        "revision two must be the FULL emission prompt, not another subtree"
+    assert "Delta re-plan" not in full_prompt
+    assert "must keep the carried plan's id T2" in full_prompt, \
+        "the merge rejection must be the feedback the EM's NEXT call carries"
+    plan = json.loads((work / "tasks" / "plan.json").read_text())
+    assert plan["erd_version"] == 2
+    assert {t["file"] for t in plan["tasks"]} == \
+        {"src/a.py", "src/b.py", "src/c.py"}
+
+
 def test_plan_docs_only_delta_zero_em_calls(tmp_path):
     """A delta invalidating nothing merges the carried plan mechanically:
     ZERO EM calls, no plan-revision budget consumed, gate green."""
@@ -6334,8 +7517,18 @@ def test_refreeze_accepts_and_pins_erd_delta(freezable_repo):
     approved = freezable_repo / "scripts" / ".approved"
     assert (approved / "ERD-DELTA.md").read_text().startswith("# Current milestone"), \
         "ERD-DELTA.md must install to scripts/.approved/"
+    assert (approved / "ERD-DELTA-v2.md").read_text() == \
+        (approved / "ERD-DELTA.md").read_text(), \
+        "each freeze must preserve its immutable active-range instruction slice"
     manifest = (approved / "frozen-manifest").read_text()
     assert "scripts/.approved/ERD-DELTA.md" in manifest, manifest
+    assert "scripts/.approved/ERD-DELTA-v2.md" in manifest, manifest
+    delta = json.loads((approved / "DELTA-v2.json").read_text())
+    assert delta["inventory_files"] == [], (
+        "a freeze without a contracts scope declaration must not inherit "
+        "the prior freeze's standing inventory"
+    )
+    assert delta["retired_tests"] == []
 
 
 def test_refreeze_rejects_unexpected_staging_path(freezable_repo):
@@ -6561,9 +7754,11 @@ def test_refreeze_accepts_url_aware_httpx_mock(freezable_repo):
     assert "S6" not in r.stdout + r.stderr
 
 
-def test_refreeze_warns_oversized_erd_section(freezable_repo):
-    """S7: an ERD section exceeding 1200 chars produces an advisory warning
-    but does not halt the freeze."""
+def test_refreeze_no_longer_warns_oversized_erd_section(freezable_repo):
+    """S7 was retired per D-85 (dead-weight advisory: it predicted exactly the
+    plan gate's harder MAX_BRIEF_CHARS rejection, never blocked a freeze, and
+    produced no behavioral change). An oversized ERD section now freezes with
+    NO S7 warning — the absence assertion is the detection (Rule 6)."""
     approved = freezable_repo / "scripts" / ".approved"
     big_section = "x " * 700  # 1400 chars
     (approved / "incoming" / "ERD.md").write_text(
@@ -6573,8 +7768,7 @@ def test_refreeze_warns_oversized_erd_section(freezable_repo):
     )
     r = _run_refreeze_diff(freezable_repo)
     assert r.returncode == 0, (r.stdout, r.stderr)
-    assert "WARNING (S7)" in r.stdout
-    assert "Oversized section" in r.stdout
+    assert "WARNING (S7)" not in r.stdout + r.stderr
 
 
 def test_tpm_shuttle_carries_erd_delta_end_to_end(tmp_path):
@@ -6583,7 +7777,7 @@ def test_tpm_shuttle_carries_erd_delta_end_to_end(tmp_path):
     (tmp_path / "scripts" / "schemas").mkdir(parents=True)
     (tmp_path / "scripts" / ".approved").mkdir()
     (tmp_path / "docs").mkdir()
-    for name in ("tpm-pack.sh", "tpm-unpack.sh"):
+    for name in ("tpm-pack.sh", "tpm-unpack.sh", "context-budget.py"):
         target = tmp_path / "scripts" / name
         target.write_bytes((SCRIPTS / name).read_bytes())
     policy = SCRIPTS / "spec_artifacts.py"
@@ -7584,7 +8778,7 @@ def _metrics_root(tmp_path, with_git=False):
     )
     (meas / "timings-2026-08-06T10:01:30Z.tsv").write_text(
         "10:00:00\t0s\trun start (budget 1200s)\n"
-        "10:00:05\t5s\tpre-flight\n"
+        "10:00:05\t5s\tpre-flight done (spec v7)\n"
         "10:01:00\t60s\tpytest tests\n"
         "10:01:30\t90s\tem-call plan\n"
         "10:02:30\t150s\tpytest selftest\n"
@@ -7672,6 +8866,26 @@ def test_metrics_report_spec_scoping_ignores_other_specs(tmp_path):
     assert "feature v7" in r.stdout
 
 
+def test_metrics_report_v_prefixed_feature_override_records_row(tmp_path):
+    """The orchestrator success path passes `--feature v$FROZEN_V` (e.g. v99).
+    That shape must record a metrics.tsv row, not crash on int('v99') — which
+    the caller's `|| true` swallowed silently, so the loop never produced a
+    row (the defect this pins)."""
+    root = _metrics_root(tmp_path, with_git=True)
+    r = subprocess.run(
+        [sys.executable, str(METRICS_REPORT), "--root", str(root),
+         "--feature", "v99"],
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    out = root / ".measurement" / "metrics.tsv"
+    assert out.is_file(), "v-prefixed feature override must write a row"
+    row = out.read_text().splitlines()[1].split("\t")
+    assert row[2] == "v99"         # stored back with the v prefix
+    assert row[3] == "0.00"        # no spec-99 counters -> 0 gate hours
+    assert "recorded" in r.stdout
+
+
 def test_metrics_report_evidence_matches_recorded_row(tmp_path):
     """--evidence prints the same numbers the recorded row carries."""
     root = _metrics_root(tmp_path, with_git=True)
@@ -7684,6 +8898,34 @@ def test_metrics_report_evidence_matches_recorded_row(tmp_path):
     assert "feature v7" in r.stdout
     assert "success_runs=1  retry_runs=1" in r.stdout
     assert not (root / ".measurement" / "metrics.tsv").exists()
+
+
+def test_metrics_report_timings_scoped_to_requested_spec(tmp_path):
+    """selftest timing columns come from the requested spec's OWN timings copy,
+    never the newest file: a milestone whose run left no timings reports zero
+    test phases, not another milestone's (the v105-showed-v101's-152s defect).
+    Copies are matched on the `(spec vN)` pre-flight marker."""
+    root = _metrics_root(tmp_path, with_git=True)
+    # A newer copy for a DIFFERENT spec (v8), with one test phase of its own.
+    (root / ".measurement" / "timings-2026-08-06T10:05:00Z.tsv").write_text(
+        "10:00:00\t0s\trun start (budget 1200s)\n"
+        "10:00:05\t5s\tpre-flight done (spec v8)\n"
+        "10:01:00\t60s\tpytest tests\n"
+    )
+    out = root / ".measurement" / "metrics.tsv"
+    # v8 -> its own copy (1 phase); v7 -> its copy (2 phases); a spec with no
+    # copy -> 0, NOT the newest file's phases.
+    for feat, exp_count in (("v8", "1"), ("v7", "2"), ("v404", "0")):
+        if out.exists():
+            out.unlink()
+        r = subprocess.run(
+            [sys.executable, str(METRICS_REPORT), "--root", str(root),
+             "--feature", feat],
+            capture_output=True, text=True,
+        )
+        assert r.returncode == 0, r.stderr
+        row = out.read_text().splitlines()[1].split("\t")
+        assert row[4] == exp_count, (feat, row)
 
 
 # --- validate-plan.py --synthesize-plan (B3 mechanical plan synthesis) -------

@@ -2,9 +2,11 @@
 """
 metrics-report — the metrics layer (D-126): per-milestone aggregate over the
 data the pipeline already writes — read ONLY from artifacts that survive the
-success teardown's `rm -rf .pipeline-state` (orchestrate.sh:1953). D-108's
-lesson, applied: the row must be recomputable after the milestone, from what
-outlives it.
+success teardown's `rm -rf .pipeline-state` (orchestrate.sh; D-126 ordering in
+its success path, P3-5's SHA-verified `[success]` commit guard — the row is
+bound to the commit THIS run made, never a stale HEAD). D-108's lesson,
+applied: the row must be recomputable after the milestone, from what outlives
+it.
 
 Durable sources (all survive teardown):
   - .measurement/counters            per-run exit rows: rc, phase, task,
@@ -85,6 +87,26 @@ def newest_timings_copy(meas_dir: Path) -> Path | None:
         return None
     copies = sorted(meas_dir.glob("timings-*.tsv"))
     return copies[-1] if copies else None
+
+
+def timings_for_spec(meas_dir: Path, spec: int | None) -> Path | None:
+    """The timings copy for THIS milestone's spec, matched on the `(spec vN)`
+    marker the run writes into its pre-flight line. A spec with no tagged copy
+    ran no timed phases of its own (e.g. a zero-work consolidation) — return
+    None rather than inherit the newest file's phases, which would report
+    another milestone's timings (a zero-work v105 showing v101's 152s). The
+    trailing ")" in the marker prevents v8 matching v80. With no spec (ad-hoc
+    --evidence), fall back to the newest copy (unchanged behavior)."""
+    if spec is None:
+        return newest_timings_copy(meas_dir)
+    if not meas_dir.is_dir():
+        return None
+    marker = f"(spec v{spec})"
+    tagged = sorted(
+        c for c in meas_dir.glob("timings-*.tsv")
+        if marker in c.read_text(errors="ignore")
+    )
+    return tagged[-1] if tagged else None
 
 
 def read_timings(path: Path) -> list[tuple[int, str]]:
@@ -179,6 +201,12 @@ def compute(root: Path, milestone: str, feature_override: str) -> dict[str, str]
     meas_dir = root / ".measurement"
     archive = root / ".em-archive"
     short, date, feature = resolve_milestone(root, milestone, feature_override)
+    # The orchestrator's success path passes `--feature v$FROZEN_V` (with the
+    # "v" prefix, e.g. v99) and RE_FEATURE captures the bare digits from the
+    # subject — normalize to the integer form once so the spec filter, flake
+    # count, and the v-prefixed row all agree. Before this, int("v99") raised
+    # and the caller's `|| true` swallowed it: no .measurement/metrics.tsv row.
+    feature = re.sub(r"^[vV]", "", feature.strip())
     spec = int(feature) if feature else None
 
     runs = counter_runs(meas_dir / "counters", spec)
@@ -186,7 +214,7 @@ def compute(root: Path, milestone: str, feature_override: str) -> dict[str, str]
     success = sum(1 for r in runs if r["rc"] == "0")
     retries = len(runs) - success
 
-    selftest_count, selftest_s = selftest_stats(newest_timings_copy(meas_dir))
+    selftest_count, selftest_s = selftest_stats(timings_for_spec(meas_dir, spec))
     em_calls, em_waste = em_outcomes(archive, spec)
 
     return {

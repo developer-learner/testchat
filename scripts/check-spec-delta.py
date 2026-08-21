@@ -32,6 +32,17 @@ INVISIBLE_CONTRACT_KEYS = ("files", "test_mapping", "smoke_checks", "no_edit_fil
 UPDATED_MARK = re.compile(r"\btest_[a-z0-9_]+")
 
 
+def _node_family(node_id: str) -> str:
+    """The stable family of a test node-id: module-prefix + bare test name,
+    with any parametrization suffix stripped. Node-ids legitimately flip
+    between `module::name[chromium]` and `module::name` (D-116/D-124); the
+    family is the form the pin gate matches on, so a mapping key of either
+    shape satisfies a frozen node-id of the other (testchat v106 froze bare
+    test-nodeids while contracts kept the suffixed mapping keys)."""
+    module, sep, name = node_id.rpartition("::")
+    return (module + "::" + name.split("[", 1)[0]) if sep else node_id
+
+
 def load_json(path: Path) -> dict:
     if not path.is_file():
         return {}
@@ -65,11 +76,10 @@ def removed_tests(staging: Path) -> list[str]:
     ]
 
 
-def contracts_changed(staging: Path, approved: Path) -> tuple[bool, list[str]]:
-    incoming_path = staging / "contracts.json"
-    if not incoming_path.is_file():
+def contracts_changed(contracts_path: Path, approved: Path) -> tuple[bool, list[str]]:
+    if not contracts_path.is_file():
         return False, []
-    incoming = load_json(incoming_path)
+    incoming = load_json(contracts_path)
     current = load_json(approved / "contracts.json")
     changed_files = [
         value for value in incoming.get("changed_files", [])
@@ -91,7 +101,8 @@ def staged_changed_test_files(staging: Path, repo: Path) -> set[str]:
     return changed
 
 
-def delta_completeness(staging: Path, approved: Path, repo: Path) -> list[str]:
+def delta_completeness(staging: Path, approved: Path, repo: Path,
+                       contracts_path: Path) -> list[str]:
     """D-122: fail a freeze whose changes the DELTA-vN bookkeeping cannot see.
 
     The DELTA-vN file is the orchestrator's only scope source (subtree reset,
@@ -100,9 +111,14 @@ def delta_completeness(staging: Path, approved: Path, repo: Path) -> list[str]:
     only the INVISIBLE_CONTRACT_KEYS, or that claims a test update in
     ERD-DELTA.md without staging its bytes, would bookkeep as an empty or
     partial delta — the v82 class.
+
+    D-136: contracts_path is the MERGED contracts (refreeze's staged-merge
+    result), never the raw partial — comparing a partial against the full
+    standing would read every id-array the delta omits as "changed" and defeat
+    the invisible-change detection below.
     """
     errors: list[str] = []
-    incoming = load_json(staging / "contracts.json")
+    incoming = load_json(contracts_path)
     current = load_json(approved / "contracts.json")
     if incoming:
         invisible_changed = [
@@ -171,11 +187,16 @@ def new_ac_ids(staging: Path, approved: Path, repo: Path) -> set[str]:
     return added
 
 
-def validate(staging: Path, approved: Path, repo: Path, current_version: int) -> str:
+def validate(staging: Path, approved: Path, repo: Path, current_version: int,
+             contracts_path: Path | None = None) -> str:
     if current_version == 0:
         return "initial"
 
-    contract_delta, changed_files = contracts_changed(staging, approved)
+    # D-136: validate the MERGED contracts (refreeze passes --contracts); a
+    # standalone call defaults to the staged file for backward compatibility.
+    if contracts_path is None:
+        contracts_path = staging / "contracts.json"
+    contract_delta, changed_files = contracts_changed(contracts_path, approved)
     introduced_acs = new_ac_ids(staging, approved, repo)
     behavior_delta = bool(
         staged_test_files(staging)
@@ -198,20 +219,60 @@ def validate(staging: Path, approved: Path, repo: Path, current_version: int) ->
     missing_files = sorted(path for path in changed_files if path not in text)
     errors: list[str] = []
     if contract_delta:
-        incoming = load_json(staging / "contracts.json")
+        incoming = load_json(contracts_path)
+        files = {
+            value for value in incoming.get("files", [])
+            if isinstance(value, str) and value
+        }
+        no_edit_files = {
+            value for value in incoming.get("no_edit_files", [])
+            if isinstance(value, str) and value
+        }
+        current = load_json(approved / "contracts.json")
+        evidenced_files = set(changed_files) | no_edit_files
+        for key in ("routes", "schemas", "errors", "ui"):
+            current_entries = {
+                entry.get("id"): entry
+                for entry in current.get(key, [])
+                if isinstance(entry, dict) and entry.get("id")
+            }
+            for entry in incoming.get(key, []):
+                if not isinstance(entry, dict) or not entry.get("id"):
+                    continue
+                if entry != current_entries.get(entry["id"]):
+                    pin = entry.get("file")
+                    if isinstance(pin, str) and pin:
+                        evidenced_files.add(pin)
+                    elif len(files) == 1:
+                        evidenced_files.update(files)
+        current_smokes = current.get("smoke_checks", {})
+        incoming_smokes = incoming.get("smoke_checks", {})
+        if isinstance(current_smokes, dict) and isinstance(incoming_smokes, dict):
+            evidenced_files.update(
+                file for file, command in incoming_smokes.items()
+                if current_smokes.get(file) != command
+            )
+        unexplained_inventory = sorted(files - evidenced_files)
+        if unexplained_inventory:
+            errors.append(
+                "contracts.files carries file(s) outside this milestone's "
+                "declared work: " + ", ".join(unexplained_inventory)
+                + " — every inventory member must be in changed_files "
+                "(coder work) or no_edit_files (explicit acceptance-only "
+                "carry); remove accumulated prior-milestone files"
+            )
         mapping = incoming.get("test_mapping", {})
         if not isinstance(mapping, dict):
             errors.append("contracts.test_mapping must be an object")
         else:
             nodeids_path = approved / "test-nodeids"
             nodeids = {
-                line.strip()
+                _node_family(line.strip())
                 for line in nodeids_path.read_text().splitlines()
                 if line.strip()
             } if nodeids_path.is_file() else set()
-            files = set(incoming.get("files", []))
             for node_id, pinned in sorted(mapping.items()):
-                if node_id not in nodeids:
+                if _node_family(node_id) not in nodeids:
                     errors.append(
                         f"contracts.test_mapping pins unknown node-id "
                         f"{node_id} — every key must be a frozen node-id "
@@ -222,7 +283,6 @@ def validate(staging: Path, approved: Path, repo: Path, current_version: int) ->
                         f"contracts.test_mapping pins {node_id} to "
                         f"{pinned}, which is not in contracts.files"
                     )
-        current = load_json(approved / "contracts.json")
         for key in ("routes", "schemas", "errors"):
             incoming_entries = {
                 e.get("id"): e for e in incoming.get(key, [])
@@ -253,7 +313,7 @@ def validate(staging: Path, approved: Path, repo: Path, current_version: int) ->
             "contracts.changed_files absent from ERD-DELTA.md: "
             + ", ".join(missing_files)
         )
-    errors += delta_completeness(staging, approved, repo)
+    errors += delta_completeness(staging, approved, repo, contracts_path)
     if errors:
         raise ValueError("; ".join(errors))
     return "behavioral"
@@ -265,9 +325,14 @@ def main() -> int:
     parser.add_argument("--approved", required=True, type=Path)
     parser.add_argument("--repo", default=Path("."), type=Path)
     parser.add_argument("--current-version", required=True, type=int)
+    parser.add_argument("--contracts", type=Path, default=None,
+                        help="D-136: the MERGED contracts to validate "
+                             "(refreeze passes the staged-merge result); "
+                             "defaults to <staging>/contracts.json")
     args = parser.parse_args()
     try:
-        print(validate(args.staging, args.approved, args.repo, args.current_version))
+        print(validate(args.staging, args.approved, args.repo,
+                       args.current_version, args.contracts))
     except ValueError as exc:
         print(f"SPEC DELTA FAIL: {exc}", file=sys.stderr)
         return 1

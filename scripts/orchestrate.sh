@@ -36,6 +36,7 @@ MAX_TASK_STRIKES="${MAX_TASK_STRIKES:-2}"      # coder attempts per brief (D-70:
 MAX_BRIEF_REVISIONS="${MAX_BRIEF_REVISIONS:-1}" # EM brief_wrong rewrites per task
 MAX_PLAN_REVISIONS="${MAX_PLAN_REVISIONS:-2}"   # EM plan re-emits per run (validation retries + decomposition_wrong); default 2: the validator's error feedback demonstrably fixes plans on the second emit (testchat M6)
 AGENT_TIMEOUT="${AGENT_TIMEOUT:-1800}"
+CONTEXT_BUDGET_TOOL="scripts/context-budget.py"
 
 # Wave 1 (D-107-class): the required plan/task keys, named verbatim in every
 # plan-emission prompt. The EM is stateless (D-53) and response_format is only
@@ -57,14 +58,16 @@ contract_ids() {
   # the inventory is frontend or ERD-DELTA names them; entry_points are kept
   # by module match. The validator + contract-repair still reject/drop
   # anything the scope misses, and an empty contracts array is always legal.
-  python3 - "$APPROVED/contracts.json" "$APPROVED/ERD-DELTA.md" <<'PY'
-import json, sys
+  python3 - "$APPROVED/contracts.json" \
+    "${ACTIVE_ERD_CONTEXT:-$APPROVED/ERD-DELTA.md}" <<'PY'
+import json, os, sys
 c = json.load(open(sys.argv[1]))
 try:
     erd = open(sys.argv[2]).read()
 except OSError:
     erd = ""
-files = set(c.get("files", []))
+active = os.environ.get("SWBP_CONTRACT_FILES")
+files = set(active.splitlines()) if active is not None else set(c.get("files", []))
 mods = {f[:-3].replace("/", ".") if f.endswith(".py") else f for f in files}
 frontend = any(f.startswith("src/static/") for f in files)
 ids = []
@@ -139,6 +142,7 @@ cd "$(cd "$(dirname "$0")/.." && pwd -P)"
 #   plan_revisions       EM plan re-emit counter (cap: MAX_PLAN_REVISIONS)
 #   tasks/<id>.status    pending|done|escalated|blocked
 #   tasks/<id>.strikes|.revisions|.fp|.lastfail   per-task counters/fingerprint
+#   mypy-green/<sha256>  successful mypy result for one exact source/config state
 #   briefs/<id>          EM-revised brief overriding the plan's brief
 #   logs/<id>-a<n>.raw|.log   coder attempt transcripts; em-last.raw|.err
 #   escalations/<id>/bundle.md, escalations/BATCH.md   TPM bundles (D-29)
@@ -172,6 +176,16 @@ mkdir -p "$ARCHIVE_DIR"
 # this removes that class.
 [ -f "$ARCHIVE_DIR/.gitignore" ] || printf '*\n' > "$ARCHIVE_DIR/.gitignore"
 LAST_ARCHIVE_ENTRY=""
+
+# Durable archive of every coder attempt (survives rm -rf .pipeline-state on
+# success) — the coder analog of .em-archive (P3-1): the transcripts were
+# written under $LOG_DIR/archive and wiped at the success teardown, defeating
+# the "Coder-evidence archive (Phase 6, D-115)" intent and foreclosing the
+# coder analog of em-bench. Pure capture: nothing reads them during a run.
+# Same self-ignoring pattern as .em-archive.
+CODER_ARCHIVE_DIR=".coder-archive"
+mkdir -p "$CODER_ARCHIVE_DIR"
+[ -f "$CODER_ARCHIVE_DIR/.gitignore" ] || printf '*\n' > "$CODER_ARCHIVE_DIR/.gitignore"
 
 # Durable run-measurement sink (Phase 5 instrumentation, 2026-08-06): one
 # timestamped row per firing in .measurement/counters. Survives the success
@@ -219,7 +233,10 @@ else
   _lockdir="$STATE_DIR/.lockdir"
   if ! mkdir "$_lockdir" 2>/dev/null; then
     _owner=$(cat "$_lockdir/pid" 2>/dev/null || true)
-    if [ -n "$_owner" ] && kill -0 "$_owner" 2>/dev/null; then
+    if [ -z "$_owner" ]; then
+      die "another scripts/orchestrate.sh is starting (holds $_lockdir, no pid yet) — wait a moment and retry"
+    fi
+    if kill -0 "$_owner" 2>/dev/null; then
       die "another scripts/orchestrate.sh is already running (pid $_owner, holds $_lockdir) — wait for it to finish or kill it, then retry"
     fi
     # stale lock from a dead run — reclaim it
@@ -312,7 +329,21 @@ mark() { printf '%s\t%ss\t%s\n' "$(date '+%H:%M:%S')" "$(run_elapsed)" "$1" >> "
 # --- exit trap: record how the run ended, always ------------------------------
 # M33 v76 (2026-08-02): the run died mid-T1 with no HALT, no escalation, no
 # final timing mark — orchestrate crashed under `set -euo pipefail` and every
-# subsequent measurement was blind because no artifact recorded the exit. This
+# subsequent measurement was blind because no artifact recorded the exit.
+#
+# Persist one run's terminal measurement while its timing source still exists.
+# The success path calls this before teardown; record_exit covers every other
+# termination path. Measurement remains report-only and can never fail a run.
+record_measurement() {  # record_measurement <rc> <phase> <task>
+  local rc="$1" phase="$2" task="$3"
+  mkdir -p "$MEAS_DIR" 2>/dev/null || true
+  if [ -d "$MEAS_DIR" ]; then
+    [ -f "$LOG_DIR/timings.tsv" ] \
+      && cp "$LOG_DIR/timings.tsv" "$MEAS_DIR/timings-$(date -u +%FT%TZ).tsv" 2>/dev/null || true
+    meas "exit rc=$rc phase=${phase:-<none>} task=${task:-<none>} spec=${FROZEN_V:-unknown} revisions=$(plan_revisions_used) elapsed=$(run_elapsed)s"
+  fi
+}
+
 # trap runs on EVERY exit path (success, die, uncaught error) and appends one
 # row to run-exit.log: iso-timestamp, exit code, last recorded phase, current
 # task target, last timings row. It does NOT invent an escalation for an
@@ -338,17 +369,10 @@ record_exit() {
       "$(run_elapsed)" "${last_ts:-<none>}" \
       >> "$LOG_DIR/run-exit.log"
   fi
-  # Phase 5 instrumentation (2026-08-06): durable terminal-event capture. The
-  # success teardown wipes .pipeline-state BEFORE this EXIT trap fires, so
-  # copy timings.tsv here and append one summary row (spec version, exit code,
-  # phase, task, revisions used, elapsed) — the run's after-measurement
-  # record. Guarded: measurement can never fail the run or alter its exit
-  # code.
-  mkdir -p "$MEAS_DIR" 2>/dev/null || true
-  if [ -d "$MEAS_DIR" ]; then
-    [ -f "$LOG_DIR/timings.tsv" ] \
-      && cp "$LOG_DIR/timings.tsv" "$MEAS_DIR/timings-$(date -u +%FT%TZ).tsv" 2>/dev/null || true
-    meas "exit rc=$rc phase=${phase:-<none>} task=${task:-<none>} spec=${FROZEN_V:-unknown} revisions=$(plan_revisions_used) elapsed=$(run_elapsed)s"
+  # Success has already persisted the same terminal event before deleting its
+  # timing source. Do not append a duplicate rc=0 row from this EXIT trap.
+  if [ "${SUCCESS_RECORDED:-0}" != "1" ]; then
+    record_measurement "$rc" "$phase" "$task"
   fi
   return $rc
 }
@@ -399,6 +423,10 @@ check_ci_health() {
   fi
   if ! command -v gh >/dev/null 2>&1; then
     echo "  WARNING: CI health INCONCLUSIVE — 'gh' not installed, cannot read CI status. Proceeding."
+    return 0
+  fi
+  if ! timeout 10 gh auth status >/dev/null 2>&1; then
+    echo "  WARNING: CI health INCONCLUSIVE — 'gh' not authenticated ('gh auth status' fails); CI verdict unknown. Proceeding."
     return 0
   fi
   branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
@@ -496,6 +524,7 @@ mark "run start (budget ${SWBP_RUN_BUDGET}s)"
 python3 --version >/dev/null 2>&1 || die "python3 required"
 git --version >/dev/null 2>&1    || die "git required"
 [ -x scripts/llm-call.sh ]       || die "scripts/llm-call.sh missing or not executable"
+[ -f "$CONTEXT_BUDGET_TOOL" ]     || die "$CONTEXT_BUDGET_TOOL missing"
 [ -f "$COMPLETION_LEDGER_TOOL" ]    || die "$COMPLETION_LEDGER_TOOL missing"
 [ -f "$FLAKE_LEDGER_TOOL" ]       || die "$FLAKE_LEDGER_TOOL missing"
 [ -f .gate-paths ]               || die ".gate-paths not found"
@@ -510,7 +539,7 @@ fi
 # no attach protocol, no harness in between (D-53).
 : "${SANDBOX_LLM_HOST:=localhost}"
 : "${SANDBOX_LLM_PORT:=1234}"
-curl -s --max-time 5 -o /dev/null "http://$SANDBOX_LLM_HOST:$SANDBOX_LLM_PORT/v1/models" \
+curl -sf --max-time 5 -o /dev/null "http://$SANDBOX_LLM_HOST:$SANDBOX_LLM_PORT/v1/models" \
   || die "no LLM reachable at http://$SANDBOX_LLM_HOST:$SANDBOX_LLM_PORT/v1/models — start it and retry (in the VM, set SANDBOX_LLM_HOST=host.lima.internal)"
 # The interactive/human commit path is only gated if bootstrap.sh ran. The
 # testchat M4 run proved this can be silently absent for an entire project
@@ -518,12 +547,14 @@ curl -s --max-time 5 -o /dev/null "http://$SANDBOX_LLM_HOST:$SANDBOX_LLM_PORT/v1
 # Fail closed here, same as the manifest check below.
 [ "$(git config core.hooksPath || true)" = ".githooks" ] \
   || die "core.hooksPath is not '.githooks' — run scripts/bootstrap.sh first (the pre-commit lane gate is mandatory, not optional)"
-# The orchestrator's own [plan]/[task] commits swallow failures on purpose
-# (nothing-to-commit is normal) — which also swallows a missing git identity,
-# so every commit silently no-ops (scratch-rung drill 2026-07-16: the dev VM
-# had no identity and the plan commit vanished). Fail closed here instead.
+# The orchestrator's own [plan]/[task] commits guard on
+# `git status --porcelain` — "nothing to commit" is skipped as a normal
+# no-change case, but a real commit failure (missing git identity, a hook
+# rejection) now fails the run instead of being swallowed (scratch-rung
+# drill 2026-07-16: missing git identity silently no-op'd every pipeline
+# commit in the dev VM; D-151 fixed the same class in refreeze.sh).
 { [ -n "$(git config user.email || true)" ] && [ -n "$(git config user.name || true)" ]; } \
-  || die "git identity missing — [plan]/[task] commits would silently no-op (their failures are deliberately swallowed): git config --global user.email <addr> && git config --global user.name <name>"
+  || die "git identity missing — [plan]/[task] commits would fail: git config --global user.email <addr> && git config --global user.name <name>"
 # A dirty tree poisons the lane gate: phase-gate diffs the working tree
 # against a phase-start ref, so pre-existing uncommitted changes get blamed
 # on whichever tier runs first (testchat M2: the EM was accused of touching
@@ -547,43 +578,19 @@ fi
 guard_task_state
 # Control-plane + frozen-artifact integrity (phase-gate verifies both, fail-closed)
 bash scripts/phase-gate.sh manifest HEAD
-# The frozen spec IS the human approval: it only exists via scripts/refreeze.sh,
-# which requires an interactive human y/N on the diff (D-31). No honor-string.
+# The frozen spec is admitted only through scripts/refreeze.sh, which
+# auto-installs after every mechanical preflight passes (D-121). No
+# honor-string or separate human approval step exists in this lane.
 [ -f "$APPROVED/frozen-manifest" ] || die "no frozen TPM spec — install PRD/ERD/contracts/tests via scripts/refreeze.sh"
 [ -f "$APPROVED/VERSION" ]         || die "$APPROVED/VERSION missing — run scripts/refreeze.sh"
 FROZEN_V=$(cat "$APPROVED/VERSION")
-# D-85: the external verdict. Placed after every free local check and before
-# the smoke test, so a red CI costs one bounded API call instead of a cold
-# model load.
+# D-85: the external verdict. Placed after every free local check; a red CI
+# costs one bounded API call instead of anything heavier. The D-55 EM round-
+# trip smoke is NOT here — it is lazy: it fires only inside em_call, just
+# before the first real EM call of a run that actually needs the EM (P1e /
+# board finding 6). A run whose plan is mechanically synthesized (B3) never
+# calls the EM at all and therefore spends zero model calls on probing.
 check_ci_health
-# D-55 round-trip smoke test: a bug in the model-call path is invisible to
-# static review — only a real round-trip catches it (correction log 2026-07-03).
-# Runs last in pre-flight: all free checks (hooksPath, clean tree, manifest)
-# pass before we spend a model call. The budget must absorb a COLD model
-# start — LM Studio loads the mapped model on first request, and a large
-# model takes minutes, not seconds (testchat M6: 30s budget, 122B EM, false
-# pre-flight failure).
-SMOKE_MAX_TIME="${SMOKE_MAX_TIME:-240}"
-echo "  LLM round-trip smoke test (budget ${SMOKE_MAX_TIME}s — cold model start counts)..."
-_smoke_sys=$(mktemp)
-printf 'You are a test probe. Reply with exactly the text the user sends.' > "$_smoke_sys"
-SMOKE_REPLY=$(printf 'SMOKE_OK' | scripts/llm-call.sh em "$_smoke_sys" --max-time "$SMOKE_MAX_TIME" 2>/dev/null || true)
-rm -f "$_smoke_sys"
-[ -n "$SMOKE_REPLY" ] \
-  || die "LLM smoke test failed — llm-call.sh returned empty output for a trivial prompt within ${SMOKE_MAX_TIME}s (check SANDBOX_LLM_HOST=$SANDBOX_LLM_HOST, model mapping, model server; a cold large model may need SMOKE_MAX_TIME raised)"
-# D-62: LM Studio drift probe — any model reload resets instance config
-# (context window, thinking toggle, chat_template_kwargs). A thinking model
-# puts output in reasoning_content and leaves content empty, which breaks
-# every downstream parser. Check the smoke reply for the thinking-model
-# signature: content is empty or absent while reasoning tokens are present.
-# Also warn if the reply looks nothing like the echo (model misconfigured).
-case "$SMOKE_REPLY" in
-  ""|THINKING_MODEL)
-    die "LM Studio drift: model returned empty content (likely in thinking mode). Open LM Studio → model settings → disable Reasoning toggle → save as default, then retry." ;;
-esac
-if ! printf '%s' "$SMOKE_REPLY" | grep -q 'SMOKE_OK'; then
-  echo "  WARNING: smoke reply did not echo 'SMOKE_OK' — got '$(printf '%s' "$SMOKE_REPLY" | head -c 80)'. Model may be misconfigured (thinking mode, wrong model, stale instance config). Proceeding, but verify behavior."
-fi
 echo "OK (frozen spec v$FROZEN_V)"
 mark "pre-flight done (spec v$FROZEN_V)"
 
@@ -594,24 +601,11 @@ mark "pre-flight done (spec v$FROZEN_V)"
 STANDING_SUMMARY="$STATE_DIR/standing-summary.md"
 if [ -f "$APPROVED/ERD.md" ] \
   && python3 scripts/standing-summary.py "$APPROVED/ERD.md" > "$STANDING_SUMMARY" 2>/dev/null; then
+  python3 "$CONTEXT_BUDGET_TOOL" warn standing-summary "$STANDING_SUMMARY"
   echo "  standing context: generated summary ($(wc -l < "$STANDING_SUMMARY" | tr -d ' ') lines, vs $(wc -l < "$APPROVED/ERD.md" | tr -d ' ') in ERD.md)"
 else
   STANDING_SUMMARY="$APPROVED/ERD.md"
   echo "  WARNING: standing summary generation failed — EM context falls back to the full standing ERD"
-fi
-
-# D-120: the EM's contracts context is the milestone slice — pinned entries
-# (schema "file" field) for files in this milestone's inventory, plus every
-# unpinned entry; DRIFT/SPEC-DEFECT consults keep the full file (D-116). The
-# generator emits the full file while no pins exist (inert activation, the
-# backfill is TPM-seat); a generation failure falls back to the full file.
-CONTRACTS_DELTA="$STATE_DIR/contracts-delta.json"
-if [ -f "$APPROVED/contracts.json" ] \
-  && python3 scripts/contracts-delta.py "$APPROVED/contracts.json" > "$CONTRACTS_DELTA" 2>/dev/null; then
-  echo "  contracts context: generated milestone slice ($(wc -c < "$CONTRACTS_DELTA" | tr -d ' ') bytes, vs $(wc -c < "$APPROVED/contracts.json" | tr -d ' ') in contracts.json)"
-else
-  CONTRACTS_DELTA="$APPROVED/contracts.json"
-  echo "  WARNING: contracts slice generation failed — EM context falls back to the full contracts.json"
 fi
 
 # --- Parse .gate-paths for the build lane ---
@@ -671,7 +665,54 @@ if [ "$DELTA_BASELINE_V" -lt "$FROZEN_V" ]; then
 elif [ -f "$APPROVED/DELTA-v$FROZEN_V.json" ]; then
   ACTIVE_DELTA_FILES+=("$APPROVED/DELTA-v$FROZEN_V.json")
 fi
+# D-138: every validator invocation consumes this same exact D-113 range.
+SWBP_ACTIVE_DELTA_FILES=""
+if [ "${#ACTIVE_DELTA_FILES[@]}" -gt 0 ]; then
+  printf -v SWBP_ACTIVE_DELTA_FILES '%s\n' "${ACTIVE_DELTA_FILES[@]}"
+fi
+export SWBP_ACTIVE_DELTA_FILES
 # END D-113 active-delta range
+
+# D-140/D-166: planning preserves every freeze's immutable instruction slice
+# in the active D-113 range, never only the newest ERD-DELTA.md. The validator
+# owns legacy Git recovery, semantic deduplication for the model-facing view,
+# and the exact zero-work packet, so every EM surface receives one shared file.
+ACTIVE_ERD_CONTEXT="$APPROVED/ERD-DELTA.md"
+if [ "${#ACTIVE_DELTA_FILES[@]}" -gt 0 ]; then
+  ACTIVE_ERD_CONTEXT="$STATE_DIR/active-erd-delta.md"
+  python3 scripts/validate-plan.py --active-erd-context \
+    "${ACTIVE_DELTA_FILES[@]}" > "$ACTIVE_ERD_CONTEXT" \
+    || die "could not assemble complete active milestone instructions"
+fi
+python3 "$CONTEXT_BUDGET_TOOL" warn active-erd-context "$ACTIVE_ERD_CONTEXT"
+
+ACTIVE_INVENTORY_LIST=""
+if [ "${#ACTIVE_DELTA_FILES[@]}" -gt 0 ]; then
+  ACTIVE_INVENTORY_LIST=$(python3 scripts/validate-plan.py --active-inventory \
+    "${ACTIVE_DELTA_FILES[@]}") \
+    || die "could not assemble exact active milestone inventory"
+else
+  ACTIVE_INVENTORY_LIST=$(python3 -c \
+    'import json; print("\n".join(json.load(open("scripts/.approved/contracts.json")).get("files", [])))')
+fi
+ACTIVE_INVENTORY_DISPLAY=$(printf '%s' "$ACTIVE_INVENTORY_LIST" \
+  | paste -sd ',' - | sed 's/,/, /g')
+ACTIVE_INVENTORY_DISPLAY=${ACTIVE_INVENTORY_DISPLAY:-"(none — zero build tasks)"}
+SWBP_CONTRACT_FILES="$ACTIVE_INVENTORY_LIST"
+export SWBP_CONTRACT_FILES
+
+# D-120/D-140: slice contract bodies against the same exact active inventory
+# the plan gate uses, including every skipped freeze and a legitimate empty
+# inventory. DRIFT/SPEC-DEFECT consults still keep the full standing file.
+CONTRACTS_DELTA="$STATE_DIR/contracts-delta.json"
+if [ -f "$APPROVED/contracts.json" ] \
+  && python3 scripts/contracts-delta.py "$APPROVED/contracts.json" \
+       > "$CONTRACTS_DELTA" 2>/dev/null; then
+  echo "  contracts context: generated active-milestone slice ($(wc -c < "$CONTRACTS_DELTA" | tr -d ' ') bytes, vs $(wc -c < "$APPROVED/contracts.json" | tr -d ' ') in contracts.json)"
+else
+  CONTRACTS_DELTA="$APPROVED/contracts.json"
+  echo "  WARNING: contracts slice generation failed — EM context falls back to the full contracts.json"
+fi
 
 # --- Plan-revision budget is per freeze: keyed to the spec version itself.
 # NOT keyed to the spec-advance event above — spec_version is only written
@@ -706,6 +747,59 @@ build_context() {
   done
 }
 
+# em_smoke_probe — D-55 round-trip smoke test, made LAZY (P1e / board finding 6).
+# The D-55 property is unchanged: a bug in the model-call path is invisible to
+# static review — only a real round-trip catches it (correction log 2026-07-03).
+# What changed is WHEN the probe fires: em_call invokes it via a type-guard
+# right before the first real EM call of the run, so a run that never needs the
+# EM (e.g. a milestone whose plan is mechanically synthesized, B3) spends zero
+# model calls on probing, and a red CI or a failing pre-flight costs nothing.
+# Idempotent: probes at most once per run (EM_PROBED marker). The budget must
+# absorb a COLD model start — LM Studio loads the mapped model on first request,
+# and a large model takes minutes, not seconds (testchat M6: 30s budget, 122B
+# EM, false pre-flight failure).
+em_smoke_probe() {
+  [ "${EM_PROBED:-0}" = "1" ] && return 0
+  EM_PROBED=1
+  local SMOKE_MAX_TIME="${SMOKE_MAX_TIME:-240}"
+  echo "  LLM round-trip smoke test (budget ${SMOKE_MAX_TIME}s — cold model start counts)..."
+  local _smoke_sys _em_model SMOKE_REPLY
+  _smoke_sys=$(mktemp)
+  printf 'You are a test probe. Reply with exactly the text the user sends.' > "$_smoke_sys"
+  # D-55/P1e: the smoke is seat-specific — resolve the model the EM seat is
+  # mapped to (same resolution path as llm-call.sh: env, else models.env) and
+  # pass --expect-model so the probe fails closed when the server answers with
+  # a DIFFERENT model than the seat's mapping (model-reload drift, D-62 class).
+  _em_model="${SWBP_EM_MODEL:-}"
+  if [ -z "$_em_model" ] && [ -f "$HOME/.config/sw-dev-blueprint/models.env" ]; then
+    # shellcheck disable=SC1090
+    . "$HOME/.config/sw-dev-blueprint/models.env"
+    _em_model="${SWBP_EM_MODEL:-}"
+  fi
+  # An unresolvable mapping is llm-call's own hard halt (D-52); no flag then.
+  [ -n "$_em_model" ] && echo "  EM seat: expect model '$_em_model'"
+  if ! SMOKE_REPLY=$(printf 'SMOKE_OK' | scripts/llm-call.sh em "$_smoke_sys" --max-time "$SMOKE_MAX_TIME" ${_em_model:+--expect-model "$_em_model"} 2>/dev/null); then
+    rm -f "$_smoke_sys"
+    die "LLM smoke test failed — llm-call.sh could not complete the trivial probe within ${SMOKE_MAX_TIME}s (check SANDBOX_LLM_HOST=$SANDBOX_LLM_HOST, model mapping, model server; a cold large model may need SMOKE_MAX_TIME raised; a seat mismatch means the mapped model is not the one answering)"
+  fi
+  rm -f "$_smoke_sys"
+  [ -n "$SMOKE_REPLY" ] \
+    || die "LLM smoke test failed — llm-call.sh returned empty output for a trivial prompt within ${SMOKE_MAX_TIME}s (check SANDBOX_LLM_HOST=$SANDBOX_LLM_HOST, model mapping, model server; a cold large model may need SMOKE_MAX_TIME raised)"
+  # D-62: LM Studio drift probe — any model reload resets instance config
+  # (context window, thinking toggle, chat_template_kwargs). A thinking model
+  # puts output in reasoning_content and leaves content empty, which breaks
+  # every downstream parser. Check the smoke reply for the thinking-model
+  # signature: content is empty or absent while reasoning tokens are present.
+  # Also warn if the reply looks nothing like the echo (model misconfigured).
+  case "$SMOKE_REPLY" in
+    ""|THINKING_MODEL)
+      die "LM Studio drift: model returned empty content (likely in thinking mode). Open LM Studio → model settings → disable Reasoning toggle → save as default, then retry." ;;
+  esac
+  if ! printf '%s' "$SMOKE_REPLY" | grep -q 'SMOKE_OK'; then
+    echo "  WARNING: smoke reply did not echo 'SMOKE_OK' — got '$(printf '%s' "$SMOKE_REPLY" | head -c 80)'. Model may be misconfigured (thinking mode, wrong model, stale instance config). Proceeding, but verify behavior."
+  fi
+}
+
 # em_call <out-file> <schema> <instruction> <context "label:path" ...>
 # Calls the EM once, validates the reply is well-formed JSON (the *semantic*
 # validation — schema, coverage, DAG — is validate-plan.py's job, unchanged),
@@ -713,14 +807,40 @@ build_context() {
 # server supports it; either way validate-plan.py is the real gate.
 em_call() {
   local out="$1" schema="$2" instr="$3"; shift 3
+  # D-55 lazy smoke: fires here (type-guarded so extracted selftest shells and
+  # any consumer without em_smoke_probe defined skip it) just before the first
+  # real EM call — the failure mode it guards is the model-call path itself.
+  type em_smoke_probe &>/dev/null && em_smoke_probe || true
   local phase_start; phase_start=$(git rev-parse HEAD)
+  # Plan emission ships em.md PLUS the em-plan.md block (the plan-emission
+  # requirements live there since the prompt split); diagnosis calls ship
+  # em.md alone. The combined file lands inside .pipeline-state, which the
+  # run lifecycle owns. Missing em-plan.md fails the cat loudly (set -e) —
+  # the split em.md must never reach the plan call without its block.
+  local sys_prompt=".opencode/prompts/em.md"
+  if [[ "$schema" == *plan.schema.json ]]; then
+    sys_prompt="$LOG_DIR/em-plan.sys"
+    cat .opencode/prompts/em.md .opencode/prompts/em-plan.md > "$sys_prompt"
+  fi
   write_state phase em
   mark "em-call start -> $out"
-  { printf '%s\n' "$instr"; build_context "$@"; } \
-    | tee "$LOG_DIR/em-last.prompt" \
-    | timeout "$AGENT_TIMEOUT" scripts/llm-call.sh em .opencode/prompts/em.md \
+  { printf '%s\n' "$instr"; build_context "$@"; } > "$LOG_DIR/em-last.prompt"
+  : > "$LOG_DIR/em-last.err"
+  local budget_tool="${CONTEXT_BUDGET_TOOL:-scripts/context-budget.py}"
+  local budget_warning=""
+  if [ -f "$budget_tool" ]; then
+    if ! budget_warning=$(python3 "$budget_tool" warn em-context \
+      "$sys_prompt" "$schema" "$LOG_DIR/em-last.prompt" 2>&1); then
+      die "EM context budget measurement failed: $budget_warning"
+    fi
+    if [ -n "$budget_warning" ]; then
+      printf '%s\n' "$budget_warning" | tee -a "$LOG_DIR/em-last.err" >&2
+    fi
+  fi
+  timeout "$AGENT_TIMEOUT" scripts/llm-call.sh em "$sys_prompt" \
         --schema "$schema" --max-time "$AGENT_TIMEOUT" \
-    > "$LOG_DIR/em-last.raw" 2> "$LOG_DIR/em-last.err" \
+    < "$LOG_DIR/em-last.prompt" \
+    > "$LOG_DIR/em-last.raw" 2>> "$LOG_DIR/em-last.err" \
     || { cat "$LOG_DIR/em-last.err" >&2
          # Archive the failed call too (outcome=call_failed): the prompt in
          # em-last.prompt dies with .pipeline-state/ on the next success, and
@@ -808,19 +928,22 @@ brief; transcribe it into working code immediately."
         --max-time "$AGENT_TIMEOUT" \
     > "$LOG_DIR/$id-a$attempt.raw" 2> "$LOG_DIR/$id-a$attempt.log" \
     || { CODER_EVIDENCE="coder call failed: $(tail -3 "$LOG_DIR/$id-a$attempt.log" | tr '\n' ' ')"; write_state phase ""; return 1; }
-  # Coder-evidence archive (Phase 6, D-115): the flat log name above is a
+  # Coder-evidence archive (Phase 6, D-115; P3-1): the flat log name above is a
   # per-run scratchpad — a brief_wrong revision resets the strike counter, so
   # a same-slot retry would silently overwrite the prior brief's only
   # transcript. Archive every attempt verbatim under a version/task/revision/
-  # attempt name, best-effort (a full scratch dir must never gate the run).
+  # attempt name, best-effort (a full scratch dir must never gate the run),
+  # into the DURABLE .coder-archive/ — the success teardown's rm -rf wipes
+  # .pipeline-state, and the pre-P3-1 location ($LOG_DIR/archive) erased the
+  # evidence at the exact moment the milestone succeeded.
   # No sequencing, metadata, or pruning: the name is the ordering.
   {
     local coder_revs; coder_revs=$(counter "$id" revisions)
-    mkdir -p "$LOG_DIR/archive"
+    mkdir -p "$CODER_ARCHIVE_DIR"
     cp "$LOG_DIR/$id-a$attempt.raw" \
-       "$LOG_DIR/archive/$FROZEN_V.$id.$coder_revs.$attempt.raw" || true
+       "$CODER_ARCHIVE_DIR/$FROZEN_V.$id.$coder_revs.$attempt.raw" || true
     cp "$LOG_DIR/$id-a$attempt.log" \
-       "$LOG_DIR/archive/$FROZEN_V.$id.$coder_revs.$attempt.log" || true
+       "$CODER_ARCHIVE_DIR/$FROZEN_V.$id.$coder_revs.$attempt.log" || true
   }
   if [ -n "$existing" ]; then
     # D-59 edit-block path: fail-closed applier; target untouched on any error
@@ -832,14 +955,14 @@ brief; transcribe it into working code immediately."
 import re, sys
 path, raw_path, log_path = sys.argv[1], sys.argv[2], sys.argv[3]
 text = open(raw_path).read()
-m = re.search(r"^=== FILE: (.+?) ===\n(.*?)\n=== END FILE ===$", text, re.M | re.S)
+m = re.search(r"^=== FILE: (.+?) ===\n(.*)\n=== END FILE ===$", text, re.M | re.S)
 if not m:
     # Tolerant pass (testchat M7): a local coder glued the opening sentinel to
     # the tail of its own prose ('- "hello === FILE: ... ===') and a complete,
     # well-formed file followed. Accept an opening sentinel anywhere on a line
     # — the distinctive token cannot occur in generated file content by
     # accident without the closing pair also parsing. Content rules unchanged.
-    m = re.search(r"=== FILE: (.+?) ===\n(.*?)\n=== END FILE ===$", text, re.M | re.S)
+    m = re.search(r"=== FILE: (.+?) ===\n(.*)\n=== END FILE ===$", text, re.M | re.S)
     if m:
         print("warning: opening sentinel was mid-line — accepted by tolerant pass", file=sys.stderr)
 if not m:
@@ -931,8 +1054,13 @@ run_tests() {
   # only the active delta's changed source files; mypy follows imports, so a
   # reachable error in their dependency closure still surfaces — only genuinely
   # unrelated files stop blocking. The full-suite regression check (no
-  # node-ids) and a delta that changed no src/*.py both keep the whole-tree
-  # `src/` check (fail-closed default). The FAILING label names the checked set.
+  # node-ids) keeps the whole-tree `src/` check (fail-closed default). A
+  # targeted run whose active delta changed no src/*.py has nothing new to
+  # type-check: the gate is skipped (mypy:none) instead of paying whole-app
+  # mypy (review 2026-08-13 P2). Unknown delta state (unset/empty
+  # ACTIVE_DELTA_FILES) still falls back to the whole tree — absence of
+  # state reads as unknown, never as nothing-to-do. The FAILING label names
+  # the checked set.
   MYPY_OUT=""
   MYPY_RC=0
   local mypy_targets=()
@@ -960,12 +1088,69 @@ PYSCOPE
   local mypy_label
   if [ "${#mypy_targets[@]}" -gt 0 ]; then
     mypy_label="mypy:$(IFS=,; printf '%s' "${mypy_targets[*]}")"
-  else
+  elif [ "$#" -eq 0 ] || [ "${ACTIVE_DELTA_FILES+set}" != "set" ] \
+     || [ "${#ACTIVE_DELTA_FILES[@]}" -eq 0 ]; then
     mypy_targets=("src/")
     mypy_label="mypy:src"
+  else
+    mypy_label="mypy:none"
   fi
-  MYPY_OUT=$(scripts/sandbox-run.sh -- mypy --explicit-package-bases \
-    --cache-dir=/tmp/mypy-cache "${mypy_targets[@]}" 2>&1) || MYPY_RC=$?
+  local mypy_fingerprint="" mypy_green_dir mypy_green_marker=""
+  if [ "$mypy_label" != "mypy:none" ]; then
+    # D-142: a green type verdict is reusable only for byte-identical typing
+    # inputs.  Hash the exact target set, every Python source mypy may follow,
+    # and the config/dependency/sandbox inputs that determine its environment.
+    # The cache lives in ephemeral pipeline state and stores successes only:
+    # unknown/failing checks always execute and any relevant edit selects a
+    # new marker rather than trusting stale green state.
+    mypy_fingerprint=$(python3 - "${mypy_targets[@]}" <<'PYMYPYHASH'
+import hashlib
+import os
+import sys
+from pathlib import Path
+
+digest = hashlib.sha256()
+
+
+def add(label: str, data: bytes) -> None:
+    digest.update(label.encode())
+    digest.update(b"\0")
+    digest.update(data)
+    digest.update(b"\0")
+
+
+for target in sys.argv[1:]:
+    add("target", target.encode())
+
+inputs = {path for path in Path("src").rglob("*.py") if path.is_file()}
+for name in (
+    ".mypy.ini", "mypy.ini", "pyproject.toml", "setup.cfg", "tox.ini",
+    "requirements.txt", "requirements-dev.txt", "requirements.lock",
+    "uv.lock", "poetry.lock", "Pipfile", "Pipfile.lock", "Containerfile",
+    "scripts/sandbox-run.sh",
+):
+    path = Path(name)
+    if path.is_file():
+        inputs.add(path)
+for pattern in ("requirements*.txt", "requirements*.lock"):
+    inputs.update(path for path in Path(".").glob(pattern) if path.is_file())
+
+for path in sorted(inputs, key=lambda item: item.as_posix()):
+    add(path.as_posix(), path.read_bytes())
+for name in ("MYPYPATH", "MYPY_CONFIG_FILE"):
+    add(f"env:{name}", os.environ.get(name, "").encode())
+print(digest.hexdigest())
+PYMYPYHASH
+    ) || die "could not fingerprint mypy inputs — refusing stale-cache risk"
+    mypy_green_dir="${STATE_DIR:-.pipeline-state}/mypy-green"
+    mypy_green_marker="$mypy_green_dir/$mypy_fingerprint"
+    if [ -f "$mypy_green_marker" ]; then
+      mark "mypy gate cached green ($mypy_label)"
+    else
+      MYPY_OUT=$(scripts/sandbox-run.sh -- mypy --explicit-package-bases \
+        --cache-dir=/tmp/mypy-cache "${mypy_targets[@]}" 2>&1) || MYPY_RC=$?
+    fi
+  fi
   if [ "$MYPY_RC" -ne 0 ]; then
     mark "mypy gate FAILED (rc=$MYPY_RC)"
     FAILING="$mypy_label"
@@ -975,6 +1160,12 @@ PYSCOPE
     TESTS_RC=1
     rm -f .cache/test-report.json
     return 0
+  fi
+  if [ -n "$mypy_green_marker" ] && [ ! -f "$mypy_green_marker" ]; then
+    mkdir -p "$mypy_green_dir"
+    local mypy_green_tmp="$mypy_green_marker.tmp.$$"
+    printf 'green\n' > "$mypy_green_tmp"
+    mv "$mypy_green_tmp" "$mypy_green_marker"
   fi
   scripts/sandbox-run.sh --rw .cache -- pytest -p no:cacheprovider --json-report \
     --json-report-file=.cache/test-report.json "${test_args[@]}" >/dev/null 2>&1 || true
@@ -1143,7 +1334,11 @@ ensure_plan() {
       fi
       rm -f "$STATE_DIR/plan-prior.json" "$STATE_DIR/subtree-scope.json" \
         "$STATE_DIR/carried-summary.json" tasks/plan-subtree.json
-      git add tasks/plan.json && git commit -m "[plan] validated against spec v$FROZEN_V" 2>/dev/null || true
+      if [ -z "$(git status --porcelain -- tasks/plan.json 2>/dev/null)" ]; then
+        echo "plan unchanged — no [plan] commit needed"
+      else
+        git add tasks/plan.json && git commit -m "[plan] validated against spec v$FROZEN_V"
+      fi
       return 0
     fi
     verrs=$(python3 scripts/validate-plan.py 2>&1 || true)
@@ -1208,9 +1403,16 @@ $audit" "-"
   may refresh the budget: rm .pipeline-state/plan_revisions*   — otherwise the
   fix belongs in a re-freeze, which refreshes it automatically."
     }
-    if [ "${SUBTREE_MODE:-0}" = "1" ] && [ "${SUBTREE_ATTEMPTS:-0}" -ge 2 ]; then
+    # P2-1 (amends D-91): subtree mode is abandoned after the FIRST rejected
+    # merge, not the second. revs and SUBTREE_ATTEMPTS increment in lockstep
+    # (both written before the merge below), so the old >= 2 threshold could
+    # only ever fire after the revision cap: at the default MAX_PLAN_REVISIONS
+    # of 2, the budget die above always ran first and the fallback was dead
+    # code. With >= 1 the next EM revision is a FULL-plan call — the EM sees
+    # the whole inventory, and the rejections it earned are still appended.
+    if [ "${SUBTREE_MODE:-0}" = "1" ] && [ "${SUBTREE_ATTEMPTS:-0}" -ge 1 ]; then
       SUBTREE_MODE=0
-      echo "subtree re-plan abandoned after $SUBTREE_ATTEMPTS attempts — full plan emission (the delta may need mapping beyond the affected subtree)"
+      echo "subtree re-plan abandoned after $SUBTREE_ATTEMPTS rejected merge(s) — full plan emission (the delta may need mapping beyond the affected subtree)"
     fi
     if [ "${SUBTREE_MODE:-0}" = "1" ] && \
        [ "$(python3 -c "import json;print(int(json.load(open('$STATE_DIR/subtree-scope.json'))['em_needed']))")" = "0" ]; then
@@ -1265,10 +1467,19 @@ $audit" "-"
        && [ -z "${synthesis_tried:-}" ] \
        && [ "${ACTIVE_DELTA_FILES+set}" = "set" ] && [ "${#ACTIVE_DELTA_FILES[@]}" -gt 0 ]; then
       synthesis_tried=1
-      if synth_err=$(python3 scripts/validate-plan.py --synthesize-plan "${ACTIVE_DELTA_FILES[@]}" > tasks/plan.json 2>&1); then
+      # D-150: synthesize into a temp file, never straight into tasks/plan.json.
+      # A refused synthesis must leave the prior plan intact (it feeds the EM's
+      # revision loop as plan-being-revised) and its reason readable — the old
+      # `> tasks/plan.json 2>&1` clobbered the plan with the error text AND made
+      # synth_err capture nothing (both fds went to the file).
+      synth_tmp="$STATE_DIR/synthesize-plan.$$"
+      if python3 scripts/validate-plan.py --synthesize-plan "${ACTIVE_DELTA_FILES[@]}" > "$synth_tmp" 2>&1; then
+        mv "$synth_tmp" tasks/plan.json
         echo "=== B3: plan synthesized mechanically from the TPM's ERD-DELTA briefs/DAG/pins (no EM call); full gate judges it next ==="
         continue
       else
+        synth_err=$(cat "$synth_tmp" 2>/dev/null || true)
+        rm -f "$synth_tmp"
         echo "mechanical synthesis refused — TPM materials incomplete; EM full emission (reason: $(printf '%s' "$synth_err" | tr '\n' ' '))"
       fi
     fi
@@ -1287,7 +1498,7 @@ print('; '.join(parts))")
       echo "=== EM: re-plan delta subtree (revision $((revs + 1))/$MAX_PLAN_REVISIONS, subtree attempt $SUBTREE_ATTEMPTS) ==="
       em_call tasks/plan-subtree.json scripts/schemas/plan.schema.json \
         "Delta re-plan. The validated plan for the previous spec version is carried forward by the shell; its tasks are immutable and keep their ids (see the carried-plan context: id, file, depends_on only — briefs omitted deliberately). ERD-DELTA is the authoritative current-change slice when present; follow its explicit supersessions over standing ERD prose. The spec has advanced; you re-plan ONLY the delta. $EM_TASK_KEYS $EM_CONTRACT_ID_RULE Valid contract ids (copy verbatim): $(contract_ids) Reply with ONLY a plan JSON matching the schema whose tasks array contains EXACTLY one task per file in this list and NO others: $scope_files. A task for a re-planned file MUST reuse the stated keep id; tasks for new files use fresh T-ids not present in the carried plan. depends_on may reference carried task ids. Map ONLY node-ids from this list, each to exactly one of your tasks: $map_ids. If a listed node-id is not exercised by any file you are planning, OMIT it — the shell routes carried coverage itself; do NOT emit a 'regression' key (the validator rejects it), NO status fields. Placement is gate-owned, never yours: a node-id pinned by contracts.json's test_mapping is auto-placed by the gate at the task owning its pinned file; a node-id from a Playwright-importing test file with no mapping entry is auto-placed at the DAG's final task (D-64) — map every node-id where natural and add NO depends_on edges for this. Every brief self-contained per BLUEPRINT.md Rule 8 (exact path, signatures, inputs/outputs, acceptance; constraints first) — the coder sees only the brief. For a re-planned EXISTING file the brief describes ONLY the change from current behavior (the coder gets the file content and emits anchored edits per D-59 — carried behavior is structurally untouched, so do NOT restate what the file already does; the plan gate rejects an existing-file brief that backticks a symbol the file already defines but the ERD-DELTA never names as changed — D-133); for a NEW file the brief describes the whole file (target under 150 lines). Every contract id must already exist in contracts.json; when no registered id covers a file, use an empty contracts array and never invent one. Do NOT include a smoke_check field. Set erd_version to $FROZEN_V and version to any integer >= 1 — the shell renumbers the merged plan.${verrs:+ The previous attempt failed validation with these errors — fix all of them: $verrs}" \
-        "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:${CONTRACTS_DELTA:-$APPROVED/contracts.json}" "carried-plan:$STATE_DIR/carried-summary.json" "subtree-being-revised:tasks/plan-subtree.json"
+        "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:${ACTIVE_ERD_CONTEXT:-$APPROVED/ERD-DELTA.md}" "contracts:${CONTRACTS_DELTA:-$APPROVED/contracts.json}" "carried-plan:$STATE_DIR/carried-summary.json" "subtree-being-revised:tasks/plan-subtree.json"
       if ! subtree_feedback=$(python3 scripts/validate-plan.py --merge-subtree "$STATE_DIR/plan-prior.json" tasks/plan-subtree.json "$STATE_DIR/subtree-scope.json" 2>&1); then
         echo "$subtree_feedback"
         continue
@@ -1297,8 +1508,8 @@ print('; '.join(parts))")
     else
       echo "=== EM: emit/revise plan (revision $((revs + 1))/$MAX_PLAN_REVISIONS) ==="
       em_call tasks/plan.json scripts/schemas/plan.schema.json \
-        "Decompose the frozen ERD into atomic ONE-FILE tasks and reply with ONLY the plan as JSON matching the schema you were given — no prose, no markdown fence. $EM_TASK_KEYS $EM_CONTRACT_ID_RULE Valid contract ids (copy verbatim): $(contract_ids) ERD-DELTA is the authoritative current-change slice when present; follow its explicit supersessions over standing ERD prose. Requirements: exactly one task per file in contracts.json's files array; every test node-id in test-nodeids that exercises a file in contracts.json's files array mapped to exactly one task (the task after which it should pass, given its depends_on) — node-ids testing only carried-forward files are handled by the shell: do NOT map them and do NOT emit a 'regression' key (the validator rejects it); when unsure, omit the node-id — the validator names any you must map. Placement is gate-owned, never yours: a node-id pinned by contracts.json's test_mapping is auto-placed by the gate at the task owning its pinned file; a node-id from a Playwright-importing test file with no mapping entry is auto-placed at the DAG's final task (D-64) — map every node-id where natural and add NO depends_on edges for this. Every task's contracts list uses ids that exist in contracts.json; when no registered id covers a file, use an empty contracts array and never invent one. Every brief self-contained per BLUEPRINT.md Rule 8 (exact path, signatures, inputs/outputs, acceptance) — the coder sees only the brief. For an EXISTING file (D-59 edit mode: the coder gets the file content and emits anchored SEARCH/REPLACE blocks; carried behavior is structurally untouched) the brief describes ONLY the change from current behavior — do NOT restate what the file already does (the plan gate rejects an existing-file brief that backticks a symbol the file already defines but the ERD-DELTA never names as changed — restated carried behavior, D-133); for a NEW file the brief describes the whole file (target under 150 lines). Do NOT include a smoke_check field — smoke checks are TPM-authored and live in contracts.json. Set erd_version to $FROZEN_V. Set the top-level version key to an integer >= 1 (1 for a fresh plan; bump it on every re-emit). NO status fields.${verrs:+ The previous plan failed validation with these errors — fix all of them: $verrs}" \
-        "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:${CONTRACTS_DELTA:-$APPROVED/contracts.json}" "test-nodeids:${NODEIDS_SCOPE:-$APPROVED/test-nodeids}" "plan-being-revised:tasks/plan.json"
+        "Decompose the frozen ERD into atomic ONE-FILE tasks and reply with ONLY the plan as JSON matching the schema you were given — no prose, no markdown fence. $EM_TASK_KEYS $EM_CONTRACT_ID_RULE Valid contract ids (copy verbatim): $(contract_ids) ERD-DELTA active packet is the authoritative current-change slice; it includes every skipped freeze since the last successful milestone. Requirements: exactly one task per file in this exact active inventory and no others: ${ACTIVE_INVENTORY_DISPLAY:-contracts.json files array}. Every test node-id in test-nodeids that exercises an active-inventory file maps to exactly one task (the task after which it should pass, given its depends_on) — node-ids testing only carried-forward files are handled by the shell: do NOT map them and do NOT emit a 'regression' key (the validator rejects it); when unsure, omit the node-id — the validator names any you must map. Placement is gate-owned, never yours: a node-id pinned by contracts.json's test_mapping is auto-placed by the gate at the task owning its pinned file; a node-id from a Playwright-importing test file with no mapping entry is auto-placed at the DAG's final task (D-64) — map every node-id where natural and add NO depends_on edges for this. Every task's contracts list uses ids that exist in contracts.json; when no registered id covers a file, use an empty contracts array and never invent one. Every brief self-contained per BLUEPRINT.md Rule 8 (exact path, signatures, inputs/outputs, acceptance) — the coder sees only the brief. For an EXISTING file (D-59 edit mode: the coder gets the file content and emits anchored SEARCH/REPLACE blocks; carried behavior is structurally untouched) the brief describes ONLY the change from current behavior — do NOT restate what the file already does (the plan gate rejects an existing-file brief that backticks a symbol the file already defines but the active ERD-delta packet never names as changed — restated carried behavior, D-133); for a NEW file the brief describes the whole file (target under 150 lines). Do NOT include a smoke_check field — smoke checks are TPM-authored and live in contracts.json. Set erd_version to $FROZEN_V. Set the top-level version key to an integer >= 1 (1 for a fresh plan; bump it on every re-emit). NO status fields.${verrs:+ The previous plan failed validation with these errors — fix all of them: $verrs}" \
+        "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:${ACTIVE_ERD_CONTEXT:-$APPROVED/ERD-DELTA.md}" "contracts:${CONTRACTS_DELTA:-$APPROVED/contracts.json}" "test-nodeids:${NODEIDS_SCOPE:-$APPROVED/test-nodeids}" "plan-being-revised:tasks/plan.json"
     fi
   done
 }
@@ -1335,9 +1546,9 @@ json.dump(entry, open(sys.argv[2], 'w'), indent=2)
   fi
   local ctx=()
   if [ -n "$task_entry" ]; then
-    ctx=("task-entry:$task_entry" "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:$APPROVED/ERD-DELTA.md")
+    ctx=("task-entry:$task_entry" "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:${ACTIVE_ERD_CONTEXT:-$APPROVED/ERD-DELTA.md}")
   else
-    ctx=("plan:tasks/plan.json" "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:$APPROVED/contracts.json")
+    ctx=("plan:tasks/plan.json" "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:${ACTIVE_ERD_CONTEXT:-$APPROVED/ERD-DELTA.md}" "contracts:$APPROVED/contracts.json")
   fi
   # D-116: a failing test contributes only the source of the functions the
   # evidence actually names, not the whole file (test_ui.py alone is 1133
@@ -1505,9 +1716,38 @@ PYEOF
 
 finalize_batch() {  # writes the single copy-pasteable batch and halts
   local batch="$ESC_DIR/BATCH.md"
+  local shared="$STATE_DIR/escalation-shared.md"
   local n
   n=$(find "$ESC_DIR" -name bundle.md | wc -l | tr -d ' ')
   [ "$n" -gt 0 ] || return 0
+  {
+    echo "## Shared milestone context (applies to every item below — D-118)"
+    echo
+    echo "### Standing summary"
+    echo '```markdown'
+    if [ -f "${STANDING_SUMMARY:-$APPROVED/ERD.md}" ]; then
+      cat "${STANDING_SUMMARY:-$APPROVED/ERD.md}"
+    else
+      echo "(standing summary unavailable)"
+    fi
+    echo '```'
+    echo
+    echo "### ERD-DELTA.md (spec v$FROZEN_V) — the authoritative current-change slice"
+    echo '```markdown'
+    if [ -f "${ACTIVE_ERD_CONTEXT:-$APPROVED/ERD-DELTA.md}" ]; then
+      cat "${ACTIVE_ERD_CONTEXT:-$APPROVED/ERD-DELTA.md}"
+    else
+      echo "(no ERD-DELTA.md — consolidation freeze; the standing ERD is the current reference)"
+    fi
+    echo '```'
+    echo
+    echo "---"
+  } > "$shared"
+  local budget_tool="${CONTEXT_BUDGET_TOOL:-scripts/context-budget.py}"
+  if [ -f "$budget_tool" ]; then
+    python3 "$budget_tool" warn escalation-shared "$shared" \
+      || die "escalation shared-context budget measurement failed"
+  fi
   {
     echo "# TPM escalation batch — $n item(s) — spec v$FROZEN_V"
     echo
@@ -1524,27 +1764,7 @@ finalize_batch() {  # writes the single copy-pasteable batch and halts
     # Finding-7: the milestone slice is shared by every item, so it is emitted
     # ONCE here at the batch top instead of being re-copied inside each bundle
     # (which batching then duplicated N times).
-    echo "## Shared milestone context (applies to every item below — D-118)"
-    echo
-    echo "### Standing summary"
-    echo '```markdown'
-    if [ -f "${STANDING_SUMMARY:-$APPROVED/ERD.md}" ]; then
-      cat "${STANDING_SUMMARY:-$APPROVED/ERD.md}"
-    else
-      echo "(standing summary unavailable)"
-    fi
-    echo '```'
-    echo
-    echo "### ERD-DELTA.md (spec v$FROZEN_V) — the authoritative current-change slice"
-    echo '```markdown'
-    if [ -f "$APPROVED/ERD-DELTA.md" ]; then
-      cat "$APPROVED/ERD-DELTA.md"
-    else
-      echo "(no ERD-DELTA.md — consolidation freeze; the standing ERD is the current reference)"
-    fi
-    echo '```'
-    echo
-    echo "---"
+    cat "$shared"
     find "$ESC_DIR" -name bundle.md | sort | while read -r b; do
       cat "$b"; echo; echo "---"
     done
@@ -1750,7 +1970,11 @@ The previous attempt failed with: $last_fail. Fix the cause, do not just retry t
     coder_ok=0
   fi
   if [ "$coder_ok" = "1" ]; then
-    git add "$file" && git commit -m "[task $id] attempt $((strikes + 1))" 2>/dev/null || true
+    if [ -z "$(git status --porcelain -- "$file" 2>/dev/null)" ]; then
+      echo "no change in $file — no [task] commit needed"
+    else
+      git add "$file" && git commit -m "[task $id] attempt $((strikes + 1))"
+    fi
     # D-74: lint the one file the coder wrote, BEFORE the mapped tests — lint
     # findings are exact-location retry feedback (the D-71 validator-fed
     # pattern) and cheaper than a sandbox pytest run. CI's src/ lint is dark
@@ -1857,7 +2081,7 @@ sys.stdout.write(d['revised_brief'])" > "$BRIEF_DIR/$id"
         echo "=== EM: revise decomposition (revision $((revs + 1))/$MAX_PLAN_REVISIONS) ==="
         em_call tasks/plan.json scripts/schemas/plan.schema.json \
           "The decomposition is wrong around task $id: $(python3 -c "import json;print(json.load(open('$DIAG_FILE'))['reason'])"). Rewrite the plan fixing it and reply with ONLY the JSON (same requirements as before: one file per task, every inventory-exercising test node-id mapped exactly once, no 'regression' key, erd_version $FROZEN_V, bump plan version, NO status fields). Map ONLY node-ids from this list, each to exactly one of your tasks: $(plan_mapped_ids). If a listed node-id is not exercised by any file you are planning, OMIT it — the shell routes carried coverage itself (D-119). $EM_TASK_KEYS $EM_CONTRACT_ID_RULE Valid contract ids (copy verbatim): $(contract_ids) Keep entries for unrelated tasks byte-identical — completed work is preserved only where entries are unchanged." \
-          "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:${CONTRACTS_DELTA:-$APPROVED/contracts.json}" "plan-being-revised:tasks/plan.json"
+          "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:${ACTIVE_ERD_CONTEXT:-$APPROVED/ERD-DELTA.md}" "contracts:${CONTRACTS_DELTA:-$APPROVED/contracts.json}" "plan-being-revised:tasks/plan.json"
         ensure_plan
         compute_active_delta_scope
         reset_active_delta_tasks
@@ -2047,16 +2271,44 @@ if [ "$TESTS_RC" -eq 0 ]; then
 
   $_verdict_note. Feature built and validated.${FLAKE_NOTE}
 EOF
+  # D-126 ordering: persist this successful run while timings.tsv still
+  # exists, before teardown and before metrics-report reads the durable sink.
+  # The EXIT trap observes SUCCESS_RECORDED and does not duplicate the row.
+  record_measurement 0 "" ""
+  SUCCESS_RECORDED=1
   rm -rf "$STATE_DIR"
   git add tasks/CURRENT.md "$COMPLETION_LEDGER"
   [ ! -f "$FLAKE_LEDGER" ] || git add "$FLAKE_LEDGER"
+  # P3-5: the metrics row must bind to THIS milestone's [success] commit —
+  # a bare `--milestone HEAD` can bind a STALE ref if the guarded commit
+  # above fails (git identity, pre-commit hook, anything else, all muffled
+  # by the `|| true`): HEAD would still point at the previous milestone's
+  # commit whose subject may already match `[success] spec vN`. Capture the
+  # pre-commit SHA and require: HEAD advanced AND the new subject is EXACTLY
+  # `[success] spec v$FROZEN_V`; otherwise warn loudly and skip the row.
+  pre_success_sha=""
+  pre_success_sha=$(git rev-parse HEAD 2>/dev/null || true)
   git diff --cached --quiet \
     || git commit -m "[success] spec v$FROZEN_V" 2>/dev/null || true
-  # Metrics row (D-126): computed from DURABLE sources that survive the
-  # rm -rf above (..measurement/, .em-archive/, the committed flake ledger).
-  # A report — a failure here must never fail the run.
-  python3 "$METRICS_REPORT_TOOL" --milestone HEAD --feature "v$FROZEN_V" \
-    2>/dev/null || true
+  post_success_sha=""
+  post_success_sha=$(git rev-parse HEAD 2>/dev/null || true)
+  success_subject=""
+  success_subject=$(git log -1 --format=%s 2>/dev/null || true)
+  if [ -n "$pre_success_sha" ] && [ -n "$post_success_sha" ] \
+     && [ "$post_success_sha" != "$pre_success_sha" ] \
+     && [ "$success_subject" = "[success] spec v$FROZEN_V" ]; then
+    # Metrics row (D-126): computed from DURABLE sources that survive the
+    # rm -rf above (..measurement/, .em-archive/, the committed flake ledger).
+    # A report — a failure here must never fail the run, but it must be VISIBLE:
+    # the int("v99") crash sat hidden for weeks behind `2>/dev/null || true`
+    # (correction log 2026-07-16: an `|| true` swallows EVERY failure mode). Keep
+    # it non-gating, but surface the tool's error and a warning instead.
+    if ! python3 "$METRICS_REPORT_TOOL" --milestone HEAD --feature "v$FROZEN_V"; then
+      echo "orchestrate: metrics row NOT recorded for v$FROZEN_V (non-fatal report; see error above)" >&2
+    fi
+  else
+    echo "orchestrate: [success] commit did not land for v$FROZEN_V (HEAD ${pre_success_sha:-none} -> ${post_success_sha:-none}, subject '$success_subject') — metrics row SKIPPED (report-only, never fails a run)" >&2
+  fi
   exit 0
 fi
 
@@ -2092,7 +2344,7 @@ if [ "$DIAG_VERDICT" = "decomposition_wrong" ] && [ "$(plan_revisions_used)" -lt
   write_state plan_revisions $(( $(plan_revisions_used) + 1 ))
   em_call tasks/plan.json scripts/schemas/plan.schema.json \
     "Spec drift: $(python3 -c "import json;print(json.load(open('$DIAG_FILE'))['reason'])"). Rewrite the plan to fix the decomposition and reply with ONLY the JSON (same requirements as before; keep unrelated entries byte-identical). Map ONLY node-ids from this list, each to exactly one of your tasks: $(plan_mapped_ids). If a listed node-id is not exercised by any file you are planning, OMIT it — the shell routes carried coverage itself (D-119). $EM_TASK_KEYS $EM_CONTRACT_ID_RULE Valid contract ids (copy verbatim): $(contract_ids)" \
-    "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:$APPROVED/ERD-DELTA.md" "contracts:${CONTRACTS_DELTA:-$APPROVED/contracts.json}" "plan-being-revised:tasks/plan.json"
+    "standing:${STANDING_SUMMARY:-$APPROVED/ERD.md}" "ERD-delta:${ACTIVE_ERD_CONTEXT:-$APPROVED/ERD-DELTA.md}" "contracts:${CONTRACTS_DELTA:-$APPROVED/contracts.json}" "plan-being-revised:tasks/plan.json"
   ensure_plan
   compute_active_delta_scope
   reset_active_delta_tasks
