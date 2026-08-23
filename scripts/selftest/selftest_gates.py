@@ -1387,6 +1387,16 @@ def test_diagnosis_valid_brief_wrong_passes(repo):
     assert "brief_wrong" in r.stdout
 
 
+def test_diagnosis_valid_transient_or_environmental_passes(repo):
+    r = run_diagnosis(repo, {
+        "task_id": "T1",
+        "verdict": "transient_or_environmental",
+        "reason": "the exact unchanged commit passed the controlled re-probe",
+    })
+    assert r.returncode == 0, r.stderr
+    assert "transient_or_environmental" in r.stdout
+
+
 def test_plan_may_reference_ui_and_external_contract_ids(repo):
     """D-58 halt (testchat M7): the EM correctly listed the ui:* contracts a
     frontend task implements and the gate rejected them as unknown ids —
@@ -1890,6 +1900,73 @@ def test_consult_model_task_id_overwritten(tmp_path):
     assert consult_artifact(tmp_path)["task_id"] == "T7"
 
 
+def test_consult_transient_verdict_is_schema_valid_and_prompt_is_strict(tmp_path):
+    diag = {
+        "verdict": "transient_or_environmental",
+        "reason": "the named model service was unavailable during both attempts",
+    }
+    r = run_consult(tmp_path, [diag])
+    assert r.returncode == 0, r.stderr
+    assert consult_calls(tmp_path) == 1
+    assert "VERDICT=transient_or_environmental" in r.stdout
+    prompt = (tmp_path / "prompts" / "1").read_text()
+    assert "never use merely because the cause is uncertain" in prompt
+    assert "no automatic retry or re-probe" in prompt
+
+
+def test_transient_verdict_halts_with_operator_record_and_no_tpm_route(tmp_path):
+    """D-169: an environmental diagnosis is neither a hidden retry nor a
+    spec accusation. Execute the real halt helper under strict mode and pin
+    its operator record, reset-for-explicit-rerun behavior, and exit status."""
+    source = (SCRIPTS / "orchestrate.sh").read_text()
+    fn = re.search(
+        r"^halt_transient_or_environmental\(\) \{.*?^\}$",
+        source,
+        re.M | re.S,
+    )
+    assert fn, "transient/environmental halt helper not found — extractor drift"
+    assert (
+        'transient_or_environmental)\n'
+        '      halt_transient_or_environmental "$id" "$file" "$evidence" "$DIAG_FILE"'
+    ) in source
+
+    state = tmp_path / ".pipeline-state"
+    state.mkdir()
+    diag = state / "diagnosis-T7.json"
+    diag.write_text(json.dumps({
+        "task_id": "T7",
+        "verdict": "transient_or_environmental",
+        "reason": "the exact unchanged commit passed a controlled re-probe",
+    }))
+    runner = f"""#!/usr/bin/env bash
+set -euo pipefail
+cd "$1"
+STATE_DIR=.pipeline-state
+TASK_STATE="$STATE_DIR/tasks"
+FROZEN_V=12
+mkdir -p "$TASK_STATE"
+set_counter() {{ printf '%s\n' "$3" > "$TASK_STATE/$1.$2"; }}
+die() {{ echo "FAIL: $*" >&2; exit 1; }}
+{fn.group(0)}
+halt_transient_or_environmental T7 src/x.py "service unavailable" "$STATE_DIR/diagnosis-T7.json"
+"""
+    r = subprocess.run(
+        ["bash", "-c", runner, "selftest", str(tmp_path)],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 1
+    assert "no automatic retry or re-probe" in r.stderr
+    review = state / "operator-review" / "T7.md"
+    assert review.is_file()
+    review_text = review.read_text()
+    assert "service unavailable" in review_text
+    assert "passed a controlled re-probe" in review_text
+    assert "did not retry, re-probe, revise the plan, or escalate to the TPM" in review_text
+    assert (state / "tasks" / "T7.strikes").read_text().strip() == "0"
+    assert not (state / "escalations").exists()
+
+
 def test_exhausted_brief_allowance_escalates_before_consult():
     """Do not demand a revised brief that the next branch must discard."""
     source = (SCRIPTS / "orchestrate.sh").read_text()
@@ -2131,7 +2208,7 @@ def test_em_context_sites_use_standing_summary():
     source = (SCRIPTS / "orchestrate.sh").read_text()
     labels = re.findall(r'"standing:\$\{STANDING_SUMMARY:-\$APPROVED/ERD\.md\}"', source)
     assert len(labels) == 6, f"expected 6 standing-label sites (4 plan/drift + 2 consult branches), got {len(labels)}"
-    assert "python3 scripts/standing-summary.py" in source
+    assert "python3 $PLANE_DIR/scripts/standing-summary.py" in source
     assert 'STANDING_SUMMARY="$STATE_DIR/standing-summary.md"' in source
 
 
@@ -2829,6 +2906,22 @@ __GUARD_BLOCK__
         "the ARM B guard must not have committed anything"
 
 
+def test_plan_revisions_helper_precedes_early_exit_trap():
+    """The EXIT trap runs on preflight failures, before the plan phase.
+
+    The Vortex M1 preflight exposed the ordering defect: record_measurement()
+    called plan_revisions_used(), but that helper's definition was below the
+    preflight and had not executed yet. Pin the load order directly so a
+    future source move cannot reintroduce `command not found` on early exits.
+    """
+    source = (SCRIPTS / "orchestrate.sh").read_text()
+    helper = source.index("plan_revisions_used() {")
+    exit_trap = source.index("trap 'record_exit' EXIT")
+    plan_phase = source.index("# --- Plan phase:")
+    assert helper < exit_trap < plan_phase
+    assert source.count("plan_revisions_used() {") == 1
+
+
 def test_full_suite_execution_is_confined_to_tests_directory():
     """No-argument run_tests cannot discover archives or selftests.
 
@@ -3322,6 +3415,9 @@ def stageable_repo(tmp_path):
     # frozen-manifest is regenerated by refreeze, so any content is fine
     # for the pre-apply validation phase we're exercising.
     (tmp_path / "scripts" / ".approved" / "frozen-manifest").write_text("")
+    # Real children gitignore the staging dir; the unignored case has its
+    # own dedicated test (staging-exclusion gate).
+    (tmp_path / ".gitignore").write_text("scripts/.approved/incoming/\n")
 
     _init_git(tmp_path)
     return tmp_path
@@ -4217,7 +4313,7 @@ def test_orchestrate_em_context_fallbacks_are_loud(tmp_path):
                src.index("CONTRACTS_DELTA=\"$STATE_DIR/contracts-delta.json\"")]
     assert 'if [ -f "$APPROVED/ERD.md" ]' in gens
     assert "else" in gens
-    assert "python3 scripts/standing-summary.py" in gens
+    assert "python3 $PLANE_DIR/scripts/standing-summary.py" in gens
 
 
 def test_contract_id_rule_present_at_all_plan_sites():
@@ -4269,9 +4365,9 @@ def test_contract_id_rule_mirrored_in_drive_plan():
 
 def test_repair_contracts_wired_before_gate():
     orch = ORCHESTRATE.read_text()
-    closure = ("[ -f tasks/plan.json ] && python3 scripts/validate-plan.py "
+    closure = ("[ -f tasks/plan.json ] && python3 $PLANE_DIR/scripts/validate-plan.py "
                "--repair-closures tasks/plan.json || true")
-    contracts = ("[ -f tasks/plan.json ] && python3 scripts/validate-plan.py "
+    contracts = ("[ -f tasks/plan.json ] && python3 $PLANE_DIR/scripts/validate-plan.py "
                  "--repair-contracts tasks/plan.json || true")
     assert contracts in orch, "repair-contracts pre-gate call site missing"
     assert orch.count("--repair-contracts") == 1, (
@@ -4968,6 +5064,7 @@ _SCOPED_STUB = (
 _SCOPED_DRIVER = (
     "set -euo pipefail\n"
     "cd \"__WORK__\"\n"
+    "PLANE_DIR=$(pwd -P)\n"
     "mark() { :; }\n"
     "ACTIVE_DELTA_FILES=(__ACTIVE__)\n"
     "DELTA_SCOPED=1\n"
@@ -5430,6 +5527,7 @@ def _run_completion_transition(tmp_path, current_spec):
     }
     script = f"""set -euo pipefail
 mkdir -p "$TASK_STATE" "$BRIEF_DIR"
+PLANE_DIR=$(pwd -P)
 read_state() {{ [ -f "$STATE_DIR/$1" ] && cat "$STATE_DIR/$1" || true; }}
 write_state() {{ printf '%s\n' "$2" > "$STATE_DIR/$1"; }}
 set_tstat() {{ printf '%s\n' "$2" > "$TASK_STATE/$1.status"; }}
@@ -6207,6 +6305,10 @@ def freezable_repo(tmp_path):
     approved = tmp_path / "scripts" / ".approved"
     (approved / "incoming" / "tests").mkdir(parents=True)
     (tmp_path / "tests").mkdir()
+    # Real children gitignore the staging dir (vortex did NOT — that gap let
+    # staged artifacts ride `git add -A` into the v1 freeze commit). The
+    # fixture mirrors a correct child; the unignored case has its own test.
+    (tmp_path / ".gitignore").write_text("scripts/.approved/incoming/\n")
     for name in (
         "refreeze.sh",
         "refreeze_delta.py",
@@ -6341,6 +6443,56 @@ def test_refreeze_smoke_check_must_be_red_on_unchanged_tree(freezable_repo):
     assert "NOT RED" in r.stdout, r.stdout
 
 
+def test_refreeze_post_apply_failure_rolls_back_lane(freezable_repo):
+    """D-151 extension: the M35 smoke red-check runs AFTER the apply has
+    copied contracts/tests into the frozen lane — a die there used to leave
+    the lane half-applied (the Vortex first-freeze incident). Every
+    post-apply failure must restore tests/ and scripts/.approved/ to HEAD:
+    VERSION unchanged, no DELTA-v2.json, no new test installed, tracked lane
+    clean. The staging dir survives for retry."""
+    incoming = freezable_repo / "scripts" / ".approved" / "incoming"
+    (incoming / "tests" / "test_delta.py").write_text(
+        "def test_red_probe():\n    assert False\n")
+    (incoming / "ERD-DELTA.md").write_text(
+        VALID_ERD_DELTA + _PIN_ROW("test_red_probe"))
+    approved = freezable_repo / "scripts" / ".approved"
+    before_version = (approved / "VERSION").read_text()
+    r = _stage_contracts_smoke(
+        freezable_repo,
+        "grep -q 'def preexisting' src/app.py")   # passes -> post-apply die
+    assert r.returncode != 0, r.stdout
+    assert "rolling back the applied freeze" in r.stderr, r.stderr
+    # Lane restored to HEAD:
+    assert (approved / "VERSION").read_text() == before_version
+    assert not (approved / "DELTA-v2.json").exists()
+    assert not (freezable_repo / "tests" / "test_delta.py").exists()
+    contracts = json.loads((approved / "contracts.json").read_text())
+    assert "smoke_checks" not in contracts
+    assert "test_red_probe" not in (approved / "test-nodeids").read_text()
+    dirty = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=no",
+         "--", "tests/", "scripts/.approved/",
+         ":(exclude)scripts/.approved/incoming"],
+        cwd=freezable_repo, capture_output=True, text=True)
+    assert dirty.stdout.strip() == "", dirty.stdout
+    # Staging preserved for retry:
+    assert (incoming / "contracts.json").is_file()
+
+
+def test_refreeze_untracked_lane_file_blocks_before_apply(freezable_repo):
+    """Rollback may git-clean files created by the failed apply, so the
+    pre-apply clean-lane guard must reject an operator's pre-existing
+    untracked file outside incoming/ rather than deleting it as collateral.
+    """
+    note = freezable_repo / "scripts" / ".approved" / "operator-note.txt"
+    note.write_text("preserve me\n")
+    r = _run_refreeze_install(freezable_repo)
+    assert r.returncode != 0, r.stdout
+    assert "frozen lane is dirty before apply" in r.stderr, r.stderr
+    assert note.read_text() == "preserve me\n"
+    assert not (freezable_repo / "tests" / "test_delta.py").exists()
+
+
 def test_refreeze_smoke_check_red_on_unchanged_tree_passes(freezable_repo):
     """A smoke check that fails on the pre-implementation tree (the file it
     probes does not exist yet) is a real gate — the freeze proceeds."""
@@ -6349,6 +6501,135 @@ def test_refreeze_smoke_check_red_on_unchanged_tree_passes(freezable_repo):
         "grep -q 'def not_implemented_yet' src/app.py")
     assert r.returncode == 0, (r.stdout, r.stderr)
     assert "red as expected" in r.stdout, r.stdout
+
+
+# --- first freeze, v0 -> v1 (end-to-end) --------------------------------------
+# A brand-new child has no scripts/.approved/VERSION, contracts.json, or
+# test-nodeids. The M35 smoke red-check consumed the pre-apply old-contracts
+# snapshot unconditionally — but at v0 that snapshot is never created (there
+# is nothing to snapshot), so the FIRST freeze of any project crashed with
+# FileNotFoundError after the apply had already mutated the frozen lane.
+
+def _install_refreeze_scripts(repo):
+    """Copy the scripts a full refreeze apply path needs into a fixture repo,
+    plus the passthrough sandbox adapter (no containers in selftests)."""
+    for name in (
+        "refreeze.sh",
+        "refreeze_delta.py",
+        "contracts-merge.py",
+        "check-prd-additive.py",
+        "check-test-surface.py",
+        "spec_artifacts.py",
+        "check-spec-delta.py",
+        "check-ac-postconditions.py",
+        "check-test-direction.py",
+        "validate-plan.py",
+    ):
+        target = repo / "scripts" / name
+        target.write_bytes((SCRIPTS / name).read_bytes())
+        if name.endswith(".sh"):
+            target.chmod(0o755)
+    schemas = repo / "scripts" / "schemas"
+    schemas.mkdir(exist_ok=True)
+    (schemas / "contracts.schema.json").write_bytes(
+        (SCRIPTS / "schemas" / "contracts.schema.json").read_bytes())
+    sandbox = repo / "scripts" / "sandbox-run.sh"
+    sandbox.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        "while [ \"$#\" -gt 0 ]; do\n"
+        "  case \"$1\" in --rw) shift 2 ;; --) shift; break ;; *) break ;; esac\n"
+        "done\n"
+        "exec \"$@\"\n"
+    )
+    sandbox.chmod(0o755)
+
+
+@pytest.fixture()
+def greenfield_repo(tmp_path):
+    """A brand-new child at v0: complete first-freeze staging (PRD, ERD,
+    contracts with one smoke check, one genuinely-red test), NO standing
+    frozen state whatsoever."""
+    approved = tmp_path / "scripts" / ".approved"
+    (approved / "incoming" / "tests").mkdir(parents=True)
+    (tmp_path / "tests").mkdir()
+    _install_refreeze_scripts(tmp_path)
+    (approved / "incoming" / "PRD.md").write_text(
+        "# PRD\nAC-1: the app exists and its symbol appears.\n")
+    (approved / "incoming" / "ERD.md").write_text(
+        "# ERD\nsrc/app.py holds the application.\n")
+    (approved / "incoming" / "contracts.json").write_text(json.dumps({
+        "files": ["src/app.py"],
+        "changed_files": ["src/app.py"],
+        "entry_points": ["src.app:app"],
+        "routes": [], "schemas": [], "errors": [],
+        "erd_version": 1,
+        # Red by construction: the probed symbol does not exist yet.
+        "smoke_checks": {"src/app.py":
+                         "grep -q 'def not_implemented_yet' src/app.py"},
+        "test_mapping": {"tests/test_delta.py::test_first": "src/app.py"},
+    }))
+    (approved / "incoming" / "tests" / "test_delta.py").write_text(
+        "def test_first():\n    assert False\n")
+    (tmp_path / ".gitignore").write_text("scripts/.approved/incoming/\n")
+    _init_git(tmp_path)
+    return tmp_path
+
+
+def test_refreeze_rejects_unignored_staging_dir(greenfield_repo):
+    """The staging dir must be gitignored before any freeze work happens:
+    the lane checks and freeze commits exclude it by name, so an unignored
+    staging dir leaks staged artifacts into the [refreeze] commit (vortex's
+    v1 incident) and dirties every downstream clean-tree preflight. The
+    guard fires on the dir itself, before any staged content is read, and
+    nothing is applied. Once ignored, the same invocation gets past it."""
+    (greenfield_repo / ".gitignore").unlink()
+    r = _run_refreeze_install(greenfield_repo)
+    assert r.returncode != 0, r.stdout
+    assert "not gitignored" in r.stderr, r.stderr
+    assert not (greenfield_repo / "scripts" / ".approved" / "VERSION").exists()
+    # Positive control: ignoring it lets the run proceed past this gate.
+    # Recreating the tracked file with its original bytes leaves the tree
+    # clean — check-ignore reads the worktree, no commit is needed.
+    (greenfield_repo / ".gitignore").write_text(
+        "scripts/.approved/incoming/\n")
+    r2 = _run_refreeze_install(greenfield_repo)
+    assert "not gitignored" not in r2.stderr, r2.stderr
+    assert r2.returncode == 0, (r2.stdout, r2.stderr)
+
+
+def test_first_freeze_v0_to_v1_succeeds(greenfield_repo):
+    """The very first freeze of a project must go through end to end: there
+    are no standing contracts to diff against, and the M35 smoke red-check
+    must treat missing prior contracts as {} (every staged check is new),
+    never crash on the absent pre-apply snapshot. Its whole-project ERD must
+    also become the immutable v1 instruction snapshot, so the active-range
+    planner can consume a clean v1 freeze without requiring duplicate TPM
+    staging. Pre-fix the freeze died on missing old contracts; after that was
+    repaired, planning died on the missing ERD-DELTA-v1.md snapshot."""
+    r = _run_refreeze_install(greenfield_repo)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "smoke red-check" in r.stdout, r.stdout
+    assert "red as expected" in r.stdout, r.stdout
+    assert "FileNotFoundError" not in r.stderr, r.stderr
+    approved = greenfield_repo / "scripts" / ".approved"
+    assert (approved / "VERSION").read_text().strip() == "1"
+    delta = json.loads((approved / "DELTA-v1.json").read_text())
+    assert any("test_first" in n for n in delta["changed_tests"]), delta
+    assert not (approved / "ERD-DELTA.md").exists(), (
+        "v1 still must not require or invent a mutable milestone delta")
+    assert (approved / "ERD-DELTA-v1.md").read_text() == \
+        (approved / "ERD.md").read_text()
+    manifest = (approved / "frozen-manifest").read_text()
+    assert "scripts/.approved/ERD-DELTA-v1.md" in manifest, manifest
+    active = subprocess.run(
+        [sys.executable, "scripts/validate-plan.py", "--active-erd-context",
+         "scripts/.approved/DELTA-v1.json"],
+        cwd=greenfield_repo, capture_output=True, text=True,
+    )
+    assert active.returncode == 0, (active.stdout, active.stderr)
+    assert active.stdout.startswith("## Active freeze instructions — v1\n")
+    assert active.stdout.endswith((approved / "ERD.md").read_text())
 
 
 def test_refreeze_identical_staged_test_does_not_widen_delta(freezable_repo):
@@ -7579,11 +7860,11 @@ def test_subtree_scope_trivial_off_with_new_files(subtree_repo):
     assert s["trivial_construct"] is False
 
 
-def run_construct(repo):
+def run_construct(repo, *delta_paths):
     return subprocess.run(
         [sys.executable, str(VALIDATE_PLAN), "--construct-one-file",
          ".pipeline-state/plan-prior.json",
-         ".pipeline-state/subtree-scope.json"],
+         ".pipeline-state/subtree-scope.json", *delta_paths],
         cwd=repo, capture_output=True, text=True,
     )
 
@@ -7605,6 +7886,26 @@ def test_construct_one_file_carries_prior_brief_and_contracts(tmp_path):
     assert set(t["tests"]) == {                      # scope's map_nodeids
         "tests/test_b.py::test_two",
         "tests/test_b.py::test_three"}
+
+
+def test_construct_one_file_prefers_latest_tpm_verbatim_brief(tmp_path):
+    """A behavioral delta's verbatim brief is authoritative over a prior
+    task brief; carrying the old brief sends the coder to implement yesterday's
+    change and burns the ladder against tests for today's change."""
+    repo = _trivial_scope_repo(tmp_path)
+    (repo / "scripts" / ".approved" / "ERD-DELTA-v2.md").write_text(
+        "# ERD-DELTA v2\n\n"
+        "## Coder briefs (verbatim)\n\n"
+        "### T2 — src/b.py (edit existing file)\n\n"
+        "Read the 409 detail fields and render a readable conflict.\n\n"
+        "## Task DAG\n\nTask order: T2 (`src/b.py`).\n"
+    )
+    _scoped(repo, "scripts/.approved/DELTA-v2.json")
+    r = run_construct(repo, "scripts/.approved/DELTA-v2.json")
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    task = json.loads(r.stdout)["tasks"][0]
+    assert task["brief"] == \
+        "Read the 409 detail fields and render a readable conflict."
 
 
 def test_construct_one_file_refuses_non_trivial_scope(subtree_repo):
@@ -7990,6 +8291,20 @@ def test_onboarding_prints_the_model_override_names_llm_call_reads():
         assert "SWBP_CODER_MODEL" in source
         assert "SWBP_MODEL_EM" not in source
         assert "SWBP_MODEL_CODER" not in source
+
+
+def test_bootstrap_scopes_vm_git_trust_and_requires_identity():
+    """A shared Lima checkout may trip Git's dubious-ownership guard.
+
+    Bootstrap may trust the explicitly selected checkout, but never all repos;
+    it must also halt rather than inventing commit authorship for the guest.
+    """
+    source = (SCRIPTS / "bootstrap.sh").read_text()
+    assert 'git config --global --add safe.directory "$root"' in source
+    assert "safe.directory '*'" not in source
+    assert 'git config user.name' in source
+    assert 'git config user.email' in source
+    assert "Git identity is missing" in source
 
 
 def test_ci_lints_template_owned_python_scripts():
