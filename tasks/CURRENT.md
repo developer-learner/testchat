@@ -5,6 +5,26 @@
 
 ---
 
+## State at 2026-08-23 — current Blueprint adopted and copied-child portability proven
+
+- Testchat advanced from Blueprint `7446a3a` to `5d4969c`, then the complete
+  inherited suite exposed two D-168 entrypoint failures: **488 passed, 2
+  failed**. The snapshot launcher looked for the pinned Blueprint commit in
+  Testchat's own Git database. Vortex had passed only because its control-plane
+  files are symlinks into the Blueprint checkout; a normal `update-template.sh`
+  child owns copied files and has no Blueprint Git objects.
+- Blueprint correction `3d5a5e6` makes copied children verify every installed
+  template file against `scripts/.manifest-template` before building the
+  immutable content-addressed snapshot. Symlink mode still archives the exact
+  pinned Git object. The whole-entrypoint regressions now use copied files, so
+  the ordinary fleet distribution shape is exercised directly.
+- Blueprint publication dogfooded the exact-SHA release gate: **490/490
+  passed** at `3d5a5e6`. Testchat then adopted that published pin in
+  `e831315`; `phase-gate.sh manifest` and `manifest-drift-guard.sh` are green,
+  and Testchat's complete inherited control-plane suite is **490/490 passed**.
+  No product source, frozen product test, contract, or milestone artifact was
+  changed.
+
 ## State at 2026-08-16 — router-model milestone CLOSED OUT: `[success] spec v114` (manual, M28/M33 precedent)
 
 - **Outcome:** the router-model milestone (frozen v107..v113, stuck with T3
