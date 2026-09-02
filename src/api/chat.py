@@ -82,7 +82,7 @@ async def chat(request: ChatRequest) -> StreamingResponse:
                         else json.dumps(llm_mod.FALLBACK_REPLY)
                     )
                     yield f'event: error\ndata: {{"message": {msg}}}\n\n'.encode()
-        except Exception as e:
+        except (ConnectionError, TimeoutError, OSError) as e:
             if not str(e) and endpoint_override:
                 if not models_mod.is_router_model(request.model):
                     msg = json.dumps(f"Model {request.model} is not ready in Vortex. Pick a local model or retry once it is loaded.")
