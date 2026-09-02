@@ -1,5 +1,5 @@
 {
-  "erd_version": 119,
+  "erd_version": 120,
   "files": [
     "src/services/models.py",
     "src/api/models.py",
@@ -10,12 +10,11 @@
     "src/static/threads.js",
     "src/static/app.js"
   ],
-  "changed_files": [
-    "src/api/chat.py"
-  ],
+  "changed_files": [],
   "no_edit_files": [
     "src/services/models.py",
     "src/api/models.py",
+    "src/api/chat.py",
     "src/static/catalog.js",
     "src/services/storage.py",
     "src/api/threads.py",
@@ -62,145 +61,6 @@
     "src.services.models:router_models",
     "src.services.models:is_router_model",
     "src.services.models:router_chat_endpoint"
-  ],
-  "externals": [
-    {
-      "id": "external:lmstudio-models",
-      "probe": "curl -sS http://localhost:1234/api/v1/models",
-      "capture": "captures/lmstudio-models.json",
-      "notes": "Backend reads models[].key and models[].loaded_instances (non-empty = loaded). The UI-test mock serves this shape."
-    },
-    {
-      "id": "external:lmstudio-chat-stream",
-      "probe": "curl -sS -N -X POST http://localhost:1234/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"qwen/qwen3.6-27b\",\"messages\":[{\"role\":\"user\",\"content\":\"/no_think Say hi in three words\"}],\"stream\":true}'",
-      "capture": "captures/lmstudio-chat-stream.txt",
-      "notes": "OpenAI chunk shape. Captured reality (2026-07-08): thinking arrives INLINE as <think>...</think> inside delta.content — this LM Studio config emits no reasoning_content. Think text therefore reaches the frontend through SSE 'token' events; the frontend must render it via the think toggle AND strip it from stored/POSTed history. The 'think' SSE event path (reasoning_content) remains contractually valid for configs that parse reasoning."
-    },
-    {
-      "id": "external:tavily-search",
-      "probe": "curl -sS https://api.tavily.com/search -H 'Content-Type: application/json' -H \"Authorization: Bearer $TAVILY_API_KEY\" -d '{\"query\":\"latest stable Python version July 2026\",\"max_results\":4}'",
-      "capture": "captures/tavily-search.json",
-      "notes": "Captured 2026-07-17 against the live API. Backend reads top-level results[] only: url, title, content (extracted page prose — quality varies by page, hence the per-source char cap). score/raw_content/answer/images are present in the shape but unread. Key travels as Authorization: Bearer; TAVILY_ENDPOINT env overrides the URL so the sandboxed suite binds a loopback stub."
-    }
-  ],
-  "test_mapping": {
-    "tests/test_router_route.py::test_router_models_lists_router_when_router_reports_it": "src/services/models.py",
-    "tests/test_router_route.py::test_router_models_empty_when_router_omits_it": "src/services/models.py",
-    "tests/test_router_route.py::test_router_models_empty_when_router_503": "src/services/models.py",
-    "tests/test_router_route.py::test_router_models_empty_when_probe_raises": "src/services/models.py",
-    "tests/test_router_route.py::test_router_models_empty_when_vortex_url_unset": "src/services/models.py",
-    "tests/test_router_route.py::test_router_models_deduplicated": "src/services/models.py",
-    "tests/test_router_route.py::test_is_router_configured_reflects_env": "src/services/models.py",
-    "tests/test_router_route.py::test_router_chat_endpoint_uses_vortex_url": "src/services/models.py",
-    "tests/test_router_route.py::test_router_models_included_in_list_models": "src/services/models.py",
-    "tests/test_router_route.py::test_router_model_never_in_catalog": "src/api/models.py",
-    "tests/test_router_route.py::test_get_models_includes_router_when_ready": "src/api/models.py",
-    "tests/test_router_route.py::test_chat_routes_router_model_to_router_endpoint_and_passes_model": "src/api/chat.py",
-    "tests/test_router_route.py::test_chat_internal_path_untouched_when_vortex_url_unset": "src/api/chat.py",
-    "tests/test_ui_catalog.py::test_model_dropdown_lists_router_model_from_models_list[chromium]": "src/static/catalog.js",
-    "tests/test_storage_service.py::test_roundtrip_preserves_snapshot": "src/services/storage.py",
-    "tests/test_data_safety_storage.py::test_valid_json_with_invalid_thread_schema_is_quarantined": "src/api/threads.py",
-    "tests/test_data_safety_ui.py::test_delete_one_thread_survives_reload[chromium]": "src/static/threads.js",
-    "tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving[chromium]": "src/static/app.js"
-  },
-  "smoke_checks": {
-    "src/static/catalog.js": "grep -Fq 'mergeModel(lmModels[i].id, true, false);' src/static/catalog.js",
-    "src/static/threads.js": "grep -q '_enqueueMutation' src/static/threads.js",
-    "src/static/app.js": "grep -q 'history unavailable — retrying' src/static/app.js",
-    "src/services/storage.py": "grep -A30 'def load_versioned_snapshot' src/services/storage.py | grep -q 'corrupt-'",
-    "src/api/threads.py": "! grep -q 'validator=ThreadSnapshot.model_validate' src/api/threads.py && grep -q 'quarantined = bool(quarantine_files())' src/api/threads.py"
-  },
-  "routes": [
-    {
-      "id": "route:GET /",
-      "method": "GET",
-      "path": "/",
-      "file": "src/main.py"
-    },
-    {
-      "id": "route:POST /api/v1/chat",
-      "method": "POST",
-      "path": "/api/v1/chat",
-      "file": "src/api/chat.py"
-    },
-    {
-      "id": "route:GET /api/v1/models",
-      "method": "GET",
-      "path": "/api/v1/models",
-      "file": "src/api/models.py"
-    },
-    {
-      "id": "route:GET /api/v1/models/catalog",
-      "method": "GET",
-      "path": "/api/v1/models/catalog",
-      "file": "src/api/models.py"
-    },
-    {
-      "id": "route:POST /api/v1/nemotron/load",
-      "method": "POST",
-      "path": "/api/v1/nemotron/load",
-      "file": "src/api/models.py"
-    },
-    {
-      "id": "route:POST /api/v1/nemotron/unload",
-      "method": "POST",
-      "path": "/api/v1/nemotron/unload",
-      "file": "src/api/models.py"
-    },
-    {
-      "id": "route:GET /static/{path}",
-      "method": "GET",
-      "path": "/static/{path}",
-      "file": "src/main.py"
-    },
-    {
-      "id": "route:GET /api/v1/threads",
-      "method": "GET",
-      "path": "/api/v1/threads",
-      "file": "src/api/threads.py"
-    },
-    {
-      "id": "route:PUT /api/v1/threads",
-      "method": "PUT",
-      "path": "/api/v1/threads",
-      "file": "src/api/threads.py"
-    },
-    {
-      "id": "route:DELETE /api/v1/threads",
-      "method": "DELETE",
-      "path": "/api/v1/threads",
-      "file": "src/api/threads.py"
-    },
-    {
-      "id": "route:GET /api/v1/settings",
-      "method": "GET",
-      "path": "/api/v1/settings",
-      "file": "src/api/settings.py"
-    },
-    {
-      "id": "route:PUT /api/v1/settings",
-      "method": "PUT",
-      "path": "/api/v1/settings",
-      "file": "src/api/settings.py"
-    },
-    {
-      "id": "route:GET /api/v1/status",
-      "method": "GET",
-      "path": "/api/v1/status",
-      "file": "src/api/status.py"
-    },
-    {
-      "id": "route:POST /api/v1/script-models/{model_id}/load",
-      "method": "POST",
-      "path": "/api/v1/script-models/{model_id}/load",
-      "file": "src/api/models.py"
-    },
-    {
-      "id": "route:POST /api/v1/script-models/{model_id}/unload",
-      "method": "POST",
-      "path": "/api/v1/script-models/{model_id}/unload",
-      "file": "src/api/models.py"
-    }
   ],
   "schemas": [
     {
@@ -273,7 +133,7 @@
       "id": "schema:ModelInfo",
       "fields": {
         "id": "string",
-        "source": "string, literal 'lmstudio' or 'nemotron' or 'deepseek-v4-flash' or 'deepseek-v4-flash-0731'"
+        "source": "string, literal 'lmstudio' or 'nemotron' or 'deepseek-v4-flash-0731' or 'Flash_Q2KXL' or 'Flash_IQ3XXS' or 'router'"
       },
       "file": "src/api/models.py"
     },
@@ -378,6 +238,152 @@
         "web_configured": "boolean — true iff TAVILY_API_KEY is set (AC-90)"
       },
       "file": "src/api/status.py"
+    }
+  ],
+  "test_mapping": {
+    "tests/test_router_route.py::test_router_models_lists_router_when_router_reports_it": "src/services/models.py",
+    "tests/test_router_route.py::test_router_models_empty_when_router_omits_it": "src/services/models.py",
+    "tests/test_router_route.py::test_router_models_empty_when_router_503": "src/services/models.py",
+    "tests/test_router_route.py::test_router_models_empty_when_probe_raises": "src/services/models.py",
+    "tests/test_router_route.py::test_router_models_empty_when_vortex_url_unset": "src/services/models.py",
+    "tests/test_router_route.py::test_router_models_deduplicated": "src/services/models.py",
+    "tests/test_router_route.py::test_is_router_configured_reflects_env": "src/services/models.py",
+    "tests/test_router_route.py::test_router_chat_endpoint_uses_vortex_url": "src/services/models.py",
+    "tests/test_router_route.py::test_router_models_included_in_list_models": "src/services/models.py",
+    "tests/test_router_route.py::test_router_model_never_in_catalog": "src/api/models.py",
+    "tests/test_router_route.py::test_get_models_includes_router_when_ready": "src/api/models.py",
+    "tests/test_router_route.py::test_chat_routes_router_model_to_router_endpoint_and_passes_model": "src/api/chat.py",
+    "tests/test_router_route.py::test_chat_internal_path_untouched_when_vortex_url_unset": "src/api/chat.py",
+    "tests/test_ui_catalog.py::test_model_dropdown_lists_router_model_from_models_list[chromium]": "src/static/catalog.js",
+    "tests/test_storage_service.py::test_roundtrip_preserves_snapshot": "src/services/storage.py",
+    "tests/test_data_safety_storage.py::test_valid_json_with_invalid_thread_schema_is_quarantined": "src/api/threads.py",
+    "tests/test_data_safety_ui.py::test_delete_one_thread_survives_reload[chromium]": "src/static/threads.js",
+    "tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving[chromium]": "src/static/app.js",
+    "tests/test_router_route.py::test_is_router_model_true_for_any_ready_id": "src/services/models.py",
+    "tests/test_router_route.py::test_is_router_model_false_when_not_listed_or_down": "src/services/models.py",
+    "tests/test_router_route.py::test_router_model_id_constant_retired": "src/services/models.py",
+    "tests/test_router_route.py::test_chat_router_model_not_listed_falls_through_to_local_path": "src/api/chat.py",
+    "tests/test_router_route.py::test_chat_router_model_router_down_falls_through_to_local_path": "src/api/chat.py",
+    "tests/test_router_route.py::test_chat_router_404_race_surfaces_not_ready_message": "src/api/chat.py",
+    "tests/test_router_route.py::test_chat_router_error_while_still_ready_is_generic": "src/api/chat.py"
+  },
+  "externals": [
+    {
+      "id": "external:lmstudio-models",
+      "probe": "curl -sS http://localhost:1234/api/v1/models",
+      "capture": "captures/lmstudio-models.json",
+      "notes": "Backend reads models[].key and models[].loaded_instances (non-empty = loaded). The UI-test mock serves this shape."
+    },
+    {
+      "id": "external:lmstudio-chat-stream",
+      "probe": "curl -sS -N -X POST http://localhost:1234/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"qwen/qwen3.6-27b\",\"messages\":[{\"role\":\"user\",\"content\":\"/no_think Say hi in three words\"}],\"stream\":true}'",
+      "capture": "captures/lmstudio-chat-stream.txt",
+      "notes": "OpenAI chunk shape. Captured reality (2026-07-08): thinking arrives INLINE as <think>...</think> inside delta.content — this LM Studio config emits no reasoning_content. Think text therefore reaches the frontend through SSE 'token' events; the frontend must render it via the think toggle AND strip it from stored/POSTed history. The 'think' SSE event path (reasoning_content) remains contractually valid for configs that parse reasoning."
+    },
+    {
+      "id": "external:tavily-search",
+      "probe": "curl -sS https://api.tavily.com/search -H 'Content-Type: application/json' -H \"Authorization: Bearer $TAVILY_API_KEY\" -d '{\"query\":\"latest stable Python version July 2026\",\"max_results\":4}'",
+      "capture": "captures/tavily-search.json",
+      "notes": "Captured 2026-07-17 against the live API. Backend reads top-level results[] only: url, title, content (extracted page prose — quality varies by page, hence the per-source char cap). score/raw_content/answer/images are present in the shape but unread. Key travels as Authorization: Bearer; TAVILY_ENDPOINT env overrides the URL so the sandboxed suite binds a loopback stub."
+    }
+  ],
+  "smoke_checks": {
+    "src/static/catalog.js": "grep -Fq 'mergeModel(lmModels[i].id, true, false);' src/static/catalog.js",
+    "src/static/threads.js": "grep -q '_enqueueMutation' src/static/threads.js",
+    "src/static/app.js": "grep -q 'history unavailable — retrying' src/static/app.js",
+    "src/services/storage.py": "grep -A30 'def load_versioned_snapshot' src/services/storage.py | grep -q 'corrupt-'",
+    "src/api/threads.py": "! grep -q 'validator=ThreadSnapshot.model_validate' src/api/threads.py && grep -q 'quarantined = bool(quarantine_files())' src/api/threads.py"
+  },
+  "routes": [
+    {
+      "id": "route:GET /",
+      "method": "GET",
+      "path": "/",
+      "file": "src/main.py"
+    },
+    {
+      "id": "route:POST /api/v1/chat",
+      "method": "POST",
+      "path": "/api/v1/chat",
+      "file": "src/api/chat.py"
+    },
+    {
+      "id": "route:GET /api/v1/models",
+      "method": "GET",
+      "path": "/api/v1/models",
+      "file": "src/api/models.py"
+    },
+    {
+      "id": "route:GET /api/v1/models/catalog",
+      "method": "GET",
+      "path": "/api/v1/models/catalog",
+      "file": "src/api/models.py"
+    },
+    {
+      "id": "route:POST /api/v1/nemotron/load",
+      "method": "POST",
+      "path": "/api/v1/nemotron/load",
+      "file": "src/api/models.py"
+    },
+    {
+      "id": "route:POST /api/v1/nemotron/unload",
+      "method": "POST",
+      "path": "/api/v1/nemotron/unload",
+      "file": "src/api/models.py"
+    },
+    {
+      "id": "route:GET /static/{path}",
+      "method": "GET",
+      "path": "/static/{path}",
+      "file": "src/main.py"
+    },
+    {
+      "id": "route:GET /api/v1/threads",
+      "method": "GET",
+      "path": "/api/v1/threads",
+      "file": "src/api/threads.py"
+    },
+    {
+      "id": "route:PUT /api/v1/threads",
+      "method": "PUT",
+      "path": "/api/v1/threads",
+      "file": "src/api/threads.py"
+    },
+    {
+      "id": "route:DELETE /api/v1/threads",
+      "method": "DELETE",
+      "path": "/api/v1/threads",
+      "file": "src/api/threads.py"
+    },
+    {
+      "id": "route:GET /api/v1/settings",
+      "method": "GET",
+      "path": "/api/v1/settings",
+      "file": "src/api/settings.py"
+    },
+    {
+      "id": "route:PUT /api/v1/settings",
+      "method": "PUT",
+      "path": "/api/v1/settings",
+      "file": "src/api/settings.py"
+    },
+    {
+      "id": "route:GET /api/v1/status",
+      "method": "GET",
+      "path": "/api/v1/status",
+      "file": "src/api/status.py"
+    },
+    {
+      "id": "route:POST /api/v1/script-models/{model_id}/load",
+      "method": "POST",
+      "path": "/api/v1/script-models/{model_id}/load",
+      "file": "src/api/models.py"
+    },
+    {
+      "id": "route:POST /api/v1/script-models/{model_id}/unload",
+      "method": "POST",
+      "path": "/api/v1/script-models/{model_id}/unload",
+      "file": "src/api/models.py"
     }
   ],
   "errors": [
