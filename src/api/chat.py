@@ -40,14 +40,7 @@ async def chat(request: ChatRequest) -> StreamingResponse:
                     status_code=422, detail=f"Model {request.model} is not loaded"
                 )
             endpoint_override = script_model["chat_endpoint"]
-        elif (
-            models_mod.is_router_configured()
-            and request.model == models_mod.ROUTER_MODEL_ID
-        ):
-            if not models_mod.is_router_model(request.model):
-                raise HTTPException(
-                    status_code=422, detail=f"Model {request.model} is not loaded"
-                )
+        elif models_mod.is_router_configured() and models_mod.is_router_model(request.model):
             endpoint_override = models_mod.router_chat_endpoint()
 
     # Sync generator on purpose: Starlette iterates it in a threadpool, so the
@@ -90,7 +83,15 @@ async def chat(request: ChatRequest) -> StreamingResponse:
                     )
                     yield f'event: error\ndata: {{"message": {msg}}}\n\n'.encode()
         except Exception as e:
-            msg = json.dumps(str(e)) if str(e) else json.dumps(llm_mod.FALLBACK_REPLY)
-            yield f'event: error\ndata: {{"message": {msg}}}\n\n'.encode()
+            if not str(e) and endpoint_override:
+                if not models_mod.is_router_model(request.model):
+                    msg = json.dumps(f"Model {request.model} is not ready in Vortex. Pick a local model or retry once it is loaded.")
+                    yield f'event: error\ndata: {{"message": {msg}}}\n\n'.encode()
+                else:
+                    msg = json.dumps(llm_mod.FALLBACK_REPLY)
+                    yield f'event: error\ndata: {{"message": {msg}}}\n\n'.encode()
+            else:
+                msg = json.dumps(str(e)) if str(e) else json.dumps(llm_mod.FALLBACK_REPLY)
+                yield f'event: error\ndata: {{"message": {msg}}}\n\n'.encode()
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
