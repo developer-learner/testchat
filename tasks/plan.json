@@ -1,18 +1,12 @@
 {
-  "version": 1,
-  "erd_version": 119,
+  "erd_version": 121,
   "tasks": [
     {
-      "id": "T1",
-      "file": "src/services/models.py",
+      "brief": "Do not edit `src/services/models.py`. The dynamic Vortex ready-set recut is already implemented: no fixed router model id exists, the live probe uses a 5-second timeout, results are deduplicated in probe order, and router models are appended to the models list. Acceptance: leave the file byte-identical; its mapped router tests must pass.",
+      "contracts": [],
       "depends_on": [],
-      "brief": "Do not edit `src/services/models.py`. The dynamic Vortex ready-set recut is\nalready implemented: no fixed router model id exists, the live probe uses a\n5-second timeout, results are deduplicated in probe order, and router models\nare appended to the models list. Acceptance: leave the file byte-identical;\nits mapped router tests must pass.",
-      "contracts": [
-        "src.services.models:is_router_configured",
-        "src.services.models:is_router_model",
-        "src.services.models:router_chat_endpoint",
-        "src.services.models:router_models"
-      ],
+      "file": "src/services/models.py",
+      "id": "T1",
       "tests": [
         "tests/test_router_route.py::test_is_router_configured_reflects_env",
         "tests/test_router_route.py::test_is_router_model_false_when_not_listed_or_down",
@@ -29,27 +23,27 @@
       ]
     },
     {
-      "id": "T2",
-      "file": "src/api/models.py",
+      "brief": "Do not edit `src/api/models.py`. Its model-list and catalog routes already expose the service results with the accepted router source schema. Acceptance: leave the file byte-identical; its mapped router API tests must pass.",
+      "contracts": [],
       "depends_on": [
         "T1"
       ],
-      "brief": "Do not edit `src/api/models.py`. Its model-list and catalog routes already\nexpose the service results with the accepted router source schema. Acceptance:\nleave the file byte-identical; its mapped router API tests must pass.",
-      "contracts": [],
+      "file": "src/api/models.py",
+      "id": "T2",
       "tests": [
         "tests/test_router_route.py::test_get_models_includes_router_when_ready",
         "tests/test_router_route.py::test_router_model_never_in_catalog"
       ]
     },
     {
-      "id": "T3",
-      "file": "src/api/chat.py",
+      "brief": "Edit only `src/api/chat.py`; do not change routing, imports, token/think/done handling, or any other file. `stream_reply()` reports transport failure as a message-less `(\"error\",)` item, so the primary fix belongs in the stream loop's existing `elif item[0] == \"error\":` branch, not only in the outer exception handler.\n\nInside `event_generator`, compute once:\n`routed_to_router = endpoint_override is not None and endpoint_override == models_mod.router_chat_endpoint()`.\nAdd a small local helper for message-less errors. It returns\n`Model {request.model} is not ready in Vortex. Pick a local model or retry once it is loaded.`\nwhen the request was router-routed, `request.model` is not `None`, and a fresh\n`models_mod.is_router_model(request.model)` call is false; otherwise it returns\n`llm_mod.FALLBACK_REPLY`.\n\nIn the stream-loop error branch, preserve `item[1]` exactly when present; only\nwhen `len(item) == 1` use the helper. In the outer\n`except (ConnectionError, TimeoutError, OSError) as e`, preserve `str(e)` when\nnon-empty; only a message-less exception uses the same helper. JSON-encode the\nselected message and retain the existing SSE error shape. Acceptance: the 404\nrace emits the exact Vortex not-ready message; still-ready, non-router, and\nmessage-bearing errors retain their prior results.",
+      "contracts": [],
       "depends_on": [
         "T1",
         "T2"
       ],
-      "brief": "Edit only `src/api/chat.py`; do not change routing, imports, token/think/done\nhandling, or any other file. `stream_reply()` reports transport failure as a\nmessage-less `(\"error\",)` item, so the primary fix belongs in the stream\nloop's existing `elif item[0] == \"error\":` branch, not only in the outer\nexception handler.\n\nInside `event_generator`, compute once:\n`routed_to_router = endpoint_override is not None and endpoint_override == models_mod.router_chat_endpoint()`.\nAdd a small local helper for message-less errors. It returns\n`Model {request.model} is not ready in Vortex. Pick a local model or retry once it is loaded.`\nwhen the request was router-routed, `request.model` is not `None`, and a fresh\n`models_mod.is_router_model(request.model)` call is false; otherwise it returns\n`llm_mod.FALLBACK_REPLY`.\n\nIn the stream-loop error branch, preserve `item[1]` exactly when present; only\nwhen `len(item) == 1` use the helper. In the outer\n`except (ConnectionError, TimeoutError, OSError) as e`, preserve `str(e)` when\nnon-empty; only a message-less exception uses the same helper. JSON-encode the\nselected message and retain the existing SSE error shape. Acceptance: the 404\nrace emits the exact Vortex not-ready message; still-ready, non-router, and\nmessage-bearing errors retain their prior results.",
-      "contracts": [],
+      "file": "src/api/chat.py",
+      "id": "T3",
       "tests": [
         "tests/test_router_route.py::test_chat_internal_path_untouched_when_vortex_url_unset",
         "tests/test_router_route.py::test_chat_router_404_race_surfaces_not_ready_message",
@@ -60,60 +54,57 @@
       ]
     },
     {
-      "id": "T4",
-      "file": "src/static/catalog.js",
+      "brief": "Do not edit `src/static/catalog.js`. Its existing models-list/catalog merge already turns every models-list entry, including a router entry, into one loaded non-script option. Acceptance: leave the file byte-identical and pass its frozen smoke check.",
+      "contracts": [],
       "depends_on": [
         "T1",
         "T2",
         "T3"
       ],
-      "brief": "Do not edit `src/static/catalog.js`. Its existing models-list/catalog merge\nalready turns every models-list entry, including a router entry, into one\nloaded non-script option. Acceptance: leave the file byte-identical and pass\nits frozen smoke check.",
-      "contracts": [
-        "ui:model-select"
-      ],
-      "tests": [
-        "tests/test_ui_catalog.py::test_model_dropdown_lists_router_model_from_models_list[chromium]"
-      ]
+      "file": "src/static/catalog.js",
+      "id": "T4",
+      "tests": []
     },
     {
-      "id": "T5",
-      "file": "src/services/storage.py",
+      "brief": "Do not edit `src/services/storage.py`. It is carried only as a previously accepted behavioral owner. Acceptance: leave the file byte-identical and pass its frozen smoke check.",
+      "contracts": [],
       "depends_on": [
         "T4"
       ],
-      "brief": "Do not edit `src/services/storage.py`. It is carried only as a previously\naccepted behavioral owner. Acceptance: leave the file byte-identical and pass\nits frozen smoke check.",
-      "contracts": [],
+      "file": "src/services/storage.py",
+      "id": "T5",
       "tests": []
     },
     {
-      "id": "T6",
-      "file": "src/api/threads.py",
+      "brief": "Do not edit `src/api/threads.py`. It is carried only as a previously accepted behavioral owner. Acceptance: leave the file byte-identical and pass its frozen smoke check.",
+      "contracts": [],
       "depends_on": [
         "T5"
       ],
-      "brief": "Do not edit `src/api/threads.py`. It is carried only as a previously accepted\nbehavioral owner. Acceptance: leave the file byte-identical and pass its\nfrozen smoke check.",
-      "contracts": [],
+      "file": "src/api/threads.py",
+      "id": "T6",
       "tests": []
     },
     {
-      "id": "T7",
-      "file": "src/static/threads.js",
+      "brief": "Do not edit `src/static/threads.js`. It is carried only as a previously accepted behavioral owner. Acceptance: leave the file byte-identical and pass its frozen smoke check.",
+      "contracts": [],
       "depends_on": [
         "T6"
       ],
-      "brief": "Do not edit `src/static/threads.js`. It is carried only as a previously\naccepted behavioral owner. Acceptance: leave the file byte-identical and pass\nits frozen smoke check.",
-      "contracts": [],
+      "file": "src/static/threads.js",
+      "id": "T7",
       "tests": []
     },
     {
-      "id": "T8",
-      "file": "src/static/app.js",
+      "brief": "Do not edit `src/static/app.js`. It is carried only as a previously accepted behavioral owner. Acceptance: leave the file byte-identical and pass its frozen smoke check.",
+      "contracts": [],
       "depends_on": [
         "T7"
       ],
-      "brief": "Do not edit `src/static/app.js`. It is carried only as a previously accepted\nbehavioral owner. Acceptance: leave the file byte-identical and pass its\nfrozen smoke check.",
-      "contracts": [],
+      "file": "src/static/app.js",
+      "id": "T8",
       "tests": []
     }
-  ]
+  ],
+  "version": 3
 }
