@@ -47,6 +47,23 @@ async def chat(request: ChatRequest) -> StreamingResponse:
     # blocking urllib reads in stream_reply/search_web can't stall the event
     # loop (status polls and thread saves kept freezing during think gaps).
     def event_generator():
+        routed_to_router = (
+            endpoint_override is not None
+            and endpoint_override == models_mod.router_chat_endpoint()
+        )
+
+        def _messageless_error() -> str:
+            if (
+                routed_to_router
+                and request.model is not None
+                and not models_mod.is_router_model(request.model)
+            ):
+                return (
+                    f"Model {request.model} is not ready in Vortex. "
+                    "Pick a local model or retry once it is loaded."
+                )
+            return llm_mod.FALLBACK_REPLY
+
         history_dicts = [
             {"role": e.role, "content": e.content} for e in request.history
         ]
@@ -79,19 +96,14 @@ async def chat(request: ChatRequest) -> StreamingResponse:
                     msg = (
                         json.dumps(item[1])
                         if len(item) > 1
-                        else json.dumps(llm_mod.FALLBACK_REPLY)
+                        else json.dumps(_messageless_error())
                     )
                     yield f'event: error\ndata: {{"message": {msg}}}\n\n'.encode()
         except (ConnectionError, TimeoutError, OSError) as e:
-            if not str(e) and endpoint_override is not None and endpoint_override == models_mod.router_chat_endpoint():
-                if not models_mod.is_router_model(request.model):
-                    msg = json.dumps(f"Model {request.model} is not ready in Vortex. Pick a local model or retry once it is loaded.")
-                    yield f'event: error\ndata: {{"message": {msg}}}\n\n'.encode()
-                else:
-                    msg = json.dumps(llm_mod.FALLBACK_REPLY)
-                    yield f'event: error\ndata: {{"message": {msg}}}\n\n'.encode()
+            if str(e):
+                msg = json.dumps(str(e))
             else:
-                msg = json.dumps(str(e)) if str(e) else json.dumps(llm_mod.FALLBACK_REPLY)
-                yield f'event: error\ndata: {{"message": {msg}}}\n\n'.encode()
+                msg = json.dumps(_messageless_error())
+            yield f'event: error\ndata: {{"message": {msg}}}\n\n'.encode()
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
