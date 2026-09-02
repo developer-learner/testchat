@@ -195,8 +195,59 @@ remain in force.
   `http://127.0.0.1:8005`, env override `DS4_0731_URL`, script path
   `run-server-0731.sh`, readiness-timeout constant) and one `SCRIPT_MODELS`
   entry shaped exactly like `deepseek-v4-flash`, plus the new id appended to
-  both `source` Literals in `src/api/models.py`. Normative per-file detail is
-  in `ERD-DELTA.md`.
+  both `source` Literals in `src/api/models.py`. (M34's per-file detail was
+  frozen in its delta and is consolidated into this standing ERD.)
+
+### Router (Vortex universal surface) — v107–v119
+
+The app can forward chat to a single upstream **router** (Vortex), an
+OpenAI-compatible surface that advertises its own live, ready-only catalog and
+404s a chat for a model that is not currently loaded. The router is configured
+solely by the `VORTEX_URL` environment variable; there is **no fixed
+router-model id** (`ROUTER_MODEL_ID` is retired — AC-181). Router membership is
+dynamic: any model the router currently reports ready is routable.
+
+* **`src/services/models.py` — router seams.** `_router_base_url()` returns
+  `os.environ.get("VORTEX_URL") or None`, read at call time (never a
+  module-level constant). `is_router_configured()` is `True` iff that base is a
+  non-empty string — the single gate for whether the router path exists at all.
+  `router_chat_endpoint()` returns `base + "/v1/chat/completions"`.
+  `_router_probe()` GETs `{base}/v1/models` (`httpx`, timeout 2), returning the
+  parsed `data[].id` list, or `None` on any exception or non-200.
+  `router_models()` returns the **full dynamic ready set** — one
+  `{"id": <id>, "source": "router"}` per probed id, in probe order,
+  deduplicated; `[]` when `VORTEX_URL` is unset or the probe fails/empties
+  (AC-175/AC-176). `is_router_model(id)` is `True` iff `id` is in the live probe
+  set — membership of any currently-ready router model, not equality to a fixed
+  id (AC-181). `list_models()` extends its result with `router_models()`.
+
+* **`src/api/models.py` — router source.** `ModelInfo.source`'s `Literal`
+  includes `"router"` so `GET /api/v1/models` can carry router rows;
+  `CatalogEntry.source` does **not** — router models never appear in
+  `GET /api/v1/models/catalog` (AC-176). No new routes; load/unload stay
+  script-model-only.
+
+* **`src/api/chat.py` — router routing and the 404 race.** A chat request
+  routes to the router iff `is_router_configured()` **and**
+  `is_router_model(request.model)` — any ready model — setting
+  `endpoint_override = router_chat_endpoint()` and streaming from
+  `{VORTEX_URL}/v1/chat/completions` with the id passed through unchanged
+  (AC-177). A model not in the ready set is **not** rejected pre-stream: the
+  router branch simply does not match and the request follows the internal
+  (local) path exactly as before the router existed (AC-178). The 404 race:
+  `src/services/llm.py` is unchanged and collapses a mid-stream transport
+  failure into a **message-less `("error",)` item yielded through the normal
+  stream loop** (it does not raise). In that stream loop's `("error",)` branch,
+  when the item is message-less and the request was router-routed, chat
+  re-probes `is_router_model(request.model)`; if the model has left the ready
+  set it emits the exact SSE error message (single line, copy verbatim):
+  `Model {id} is not ready in Vortex. Pick a local model or retry once it is loaded.`
+  (AC-179); if the model is
+  still ready — or the error carried a message, or the request was not
+  router-routed — it keeps the generic fallback (AC-180). The identical decision
+  covers a genuinely-raised message-less transport error in the outer exception
+  handler. The router oracle is hermetic (a `pytest_httpserver` stub stands in
+  for Vortex).
 
 ## File inventory
 
@@ -226,6 +277,13 @@ Front-end static: `index.html`, `app.js`, `threads.js`, `current-chat.js`,
 * `tests/test_threads_api.py`, `tests/test_ui_websearch.py`,
   `tests/test_websearch_api.py` — carried API/feature coverage; direct writers
   obtain and pass the revision.
+* `tests/test_router_route.py` — router oracle (AC-175..AC-181): the full ready
+  set and its dedup/probe-order, catalog exclusion, chat routing with id
+  pass-through, not-ready fall-through to the local path, the 404-race
+  not-ready message, still-ready generic fallback, and the retired
+  `ROUTER_MODEL_ID`. Hermetic: a `pytest_httpserver` stub is Vortex; imports no
+  Playwright. `tests/test_ui_catalog.py` carries the browser check that a ready
+  router model appears in the model dropdown (`source: "router"`).
 
 ## Smoke checks
 
