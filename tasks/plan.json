@@ -1,1 +1,119 @@
-{"version": 2, "erd_version": 115, "tasks": [{"id": "T1", "file": "src/services/models.py", "depends_on": [], "brief": "Edit src/services/models.py. Remove the module-level constant `ROUTER_MODEL_ID`. Update `router_models()`: when VORTEX_URL is unset return []; otherwise probe GET {base}/v1/models with httpx.get(base + \"/v1/models\", timeout=5). On non-200 or exception return []. On 200, parse the JSON `data` array and return a list of `{\"id\": <id>, \"source\": \"router\"}` for every entry in probe order, deduplicated (first occurrence wins). Update `is_router_model(model_id)`: return True iff `model_id` is in the live probe set (same shared probe as router_models); False on probe failure or when VORTEX_URL is unset. Keep `is_router_configured()` and `router_chat_endpoint()` unchanged. Ensure `list_models()` still appends `router_models()` after the LM Studio block and before the SCRIPT_MODELS loop. Acceptance: no fixed router model id exists; router_models returns the full ready set; is_router_model uses dynamic membership; probe timeout is 5s.", "contracts": ["src.services.models:is_router_configured", "src.services.models:is_router_model", "src.services.models:router_chat_endpoint", "src.services.models:router_models"], "tests": ["tests/test_router_route.py::test_is_router_configured_reflects_env", "tests/test_router_route.py::test_is_router_model_false_when_not_listed_or_down", "tests/test_router_route.py::test_is_router_model_true_for_any_ready_id", "tests/test_router_route.py::test_router_chat_endpoint_uses_vortex_url", "tests/test_router_route.py::test_router_model_id_constant_retired", "tests/test_router_route.py::test_router_models_deduplicated", "tests/test_router_route.py::test_router_models_empty_when_probe_raises", "tests/test_router_route.py::test_router_models_empty_when_router_503", "tests/test_router_route.py::test_router_models_empty_when_router_omits_it", "tests/test_router_route.py::test_router_models_empty_when_vortex_url_unset", "tests/test_router_route.py::test_router_models_included_in_list_models", "tests/test_router_route.py::test_router_models_lists_router_when_router_reports_it"]}, {"id": "T2", "file": "src/api/models.py", "depends_on": ["T1"], "brief": "No code change. This file is in the inventory because its GET /api/v1/models and GET /api/v1/models/catalog routes are the observation surface for AC-175/AC-176; they already serve whatever list_models() / list_model_catalog() return. The delta touches none of its behavior. Self-verify: confirm no working-tree change to this file; the pinned regression tests pass untouched.", "contracts": [], "tests": ["tests/test_router_route.py::test_get_models_includes_router_when_ready", "tests/test_router_route.py::test_router_model_never_in_catalog"]}, {"id": "T3", "file": "src/api/chat.py", "depends_on": ["T1", "T2"], "brief": "Edit src/api/chat.py. Inside the existing `if request.model:` block, after the script-model branch and before the `endpoint_override = None` fall-through, replace the current router gate with: `elif models_mod.is_router_configured() and models_mod.is_router_model(request.model):` then set `endpoint_override = models_mod.router_chat_endpoint()`. Do NOT raise 422 for not-ready models; they fall through to the local path. In the SSE generator's exception handler, if the error is message-less and the request was router-routed, re-probe via `models_mod.is_router_model(request.model)`; if False, emit the exact not-ready message `Model {id} is not ready in Vortex. Pick a local model or retry once it is loaded.` as a 200 SSE error event; if True, keep the generic fallback. Acceptance: router routes any ready model; not-ready falls through; 404 race surfaces not-ready message; still-ready error keeps generic fallback.", "contracts": [], "tests": ["tests/test_router_route.py::test_chat_internal_path_untouched_when_vortex_url_unset", "tests/test_router_route.py::test_chat_router_404_race_surfaces_not_ready_message", "tests/test_router_route.py::test_chat_router_error_while_still_ready_is_generic", "tests/test_router_route.py::test_chat_router_model_not_listed_falls_through_to_local_path", "tests/test_router_route.py::test_chat_router_model_router_down_falls_through_to_local_path", "tests/test_router_route.py::test_chat_routes_router_model_to_router_endpoint_and_passes_model"]}, {"id": "T4", "file": "src/static/catalog.js", "depends_on": ["T1", "T2", "T3"], "brief": "No code change. The existing fetchModels flow merges the models list and the catalog by id; a list entry with source `router` renders as a selectable option without any edit. Acceptance: the mapped browser test passes with no working-tree change to this file.", "contracts": [], "tests": ["tests/test_ui_catalog.py::test_model_dropdown_lists_router_model_from_models_list[chromium]"]}, {"id": "T5", "file": "src/services/storage.py", "depends_on": ["T4"], "brief": "No code change. The mapped regression test pins this file as behavioral owner. Self-verify: no working-tree change; the pinned test passes untouched.", "contracts": [], "tests": []}, {"id": "T6", "file": "src/api/threads.py", "depends_on": ["T5"], "brief": "No code change. `contracts.test_mapping` pins `test_valid_json_with_invalid_thread_schema_is_quarantined` to this file as behavioral owner. Self-verify: no working-tree change; the pinned test passes untouched.", "contracts": [], "tests": []}, {"id": "T7", "file": "src/static/threads.js", "depends_on": ["T6"], "brief": "No code change. `contracts.test_mapping` pins `test_delete_one_thread_survives_reload` to it as behavioral owner, and `contracts.smoke_checks` carries `grep -q '_enqueueMutation' src/static/threads.js`. Self-verify: no working-tree change; the pinned test passes untouched.", "contracts": [], "tests": []}, {"id": "T8", "file": "src/static/app.js", "depends_on": ["T7"], "brief": "No code change. `contracts.test_mapping` pins `test_hydration_failure_warns_retries_and_recovers_saving` to it as behavioral owner. Self-verify: no working-tree change; the pinned test passes untouched.", "contracts": [], "tests": []}]}
+{
+  "version": 1,
+  "erd_version": 118,
+  "tasks": [
+    {
+      "id": "T1",
+      "file": "src/services/models.py",
+      "depends_on": [],
+      "brief": "Do not edit `src/services/models.py`. The dynamic Vortex ready-set recut is\nalready implemented: no fixed router model id exists, the live probe uses a\n5-second timeout, results are deduplicated in probe order, and router models\nare appended to the models list. Acceptance: leave the file byte-identical;\nits mapped router tests must pass.",
+      "contracts": [
+        "src.services.models:is_router_configured",
+        "src.services.models:is_router_model",
+        "src.services.models:router_chat_endpoint",
+        "src.services.models:router_models"
+      ],
+      "tests": [
+        "tests/test_router_route.py::test_is_router_configured_reflects_env",
+        "tests/test_router_route.py::test_is_router_model_false_when_not_listed_or_down",
+        "tests/test_router_route.py::test_is_router_model_true_for_any_ready_id",
+        "tests/test_router_route.py::test_router_chat_endpoint_uses_vortex_url",
+        "tests/test_router_route.py::test_router_model_id_constant_retired",
+        "tests/test_router_route.py::test_router_models_deduplicated",
+        "tests/test_router_route.py::test_router_models_empty_when_probe_raises",
+        "tests/test_router_route.py::test_router_models_empty_when_router_503",
+        "tests/test_router_route.py::test_router_models_empty_when_router_omits_it",
+        "tests/test_router_route.py::test_router_models_empty_when_vortex_url_unset",
+        "tests/test_router_route.py::test_router_models_included_in_list_models",
+        "tests/test_router_route.py::test_router_models_lists_router_when_router_reports_it"
+      ]
+    },
+    {
+      "id": "T2",
+      "file": "src/api/models.py",
+      "depends_on": [
+        "T1"
+      ],
+      "brief": "Do not edit `src/api/models.py`. Its model-list and catalog routes already\nexpose the service results with the accepted router source schema. Acceptance:\nleave the file byte-identical; its mapped router API tests must pass.",
+      "contracts": [],
+      "tests": [
+        "tests/test_router_route.py::test_get_models_includes_router_when_ready",
+        "tests/test_router_route.py::test_router_model_never_in_catalog"
+      ]
+    },
+    {
+      "id": "T3",
+      "file": "src/api/chat.py",
+      "depends_on": [
+        "T1",
+        "T2"
+      ],
+      "brief": "Edit only `src/api/chat.py`; do not change routing, imports, token/think/done\nhandling, or any other file. `stream_reply()` reports transport failure as a\nmessage-less `(\"error\",)` item, so the primary fix belongs in the stream\nloop's existing `elif item[0] == \"error\":` branch, not only in the outer\nexception handler.\n\nInside `event_generator`, compute once:\n`routed_to_router = endpoint_override is not None and endpoint_override == models_mod.router_chat_endpoint()`.\nAdd a small local helper for message-less errors. It returns\n`Model {request.model} is not ready in Vortex. Pick a local model or retry once it is loaded.`\nwhen the request was router-routed, `request.model` is not `None`, and a fresh\n`models_mod.is_router_model(request.model)` call is false; otherwise it returns\n`llm_mod.FALLBACK_REPLY`.\n\nIn the stream-loop error branch, preserve `item[1]` exactly when present; only\nwhen `len(item) == 1` use the helper. In the outer\n`except (ConnectionError, TimeoutError, OSError) as e`, preserve `str(e)` when\nnon-empty; only a message-less exception uses the same helper. JSON-encode the\nselected message and retain the existing SSE error shape. Acceptance: the 404\nrace emits the exact Vortex not-ready message; still-ready, non-router, and\nmessage-bearing errors retain their prior results.",
+      "contracts": [],
+      "tests": [
+        "tests/test_router_route.py::test_chat_internal_path_untouched_when_vortex_url_unset",
+        "tests/test_router_route.py::test_chat_router_404_race_surfaces_not_ready_message",
+        "tests/test_router_route.py::test_chat_router_error_while_still_ready_is_generic",
+        "tests/test_router_route.py::test_chat_router_model_not_listed_falls_through_to_local_path",
+        "tests/test_router_route.py::test_chat_router_model_router_down_falls_through_to_local_path",
+        "tests/test_router_route.py::test_chat_routes_router_model_to_router_endpoint_and_passes_model"
+      ]
+    },
+    {
+      "id": "T4",
+      "file": "src/static/catalog.js",
+      "depends_on": [
+        "T1",
+        "T2",
+        "T3"
+      ],
+      "brief": "Do not edit `src/static/catalog.js`. Its existing models-list/catalog merge\nalready turns every models-list entry, including a router entry, into one\nloaded non-script option. Acceptance: leave the file byte-identical and pass\nits frozen smoke check.",
+      "contracts": [
+        "ui:model-select"
+      ],
+      "tests": [
+        "tests/test_ui_catalog.py::test_model_dropdown_lists_router_model_from_models_list[chromium]"
+      ]
+    },
+    {
+      "id": "T5",
+      "file": "src/services/storage.py",
+      "depends_on": [
+        "T4"
+      ],
+      "brief": "Do not edit `src/services/storage.py`. It is carried only as a previously\naccepted behavioral owner. Acceptance: leave the file byte-identical and pass\nits frozen smoke check.",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T6",
+      "file": "src/api/threads.py",
+      "depends_on": [
+        "T5"
+      ],
+      "brief": "Do not edit `src/api/threads.py`. It is carried only as a previously accepted\nbehavioral owner. Acceptance: leave the file byte-identical and pass its\nfrozen smoke check.",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T7",
+      "file": "src/static/threads.js",
+      "depends_on": [
+        "T6"
+      ],
+      "brief": "Do not edit `src/static/threads.js`. It is carried only as a previously\naccepted behavioral owner. Acceptance: leave the file byte-identical and pass\nits frozen smoke check.",
+      "contracts": [],
+      "tests": []
+    },
+    {
+      "id": "T8",
+      "file": "src/static/app.js",
+      "depends_on": [
+        "T7"
+      ],
+      "brief": "Do not edit `src/static/app.js`. It is carried only as a previously accepted\nbehavioral owner. Acceptance: leave the file byte-identical and pass its\nfrozen smoke check.",
+      "contracts": [],
+      "tests": []
+    }
+  ]
+}
