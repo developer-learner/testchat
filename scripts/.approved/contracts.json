@@ -1,5 +1,5 @@
 {
-  "erd_version": 116,
+  "erd_version": 117,
   "files": [
     "src/services/models.py",
     "src/api/models.py",
@@ -10,17 +10,16 @@
     "src/static/threads.js",
     "src/static/app.js"
   ],
-  "changed_files": [
-    "src/api/chat.py"
-  ],
+  "changed_files": [],
   "no_edit_files": [
     "src/services/models.py",
+    "src/api/models.py",
+    "src/api/chat.py",
     "src/static/catalog.js",
     "src/services/storage.py",
     "src/api/threads.py",
     "src/static/threads.js",
-    "src/static/app.js",
-    "src/api/models.py"
+    "src/static/app.js"
   ],
   "entry_points": [
     "src.main:app",
@@ -63,6 +62,297 @@
     "src.services.models:is_router_model",
     "src.services.models:router_chat_endpoint"
   ],
+  "smoke_checks": {
+    "src/static/catalog.js": "grep -Fq 'mergeModel(lmModels[i].id, true, false);' src/static/catalog.js",
+    "src/static/threads.js": "grep -q '_enqueueMutation' src/static/threads.js",
+    "src/static/app.js": "grep -q 'history unavailable — retrying' src/static/app.js",
+    "src/services/storage.py": "grep -A30 'def load_versioned_snapshot' src/services/storage.py | grep -q 'corrupt-'",
+    "src/api/threads.py": "! grep -q 'validator=ThreadSnapshot.model_validate' src/api/threads.py && grep -q 'quarantined = bool(quarantine_files())' src/api/threads.py"
+  },
+  "ui": [
+    {
+      "id": "ui:new-thread-btn",
+      "testid": "new-thread-btn",
+      "description": "sidebar 'New Chat' button",
+      "file": "src/static/app.js"
+    },
+    {
+      "id": "ui:thread-item",
+      "testid": "thread-item",
+      "description": "each thread entry in the sidebar list (one per thread, newest thread first — reverse creation order)",
+      "file": "src/static/threads.js"
+    },
+    {
+      "id": "ui:message-input",
+      "testid": "message-input",
+      "description": "chat text input",
+      "file": "src/static/app.js"
+    },
+    {
+      "id": "ui:send-btn",
+      "testid": "send-btn",
+      "description": "send button",
+      "file": "src/static/app.js"
+    },
+    {
+      "id": "ui:think-toggle",
+      "testid": "think-toggle",
+      "description": "global thinking-visibility toggle button",
+      "file": "src/static/app.js"
+    },
+    {
+      "id": "ui:think-content",
+      "testid": "think-content",
+      "description": "each span wrapping thinking text inside an assistant reply bubble (hidden unless toggle is on)",
+      "file": "src/static/markdown.js"
+    },
+    {
+      "id": "ui:model-select",
+      "testid": "model-select",
+      "description": "model selector dropdown; every id returned by GET /api/v1/models, including source router, is merged by id with the catalog response and rendered once as a loaded non-script selectable option",
+      "file": "src/static/catalog.js"
+    },
+    {
+      "id": "ui:msg-user",
+      "testid": "msg-user",
+      "description": "each user message bubble in the chat container",
+      "file": "src/static/app.js"
+    },
+    {
+      "id": "ui:msg-assistant",
+      "testid": "msg-assistant",
+      "description": "each assistant reply bubble in the chat container",
+      "file": "src/static/app.js"
+    },
+    {
+      "id": "ui:eject-model-btn",
+      "testid": "eject-model-btn",
+      "description": "single unload control right-aligned next to the model dropdown; hidden by default, revealed while the dropdown has focus (approximates 'visible while the model menu is open' — native selects expose no open event); click opens unload-confirm-modal; no-op when no script model is loaded (M28a)",
+      "file": "src/static/catalog.js"
+    },
+    {
+      "id": "ui:load-confirm-modal",
+      "testid": "load-confirm-modal",
+      "description": "confirmation dialog shown when an unloaded script model is selected in the dropdown; shows the model name and the live RAM figures from /api/v1/status; nothing is launched until confirmed (M28a)",
+      "file": "src/static/app.js"
+    },
+    {
+      "id": "ui:load-confirm",
+      "testid": "load-confirm",
+      "description": "confirm button inside load-confirm-modal; closes the modal and POSTs /api/v1/script-models/{id}/load (M28a)",
+      "file": "src/static/app.js"
+    },
+    {
+      "id": "ui:load-cancel",
+      "testid": "load-cancel",
+      "description": "cancel button inside load-confirm-modal; closes the modal and reverts the dropdown to the previous selection - no load request is sent (M28a)",
+      "file": "src/static/app.js"
+    },
+    {
+      "id": "ui:unload-confirm-modal",
+      "testid": "unload-confirm-modal",
+      "description": "confirmation dialog opened by eject-model-btn, naming the loaded script model; nothing is stopped until confirmed (M28a)",
+      "file": "src/static/catalog.js"
+    },
+    {
+      "id": "ui:unload-confirm",
+      "testid": "unload-confirm",
+      "description": "confirm button inside unload-confirm-modal; closes the modal and POSTs /api/v1/script-models/{id}/unload (M28a)",
+      "file": "src/static/catalog.js"
+    },
+    {
+      "id": "ui:unload-cancel",
+      "testid": "unload-cancel",
+      "description": "cancel button inside unload-confirm-modal; closes the modal, nothing is sent (M28a)",
+      "file": "src/static/catalog.js"
+    },
+    {
+      "id": "ui:delete-confirm-modal",
+      "testid": "delete-confirm-modal",
+      "description": "confirmation dialog for destructive actions (message-pair delete, thread delete); reuses the settings-modal overlay pattern (M28d)",
+      "file": "src/static/threads.js"
+    },
+    {
+      "id": "ui:delete-confirm",
+      "testid": "delete-confirm",
+      "description": "confirm button inside delete-confirm-modal; closes the modal and executes the pending delete (M28d)",
+      "file": "src/static/threads.js"
+    },
+    {
+      "id": "ui:delete-cancel",
+      "testid": "delete-cancel",
+      "description": "cancel button inside delete-confirm-modal; closes the modal, nothing is deleted (M28d)",
+      "file": "src/static/threads.js"
+    },
+    {
+      "id": "ui:settings-toggle",
+      "testid": "settings-toggle",
+      "description": "gear button opening the system-prompt modal (already carries this testid)",
+      "file": "src/static/chrome.js"
+    },
+    {
+      "id": "ui:theme-toggle",
+      "testid": "theme-toggle",
+      "description": "theme cycle button (already carries this testid)",
+      "file": "src/static/chrome.js"
+    },
+    {
+      "id": "ui:system-prompt-input",
+      "testid": "system-prompt-input",
+      "description": "textarea inside the settings modal",
+      "file": "src/static/chrome.js"
+    },
+    {
+      "id": "ui:settings-save",
+      "testid": "settings-save",
+      "description": "settings modal Save button",
+      "file": "src/static/chrome.js"
+    },
+    {
+      "id": "ui:settings-cancel",
+      "testid": "settings-cancel",
+      "description": "settings modal Cancel button",
+      "file": "src/static/chrome.js"
+    },
+    {
+      "id": "ui:status-strip",
+      "testid": "status-strip",
+      "description": "footer status strip (model / RAM / tok-s)",
+      "file": "src/static/app.js"
+    },
+    {
+      "id": "ui:thread-rename-btn",
+      "testid": "thread-rename-btn",
+      "description": "per-thread rename button in the sidebar (one per thread)",
+      "file": "src/static/threads.js"
+    },
+    {
+      "id": "ui:thread-delete-btn",
+      "testid": "thread-delete-btn",
+      "description": "per-thread delete button in the sidebar (one per thread)",
+      "file": "src/static/threads.js"
+    },
+    {
+      "id": "ui:thread-rename-input",
+      "testid": "thread-rename-input",
+      "description": "inline rename input that replaces a thread title during rename",
+      "file": "src/static/threads.js"
+    },
+    {
+      "id": "ui:matrix-rain",
+      "testid": "matrix-rain",
+      "description": "full-screen digital-rain canvas backdrop; present and visible ONLY while the matrix theme is active",
+      "file": "src/static/rain.js"
+    },
+    {
+      "id": "ui:terminal-titlebar",
+      "testid": "terminal-titlebar",
+      "description": "terminal window title bar (three window-control dots + session title) at the top of the chat panel; visible ONLY while the phosphor theme is active",
+      "file": "src/static/chrome.js"
+    },
+    {
+      "id": "ui:thread-search-input",
+      "testid": "thread-search-input",
+      "description": "sidebar search box; typing filters the thread list to threads whose title or message content contains the text (case-insensitive); empty restores the full list",
+      "file": "src/static/threads.js"
+    },
+    {
+      "id": "ui:search-hit",
+      "testid": "search-hit",
+      "description": "highlight wrapper around each occurrence of the active sidebar search text inside an opened thread's messages; present ONLY while a search is active",
+      "file": "src/static/threads.js"
+    },
+    {
+      "id": "ui:search-hit-count",
+      "testid": "search-hit-count",
+      "description": "current-position/total counter for search hits in the open thread (e.g. '2/7'); visible only while a search is active",
+      "file": "src/static/threads.js"
+    },
+    {
+      "id": "ui:search-prev-btn",
+      "testid": "search-prev-btn",
+      "description": "moves the current-search-hit selection to the previous hit, wrapping from the first to the last",
+      "file": "src/static/threads.js"
+    },
+    {
+      "id": "ui:search-next-btn",
+      "testid": "search-next-btn",
+      "description": "moves the current-search-hit selection to the next hit, wrapping from the last back to the first",
+      "file": "src/static/threads.js"
+    },
+    {
+      "id": "ui:save-status",
+      "testid": "save-status",
+      "description": "status-strip save indicator: empty while persists succeed; 'not saved' after ordinary failure (AC-75/76); exact 'history changed elsewhere — reload required' after a 409 until reload (AC-147/148)",
+      "file": "src/static/threads.js"
+    },
+    {
+      "id": "ui:history-status",
+      "testid": "history-status",
+      "description": "status-strip history indicator: empty after healthy hydration; 'history unreadable (backup kept)' after quarantine (AC-80/81); exact 'history unavailable — retrying' while initial hydration is failing and retrying (AC-158/159)",
+      "file": "src/static/threads.js"
+    },
+    {
+      "id": "ui:msg-meta",
+      "testid": "msg-meta",
+      "description": "per-bubble meta span; its data-meta attribute carries the hover text: time for today's messages, date + time for past-day messages (AC-83), plus the model name when stored",
+      "file": "src/static/threads.js"
+    },
+    {
+      "id": "ui:web-toggle",
+      "testid": "web-toggle",
+      "description": "composer globe button arming web search for the NEXT message only; default OFF, carries class 'active' while armed, resets to OFF on send (AC-84); disabled while the backend reports web_configured false (AC-90)",
+      "file": "src/static/app.js"
+    },
+    {
+      "id": "ui:msg-sources",
+      "testid": "msg-sources",
+      "description": "container under an assistant reply bubble holding that reply's source links (and the failure notice); present ONLY on web-informed replies (AC-88)",
+      "file": "src/static/threads.js"
+    },
+    {
+      "id": "ui:source-link",
+      "testid": "source-link",
+      "description": "each numbered source anchor inside msg-sources; href = the source URL, opens in a new tab (AC-88)",
+      "file": "src/static/threads.js"
+    },
+    {
+      "id": "ui:web-notice",
+      "testid": "web-notice",
+      "description": "'web search unavailable' span inside msg-sources when the search failed (AC-89); live-render only, never persisted",
+      "file": "src/static/threads.js"
+    },
+    {
+      "id": "ui:current-thread-title",
+      "testid": "current-thread-title",
+      "description": "header display of the current thread's title, between the model selector and the header's right-side controls; click enters inline edit mode (AC-111, AC-113); truncated single-line with native tooltip when long (AC-112)",
+      "file": "src/static/current-chat.js"
+    },
+    {
+      "id": "ui:current-thread-title-input",
+      "testid": "current-thread-title-input",
+      "description": "inline editable input that replaces current-thread-title during header rename; present only in edit mode; Enter commits, Escape reverts, blur commits if non-empty (AC-113..AC-118)",
+      "file": "src/static/current-chat.js"
+    },
+    {
+      "id": "ui:sidebar-resizer",
+      "testid": "sidebar-resizer",
+      "description": "draggable divider between the sidebar and the chat panel (AC-129)",
+      "file": "src/static/sidebar-resize.js"
+    },
+    {
+      "id": "ui:msg-error",
+      "testid": "msg-error",
+      "description": "guidance/error bubble in the chat container (AC-131); distinct from msg-assistant",
+      "file": "src/static/app.js"
+    },
+    {
+      "id": "ui:settings-status",
+      "testid": "settings-status",
+      "description": "settings modal save-failure notice: visible with the exact text `Save failed` while the modal stays open when the settings save fails, so the user is never left believing the system prompt was saved (AC-166)",
+      "file": "src/static/chrome.js"
+    }
+  ],
   "externals": [
     {
       "id": "external:lmstudio-models",
@@ -102,12 +392,6 @@
     "tests/test_data_safety_storage.py::test_valid_json_with_invalid_thread_schema_is_quarantined": "src/api/threads.py",
     "tests/test_data_safety_ui.py::test_delete_one_thread_survives_reload[chromium]": "src/static/threads.js",
     "tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving[chromium]": "src/static/app.js"
-  },
-  "smoke_checks": {
-    "src/static/threads.js": "grep -q '_enqueueMutation' src/static/threads.js",
-    "src/static/app.js": "grep -q 'history unavailable — retrying' src/static/app.js",
-    "src/services/storage.py": "grep -A30 'def load_versioned_snapshot' src/services/storage.py | grep -q 'corrupt-'",
-    "src/api/threads.py": "! grep -q 'validator=ThreadSnapshot.model_validate' src/api/threads.py && grep -q 'quarantined = bool(quarantine_files())' src/api/threads.py"
   },
   "routes": [
     {
@@ -404,290 +688,6 @@
       "id": "error:503-snapshot-unavailable",
       "status": 503,
       "file": "src/api/threads.py"
-    }
-  ],
-  "ui": [
-    {
-      "id": "ui:new-thread-btn",
-      "testid": "new-thread-btn",
-      "description": "sidebar 'New Chat' button",
-      "file": "src/static/app.js"
-    },
-    {
-      "id": "ui:thread-item",
-      "testid": "thread-item",
-      "description": "each thread entry in the sidebar list (one per thread, newest thread first — reverse creation order)",
-      "file": "src/static/threads.js"
-    },
-    {
-      "id": "ui:message-input",
-      "testid": "message-input",
-      "description": "chat text input",
-      "file": "src/static/app.js"
-    },
-    {
-      "id": "ui:send-btn",
-      "testid": "send-btn",
-      "description": "send button",
-      "file": "src/static/app.js"
-    },
-    {
-      "id": "ui:think-toggle",
-      "testid": "think-toggle",
-      "description": "global thinking-visibility toggle button",
-      "file": "src/static/app.js"
-    },
-    {
-      "id": "ui:think-content",
-      "testid": "think-content",
-      "description": "each span wrapping thinking text inside an assistant reply bubble (hidden unless toggle is on)",
-      "file": "src/static/markdown.js"
-    },
-    {
-      "id": "ui:model-select",
-      "testid": "model-select",
-      "description": "model selector dropdown",
-      "file": "src/static/catalog.js"
-    },
-    {
-      "id": "ui:msg-user",
-      "testid": "msg-user",
-      "description": "each user message bubble in the chat container",
-      "file": "src/static/app.js"
-    },
-    {
-      "id": "ui:msg-assistant",
-      "testid": "msg-assistant",
-      "description": "each assistant reply bubble in the chat container",
-      "file": "src/static/app.js"
-    },
-    {
-      "id": "ui:eject-model-btn",
-      "testid": "eject-model-btn",
-      "description": "single unload control right-aligned next to the model dropdown; hidden by default, revealed while the dropdown has focus (approximates 'visible while the model menu is open' — native selects expose no open event); click opens unload-confirm-modal; no-op when no script model is loaded (M28a)",
-      "file": "src/static/catalog.js"
-    },
-    {
-      "id": "ui:load-confirm-modal",
-      "testid": "load-confirm-modal",
-      "description": "confirmation dialog shown when an unloaded script model is selected in the dropdown; shows the model name and the live RAM figures from /api/v1/status; nothing is launched until confirmed (M28a)",
-      "file": "src/static/app.js"
-    },
-    {
-      "id": "ui:load-confirm",
-      "testid": "load-confirm",
-      "description": "confirm button inside load-confirm-modal; closes the modal and POSTs /api/v1/script-models/{id}/load (M28a)",
-      "file": "src/static/app.js"
-    },
-    {
-      "id": "ui:load-cancel",
-      "testid": "load-cancel",
-      "description": "cancel button inside load-confirm-modal; closes the modal and reverts the dropdown to the previous selection - no load request is sent (M28a)",
-      "file": "src/static/app.js"
-    },
-    {
-      "id": "ui:unload-confirm-modal",
-      "testid": "unload-confirm-modal",
-      "description": "confirmation dialog opened by eject-model-btn, naming the loaded script model; nothing is stopped until confirmed (M28a)",
-      "file": "src/static/catalog.js"
-    },
-    {
-      "id": "ui:unload-confirm",
-      "testid": "unload-confirm",
-      "description": "confirm button inside unload-confirm-modal; closes the modal and POSTs /api/v1/script-models/{id}/unload (M28a)",
-      "file": "src/static/catalog.js"
-    },
-    {
-      "id": "ui:unload-cancel",
-      "testid": "unload-cancel",
-      "description": "cancel button inside unload-confirm-modal; closes the modal, nothing is sent (M28a)",
-      "file": "src/static/catalog.js"
-    },
-    {
-      "id": "ui:delete-confirm-modal",
-      "testid": "delete-confirm-modal",
-      "description": "confirmation dialog for destructive actions (message-pair delete, thread delete); reuses the settings-modal overlay pattern (M28d)",
-      "file": "src/static/threads.js"
-    },
-    {
-      "id": "ui:delete-confirm",
-      "testid": "delete-confirm",
-      "description": "confirm button inside delete-confirm-modal; closes the modal and executes the pending delete (M28d)",
-      "file": "src/static/threads.js"
-    },
-    {
-      "id": "ui:delete-cancel",
-      "testid": "delete-cancel",
-      "description": "cancel button inside delete-confirm-modal; closes the modal, nothing is deleted (M28d)",
-      "file": "src/static/threads.js"
-    },
-    {
-      "id": "ui:settings-toggle",
-      "testid": "settings-toggle",
-      "description": "gear button opening the system-prompt modal (already carries this testid)",
-      "file": "src/static/chrome.js"
-    },
-    {
-      "id": "ui:theme-toggle",
-      "testid": "theme-toggle",
-      "description": "theme cycle button (already carries this testid)",
-      "file": "src/static/chrome.js"
-    },
-    {
-      "id": "ui:system-prompt-input",
-      "testid": "system-prompt-input",
-      "description": "textarea inside the settings modal",
-      "file": "src/static/chrome.js"
-    },
-    {
-      "id": "ui:settings-save",
-      "testid": "settings-save",
-      "description": "settings modal Save button",
-      "file": "src/static/chrome.js"
-    },
-    {
-      "id": "ui:settings-cancel",
-      "testid": "settings-cancel",
-      "description": "settings modal Cancel button",
-      "file": "src/static/chrome.js"
-    },
-    {
-      "id": "ui:status-strip",
-      "testid": "status-strip",
-      "description": "footer status strip (model / RAM / tok-s)",
-      "file": "src/static/app.js"
-    },
-    {
-      "id": "ui:thread-rename-btn",
-      "testid": "thread-rename-btn",
-      "description": "per-thread rename button in the sidebar (one per thread)",
-      "file": "src/static/threads.js"
-    },
-    {
-      "id": "ui:thread-delete-btn",
-      "testid": "thread-delete-btn",
-      "description": "per-thread delete button in the sidebar (one per thread)",
-      "file": "src/static/threads.js"
-    },
-    {
-      "id": "ui:thread-rename-input",
-      "testid": "thread-rename-input",
-      "description": "inline rename input that replaces a thread title during rename",
-      "file": "src/static/threads.js"
-    },
-    {
-      "id": "ui:matrix-rain",
-      "testid": "matrix-rain",
-      "description": "full-screen digital-rain canvas backdrop; present and visible ONLY while the matrix theme is active",
-      "file": "src/static/rain.js"
-    },
-    {
-      "id": "ui:terminal-titlebar",
-      "testid": "terminal-titlebar",
-      "description": "terminal window title bar (three window-control dots + session title) at the top of the chat panel; visible ONLY while the phosphor theme is active",
-      "file": "src/static/chrome.js"
-    },
-    {
-      "id": "ui:thread-search-input",
-      "testid": "thread-search-input",
-      "description": "sidebar search box; typing filters the thread list to threads whose title or message content contains the text (case-insensitive); empty restores the full list",
-      "file": "src/static/threads.js"
-    },
-    {
-      "id": "ui:search-hit",
-      "testid": "search-hit",
-      "description": "highlight wrapper around each occurrence of the active sidebar search text inside an opened thread's messages; present ONLY while a search is active",
-      "file": "src/static/threads.js"
-    },
-    {
-      "id": "ui:search-hit-count",
-      "testid": "search-hit-count",
-      "description": "current-position/total counter for search hits in the open thread (e.g. '2/7'); visible only while a search is active",
-      "file": "src/static/threads.js"
-    },
-    {
-      "id": "ui:search-prev-btn",
-      "testid": "search-prev-btn",
-      "description": "moves the current-search-hit selection to the previous hit, wrapping from the first to the last",
-      "file": "src/static/threads.js"
-    },
-    {
-      "id": "ui:search-next-btn",
-      "testid": "search-next-btn",
-      "description": "moves the current-search-hit selection to the next hit, wrapping from the last back to the first",
-      "file": "src/static/threads.js"
-    },
-    {
-      "id": "ui:save-status",
-      "testid": "save-status",
-      "description": "status-strip save indicator: empty while persists succeed; 'not saved' after ordinary failure (AC-75/76); exact 'history changed elsewhere — reload required' after a 409 until reload (AC-147/148)",
-      "file": "src/static/threads.js"
-    },
-    {
-      "id": "ui:history-status",
-      "testid": "history-status",
-      "description": "status-strip history indicator: empty after healthy hydration; 'history unreadable (backup kept)' after quarantine (AC-80/81); exact 'history unavailable — retrying' while initial hydration is failing and retrying (AC-158/159)",
-      "file": "src/static/threads.js"
-    },
-    {
-      "id": "ui:msg-meta",
-      "testid": "msg-meta",
-      "description": "per-bubble meta span; its data-meta attribute carries the hover text: time for today's messages, date + time for past-day messages (AC-83), plus the model name when stored",
-      "file": "src/static/threads.js"
-    },
-    {
-      "id": "ui:web-toggle",
-      "testid": "web-toggle",
-      "description": "composer globe button arming web search for the NEXT message only; default OFF, carries class 'active' while armed, resets to OFF on send (AC-84); disabled while the backend reports web_configured false (AC-90)",
-      "file": "src/static/app.js"
-    },
-    {
-      "id": "ui:msg-sources",
-      "testid": "msg-sources",
-      "description": "container under an assistant reply bubble holding that reply's source links (and the failure notice); present ONLY on web-informed replies (AC-88)",
-      "file": "src/static/threads.js"
-    },
-    {
-      "id": "ui:source-link",
-      "testid": "source-link",
-      "description": "each numbered source anchor inside msg-sources; href = the source URL, opens in a new tab (AC-88)",
-      "file": "src/static/threads.js"
-    },
-    {
-      "id": "ui:web-notice",
-      "testid": "web-notice",
-      "description": "'web search unavailable' span inside msg-sources when the search failed (AC-89); live-render only, never persisted",
-      "file": "src/static/threads.js"
-    },
-    {
-      "id": "ui:current-thread-title",
-      "testid": "current-thread-title",
-      "description": "header display of the current thread's title, between the model selector and the header's right-side controls; click enters inline edit mode (AC-111, AC-113); truncated single-line with native tooltip when long (AC-112)",
-      "file": "src/static/current-chat.js"
-    },
-    {
-      "id": "ui:current-thread-title-input",
-      "testid": "current-thread-title-input",
-      "description": "inline editable input that replaces current-thread-title during header rename; present only in edit mode; Enter commits, Escape reverts, blur commits if non-empty (AC-113..AC-118)",
-      "file": "src/static/current-chat.js"
-    },
-    {
-      "id": "ui:sidebar-resizer",
-      "testid": "sidebar-resizer",
-      "description": "draggable divider between the sidebar and the chat panel (AC-129)",
-      "file": "src/static/sidebar-resize.js"
-    },
-    {
-      "id": "ui:msg-error",
-      "testid": "msg-error",
-      "description": "guidance/error bubble in the chat container (AC-131); distinct from msg-assistant",
-      "file": "src/static/app.js"
-    },
-    {
-      "id": "ui:settings-status",
-      "testid": "settings-status",
-      "description": "settings modal save-failure notice: visible with the exact text `Save failed` while the modal stays open when the settings save fails, so the user is never left believing the system prompt was saved (AC-166)",
-      "file": "src/static/chrome.js"
     }
   ]
 }
