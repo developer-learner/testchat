@@ -433,13 +433,15 @@ def _router_probe() -> list[str] | None:
         return None
     try:
         response = httpx.get(base + "/v1/models", timeout=5)
-    except Exception:
+    except (httpx.HTTPError, OSError, ValueError) as exc:
+        logger.warning("Router model probe failed: %s", exc)
         return None
     if response.status_code != 200:
         return None
     try:
         data = response.json().get("data", [])
-    except Exception:
+    except (httpx.HTTPError, OSError, ValueError) as exc:
+        logger.warning("Router model probe JSON parse failed: %s", exc)
         return None
     ids: list[str] = []
     for entry in data:
