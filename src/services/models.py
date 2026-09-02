@@ -256,7 +256,8 @@ def _responds_ready(ready_url: str) -> bool:
     try:
         response = httpx.get(ready_url, timeout=2)
         return response.status_code == 200
-    except Exception:
+    except (httpx.HTTPError, OSError, ValueError) as exc:
+        logger.debug("Ready check failed for %s: %s", ready_url, exc)
         return False
 
 
@@ -321,10 +322,10 @@ def load_script_model(model_id: str) -> dict:
             if response.status_code == 200:
                 _write_sidecar(model_id, process, urlparse(entry["ready_url"]).port)
                 return {"status": "loaded"}
-        except Exception:
+        except (httpx.HTTPError, OSError, ValueError):
             # ready-poll: connection errors are expected until the server
             # binds; retried until the deadline
-            pass
+            continue
         time.sleep(1)
 
     _terminate_process(process)
