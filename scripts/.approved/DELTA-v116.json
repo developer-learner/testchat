@@ -1,0 +1,19 @@
+{
+  "changed_contract_ids": [],
+  "changed_tests": [],
+  "retired_tests": [],
+  "changed_tests_granularity": "function",
+  "changed_files": [
+    "src/api/chat.py"
+  ],
+  "inventory_files": [
+    "src/services/models.py",
+    "src/api/models.py",
+    "src/api/chat.py",
+    "src/static/catalog.js",
+    "src/services/storage.py",
+    "src/api/threads.py",
+    "src/static/threads.js",
+    "src/static/app.js"
+  ]
+}
