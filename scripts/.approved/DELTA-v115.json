@@ -1,0 +1,44 @@
+{
+  "changed_contract_ids": [],
+  "changed_tests": [
+    "tests/test_router_route.py::test_chat_internal_path_untouched_when_vortex_url_unset",
+    "tests/test_router_route.py::test_chat_router_404_race_surfaces_not_ready_message",
+    "tests/test_router_route.py::test_chat_router_error_while_still_ready_is_generic",
+    "tests/test_router_route.py::test_chat_router_model_not_listed_falls_through_to_local_path",
+    "tests/test_router_route.py::test_chat_router_model_router_down_falls_through_to_local_path",
+    "tests/test_router_route.py::test_chat_routes_router_model_to_router_endpoint_and_passes_model",
+    "tests/test_router_route.py::test_get_models_includes_router_when_ready",
+    "tests/test_router_route.py::test_is_router_configured_reflects_env",
+    "tests/test_router_route.py::test_is_router_model_false_when_not_listed_or_down",
+    "tests/test_router_route.py::test_is_router_model_true_for_any_ready_id",
+    "tests/test_router_route.py::test_router_chat_endpoint_uses_vortex_url",
+    "tests/test_router_route.py::test_router_model_id_constant_retired",
+    "tests/test_router_route.py::test_router_model_never_in_catalog",
+    "tests/test_router_route.py::test_router_models_deduplicated",
+    "tests/test_router_route.py::test_router_models_empty_when_probe_raises",
+    "tests/test_router_route.py::test_router_models_empty_when_router_503",
+    "tests/test_router_route.py::test_router_models_empty_when_router_omits_it",
+    "tests/test_router_route.py::test_router_models_empty_when_vortex_url_unset",
+    "tests/test_router_route.py::test_router_models_included_in_list_models",
+    "tests/test_router_route.py::test_router_models_lists_router_when_router_reports_it"
+  ],
+  "retired_tests": [
+    "tests/test_router_route.py::test_chat_router_model_not_listed_is_422",
+    "tests/test_router_route.py::test_chat_router_model_router_down_is_422"
+  ],
+  "changed_tests_granularity": "function",
+  "changed_files": [
+    "src/services/models.py",
+    "src/api/chat.py"
+  ],
+  "inventory_files": [
+    "src/services/models.py",
+    "src/api/models.py",
+    "src/api/chat.py",
+    "src/static/catalog.js",
+    "src/services/storage.py",
+    "src/api/threads.py",
+    "src/static/threads.js",
+    "src/static/app.js"
+  ]
+}

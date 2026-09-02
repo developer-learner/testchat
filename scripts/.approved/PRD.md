@@ -395,6 +395,63 @@ overwritten.
   model and perform no router probe, such that existing deployments behave
   exactly as before.
 
+### Router recut — full ready set (v115)
+
+The v107 router seams assumed a single hardcoded router model
+(`ROUTER_MODEL_ID`). Vortex v26 advertises the full dynamic set of
+currently-ready models instead. This recut supersedes the single-model
+semantics of AC-170..AC-173 (recorded in ERD-DELTA v115; the historical
+blocks above stand as written).
+
+* **AC-175 (supersedes AC-170):** WHEN `VORTEX_URL` is set AND the router
+  at `{VORTEX_URL}/v1/models` answers HTTP 200, THE SYSTEM SHALL include
+  one entry per model id in the router's `data` — in probe order,
+  duplicates removed — each with source `router`, in the response of
+  `GET /api/v1/models`, such that the full ready set, not a single
+  hardcoded id, appears in the model dropdown as selectable chat models.
+
+* **AC-176 (supersedes AC-171):** WHEN the router probe fails (non-200
+  status or connection error) OR the router lists no models, THE SYSTEM
+  SHALL omit all router models from `GET /api/v1/models` and SHALL never
+  include router models in `GET /api/v1/models/catalog`, such that the
+  dropdown never offers a chat that cannot succeed and the script-model
+  load/unload machinery never becomes involved with router models.
+
+* **AC-177 (supersedes AC-172):** WHEN a chat request names a model id
+  that the router currently lists — any ready Vortex model, not a fixed
+  id — AND `VORTEX_URL` is set, THE SYSTEM SHALL stream the reply from
+  `{VORTEX_URL}/v1/chat/completions` with the model id passed through
+  unchanged, such that the router — not the internal endpoints — answers.
+
+* **AC-178 (supersedes AC-173):** WHEN a chat request names a model id
+  that is neither a loaded script model nor in the router's current ready
+  set, THE SYSTEM SHALL NOT reject the request pre-stream: the request
+  SHALL follow the internal (local) path exactly as before the router
+  existed, such that router membership is dynamic and a not-ready model
+  is simply not routed to Vortex.
+
+* **AC-179:** WHEN a chat request was routed to the router (its model was
+  in the ready set at request time) AND the stream errors without a
+  message AND the model is no longer in the router's ready set by the
+  time the error is processed (e.g. Vortex answered 404 because the model
+  was unloaded between listing and send), THE SYSTEM SHALL emit an SSE
+  `error` event whose message is exactly
+  `Model {id} is not ready in Vortex. Pick a local model or retry once it is loaded.`
+  and the response SHALL remain a 200 SSE stream, such that a mid-flight
+  unload surfaces as a not-ready notice with a local fallback offer —
+  never as a server error.
+
+* **AC-180:** WHEN a chat request was routed to the router AND the stream
+  errors without a message AND the model is still in the router's ready
+  set, THE SYSTEM SHALL emit the generic fallback error message (the
+  pre-existing behaviour), such that the not-ready notice is specific to
+  the model having disappeared from the ready set.
+
+* **AC-181:** THE SYSTEM SHALL NOT define or use a fixed router model id
+  constant: `ROUTER_MODEL_ID` is removed from `src/services/models.py`
+  and no code path SHALL assume a specific router model id, such that the
+  router seam is fully dynamic against Vortex's real v26 surface.
+
 ## Out of scope
 
 * **Clear-all redesign or removal.** DELETE `/api/v1/threads` retains its

@@ -1,26 +1,38 @@
 """
-Oracle for spec v107 AC-170..AC-174: the router model (dual-path through the
-vortex universal surface). Observes ONLY contracts.entry_points
-(src.main:app, src.services.models module + the new router seams,
-src.services.llm:stream_reply) and contracts.routes (POST /api/v1/chat,
-GET /api/v1/models, GET /api/v1/models/catalog). The router endpoint is
-simulated with pytest-httpserver; no live vortex required.
+Oracle for spec v115 AC-175..AC-181: the router recut — the full dynamic
+ready set through the vortex universal surface. Supersedes the v107
+single-model oracle (AC-170..AC-174, retired by ERD-DELTA v115). Observes
+ONLY contracts.entry_points (src.main:app, src.services.models module + the
+router seams, src.services.llm:stream_reply) and contracts.routes
+(POST /api/v1/chat, GET /api/v1/models, GET /api/v1/models/catalog). The
+router endpoint is simulated with pytest-httpserver; no live vortex
+required.
 
-AC-170: router model present in GET /api/v1/models when the router lists it.
-AC-171: omitted from the list when the probe fails / omits it; never in the
-        catalog, so the script-model load/unload machinery stays uninvolved.
-AC-172: router-model chat streams from {VORTEX_URL}/v1/chat/completions with
-        the model id passed through.
-AC-173: router-model chat with the router not listing it is 422 pre-stream.
-AC-174: VORTEX_URL unset -> no router model, no probe, generic path unchanged.
+AC-175: GET /api/v1/models lists every ready router model (full set, probe
+        order, deduplicated), each with source "router".
+AC-176: probe failure / empty ready set -> no router models in the list;
+        router models never in the catalog.
+AC-177: chat naming any ready router model streams from
+        {VORTEX_URL}/v1/chat/completions with the id passed through.
+AC-178: chat naming a model not in the ready set falls through to the local
+        path (no pre-stream 422).
+AC-179: router-routed chat whose stream errors after the model left the
+        ready set surfaces the exact not-ready message with a local
+        fallback offer (200 SSE, never a server error).
+AC-180: router-routed chat whose stream errors while the model is still
+        ready surfaces the generic fallback message.
+AC-181: no fixed router model id constant exists (ROUTER_MODEL_ID retired).
 """
+
+import json
 
 import pytest
 from fastapi.testclient import TestClient
+from werkzeug.wrappers import Response
 
-from src.main import app
-import src.services.models as models_mod
 import src.services.llm as llm_mod
+import src.services.models as models_mod
+from src.main import app
 
 
 @pytest.fixture
@@ -34,7 +46,7 @@ def _router_base(httpserver) -> str:
 
 
 def _serve_router_models(httpserver, ids):
-    """Simulate the vortex universal surface's GET /v1/models."""
+    """Simulate the vortex universal surface's GET /v1/models (ready-only)."""
     httpserver.expect_request("/v1/models").respond_with_json(
         {
             "object": "list",
@@ -45,30 +57,71 @@ def _serve_router_models(httpserver, ids):
     )
 
 
-def _patch_stream_reply(monkeypatch, captured):
+def _serve_router_models_stateful(httpserver, id_sets):
+    """Simulate a ready set that changes between probes: probe n serves
+    id_sets[n-1] (the last set repeats). Models the unload race where the
+    model leaves the ready set between listing and send."""
+    state = {"calls": 0}
+
+    def handler(request):
+        index = min(state["calls"], len(id_sets) - 1)
+        state["calls"] += 1
+        return Response(
+            json.dumps(
+                {
+                    "object": "list",
+                    "data": [
+                        {"id": model_id, "object": "model"}
+                        for model_id in id_sets[index]
+                    ],
+                }
+            ),
+            status=200,
+            content_type="application/json",
+        )
+
+    httpserver.expect_request("/v1/models").respond_with_handler(handler)
+
+
+def _patch_stream_reply(monkeypatch, captured, chunks=None):
     def fake_stream_reply(message, history=(), endpoint_override=None, model=None):
         captured["endpoint_override"] = endpoint_override
         captured["model"] = model
-        yield ("token", "hi")
-        yield ("done",)
+        yield from (
+            chunks if chunks is not None else [("token", "hi"), ("done",)]
+        )
 
     monkeypatch.setattr(llm_mod, "stream_reply", fake_stream_reply)
 
 
-# --- router_models() ---------------------------------------------------------
+def _error_message(resp) -> str:
+    """Extract the message of the single SSE error event from a chat reply."""
+    events = [
+        block
+        for block in resp.text.strip().split("\n\n")
+        if block.startswith("event: error")
+    ]
+    assert len(events) == 1, f"expected exactly one error event, got {events!r}"
+    data_line = events[0].split("\n", 1)[1]
+    assert data_line.startswith("data: ")
+    return json.loads(data_line[len("data: "):])["message"]
+
+
+# --- router_models() — full ready set (AC-175/AC-176) ------------------------
 
 
 def test_router_models_lists_router_when_router_reports_it(monkeypatch, httpserver):
-    _serve_router_models(httpserver, ["other-model", models_mod.ROUTER_MODEL_ID])
+    _serve_router_models(httpserver, ["m1", "m2"])
     monkeypatch.setenv("VORTEX_URL", _router_base(httpserver))
 
     assert models_mod.router_models() == [
-        {"id": models_mod.ROUTER_MODEL_ID, "source": "router"}
+        {"id": "m1", "source": "router"},
+        {"id": "m2", "source": "router"},
     ]
 
 
 def test_router_models_empty_when_router_omits_it(monkeypatch, httpserver):
-    _serve_router_models(httpserver, ["other-model"])
+    _serve_router_models(httpserver, [])
     monkeypatch.setenv("VORTEX_URL", _router_base(httpserver))
 
     assert models_mod.router_models() == []
@@ -105,6 +158,43 @@ def test_router_models_empty_when_vortex_url_unset(monkeypatch):
     assert models_mod.router_models() == []
 
 
+def test_router_models_deduplicated(monkeypatch, httpserver):
+    _serve_router_models(httpserver, ["m1", "m1"])
+    monkeypatch.setenv("VORTEX_URL", _router_base(httpserver))
+
+    assert models_mod.router_models() == [{"id": "m1", "source": "router"}]
+
+
+# --- is_router_model() — dynamic membership (AC-177/AC-178) ------------------
+
+
+def test_is_router_model_true_for_any_ready_id(monkeypatch, httpserver):
+    _serve_router_models(httpserver, ["m1", "m2"])
+    monkeypatch.setenv("VORTEX_URL", _router_base(httpserver))
+
+    assert models_mod.is_router_model("m1") is True
+    assert models_mod.is_router_model("m2") is True
+
+
+def test_is_router_model_false_when_not_listed_or_down(monkeypatch, httpserver):
+    _serve_router_models(httpserver, ["m1"])
+    monkeypatch.setenv("VORTEX_URL", _router_base(httpserver))
+
+    assert models_mod.is_router_model("m2") is False
+
+    monkeypatch.setenv("VORTEX_URL", "http://127.0.0.1:1")
+
+    def _raise(*args, **kwargs):
+        raise models_mod.httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(models_mod.httpx, "get", _raise)
+
+    assert models_mod.is_router_model("m1") is False
+
+
+# --- config / endpoint seams (unchanged by the recut) -------------------------
+
+
 def test_is_router_configured_reflects_env(monkeypatch):
     monkeypatch.delenv("VORTEX_URL", raising=False)
     assert models_mod.is_router_configured() is False
@@ -116,17 +206,6 @@ def test_is_router_configured_reflects_env(monkeypatch):
     assert models_mod.is_router_configured() is False
 
 
-def test_router_models_deduplicated(monkeypatch, httpserver):
-    _serve_router_models(
-        httpserver, [models_mod.ROUTER_MODEL_ID, models_mod.ROUTER_MODEL_ID]
-    )
-    monkeypatch.setenv("VORTEX_URL", _router_base(httpserver))
-
-    assert models_mod.router_models() == [
-        {"id": models_mod.ROUTER_MODEL_ID, "source": "router"}
-    ]
-
-
 def test_router_chat_endpoint_uses_vortex_url(monkeypatch):
     monkeypatch.setenv("VORTEX_URL", "http://127.0.0.1:7777")
 
@@ -135,11 +214,11 @@ def test_router_chat_endpoint_uses_vortex_url(monkeypatch):
     )
 
 
-# --- list_models() / list_model_catalog() ------------------------------------
+# --- list_models() / list_model_catalog() (AC-175/AC-176) --------------------
 
 
 def test_router_models_included_in_list_models(monkeypatch, httpserver):
-    _serve_router_models(httpserver, [models_mod.ROUTER_MODEL_ID])
+    _serve_router_models(httpserver, ["m1", "m2"])
     monkeypatch.setenv("VORTEX_URL", _router_base(httpserver))
     monkeypatch.setattr(
         models_mod, "is_script_model_loaded", lambda model_id: False
@@ -147,67 +226,84 @@ def test_router_models_included_in_list_models(monkeypatch, httpserver):
 
     result = models_mod.list_models()
 
-    assert {"id": models_mod.ROUTER_MODEL_ID, "source": "router"} in result
+    assert {"id": "m1", "source": "router"} in result
+    assert {"id": "m2", "source": "router"} in result
 
 
 def test_get_models_includes_router_when_ready(client, monkeypatch, httpserver):
-    _serve_router_models(httpserver, [models_mod.ROUTER_MODEL_ID])
+    _serve_router_models(httpserver, ["m1", "m2"])
     monkeypatch.setenv("VORTEX_URL", _router_base(httpserver))
 
     resp = client.get("/api/v1/models")
 
     assert resp.status_code == 200
     entries = {(m["id"], m["source"]) for m in resp.json()["models"]}
-    assert (models_mod.ROUTER_MODEL_ID, "router") in entries
+    assert ("m1", "router") in entries
+    assert ("m2", "router") in entries
 
 
 def test_router_model_never_in_catalog(client, monkeypatch, httpserver):
-    _serve_router_models(httpserver, [models_mod.ROUTER_MODEL_ID])
+    _serve_router_models(httpserver, ["m1"])
     monkeypatch.setenv("VORTEX_URL", _router_base(httpserver))
 
     resp = client.get("/api/v1/models/catalog")
 
     assert resp.status_code == 200
     entries = {(m["id"], m["source"]) for m in resp.json()["models"]}
-    assert (models_mod.ROUTER_MODEL_ID, "router") not in entries
+    assert ("m1", "router") not in entries
 
 
-# --- chat routing ------------------------------------------------------------
+# --- ROUTER_MODEL_ID retirement (AC-181) --------------------------------------
+
+
+def test_router_model_id_constant_retired():
+    assert not hasattr(models_mod, "ROUTER_MODEL_ID")
+
+
+# --- chat routing (AC-177/AC-178) ---------------------------------------------
 
 
 def test_chat_routes_router_model_to_router_endpoint_and_passes_model(
     client, monkeypatch, httpserver
 ):
-    _serve_router_models(httpserver, [models_mod.ROUTER_MODEL_ID])
+    _serve_router_models(httpserver, ["m1", "m2"])
     monkeypatch.setenv("VORTEX_URL", _router_base(httpserver))
     captured = {}
     _patch_stream_reply(monkeypatch, captured)
 
     resp = client.post(
         "/api/v1/chat",
-        json={"message": "hello", "model": models_mod.ROUTER_MODEL_ID},
+        json={"message": "hello", "model": "m2"},
     )
 
     assert resp.status_code == 200
     assert captured["endpoint_override"] == (
         _router_base(httpserver) + "/v1/chat/completions"
     )
-    assert captured["model"] == models_mod.ROUTER_MODEL_ID
+    assert captured["model"] == "m2"
 
 
-def test_chat_router_model_not_listed_is_422(client, monkeypatch, httpserver):
+def test_chat_router_model_not_listed_falls_through_to_local_path(
+    client, monkeypatch, httpserver
+):
     _serve_router_models(httpserver, ["other-model"])
     monkeypatch.setenv("VORTEX_URL", _router_base(httpserver))
+    captured = {}
+    _patch_stream_reply(monkeypatch, captured)
 
     resp = client.post(
         "/api/v1/chat",
-        json={"message": "hello", "model": models_mod.ROUTER_MODEL_ID},
+        json={"message": "hello", "model": "m1"},
     )
 
-    assert resp.status_code == 422
+    assert resp.status_code == 200
+    assert captured["endpoint_override"] is None
+    assert captured["model"] == "m1"
 
 
-def test_chat_router_model_router_down_is_422(client, monkeypatch):
+def test_chat_router_model_router_down_falls_through_to_local_path(
+    client, monkeypatch
+):
     # Simulate the router being unreachable without touching the
     # session-shared httpserver (stopping it breaks every later
     # httpserver-based test when the suite runs as sorted node-ids).
@@ -217,13 +313,17 @@ def test_chat_router_model_router_down_is_422(client, monkeypatch):
         raise models_mod.httpx.ConnectError("connection refused")
 
     monkeypatch.setattr(models_mod.httpx, "get", _raise)
+    captured = {}
+    _patch_stream_reply(monkeypatch, captured)
 
     resp = client.post(
         "/api/v1/chat",
-        json={"message": "hello", "model": models_mod.ROUTER_MODEL_ID},
+        json={"message": "hello", "model": "m1"},
     )
 
-    assert resp.status_code == 422
+    assert resp.status_code == 200
+    assert captured["endpoint_override"] is None
+    assert captured["model"] == "m1"
 
 
 def test_chat_internal_path_untouched_when_vortex_url_unset(
@@ -235,9 +335,54 @@ def test_chat_internal_path_untouched_when_vortex_url_unset(
 
     resp = client.post(
         "/api/v1/chat",
-        json={"message": "hello", "model": models_mod.ROUTER_MODEL_ID},
+        json={"message": "hello", "model": "m1"},
     )
 
     assert resp.status_code == 200
     assert captured["endpoint_override"] is None
-    assert captured["model"] == models_mod.ROUTER_MODEL_ID
+    assert captured["model"] == "m1"
+
+
+# --- 404 race: the model leaves the ready set between listing and send --------
+
+
+def test_chat_router_404_race_surfaces_not_ready_message(
+    client, monkeypatch, httpserver
+):
+    # Probe 1 (the routing decision) sees m1 ready; probe 2 (the re-probe
+    # when the stream errors) sees it gone — the unload race.
+    _serve_router_models_stateful(httpserver, [["m1"], []])
+    monkeypatch.setenv("VORTEX_URL", _router_base(httpserver))
+    captured = {}
+    _patch_stream_reply(monkeypatch, captured, chunks=[("error",)])
+
+    resp = client.post(
+        "/api/v1/chat",
+        json={"message": "hello", "model": "m1"},
+    )
+
+    assert resp.status_code == 200
+    assert captured["endpoint_override"] == (
+        _router_base(httpserver) + "/v1/chat/completions"
+    )
+    assert _error_message(resp) == (
+        "Model m1 is not ready in Vortex. "
+        "Pick a local model or retry once it is loaded."
+    )
+
+
+def test_chat_router_error_while_still_ready_is_generic(
+    client, monkeypatch, httpserver
+):
+    _serve_router_models(httpserver, ["m1"])
+    monkeypatch.setenv("VORTEX_URL", _router_base(httpserver))
+    captured = {}
+    _patch_stream_reply(monkeypatch, captured, chunks=[("error",)])
+
+    resp = client.post(
+        "/api/v1/chat",
+        json={"message": "hello", "model": "m1"},
+    )
+
+    assert resp.status_code == 200
+    assert _error_message(resp) == llm_mod.FALLBACK_REPLY
