@@ -42,8 +42,6 @@ DEEPSEEK_IQ3XXS_READY_URL = DEEPSEEK_IQ3XXS_BASE_URL + "/v1/models"
 DEEPSEEK_IQ3XXS_SCRIPT_PATH = os.environ.get("DS4_IQ3XXS_SCRIPT_PATH", "/Users/arc.elixir/dev/testchat/scripts/run-server-0731-ud.sh")
 DEEPSEEK_IQ3XXS_READY_TIMEOUT_SECONDS = 300
 
-ROUTER_MODEL_ID = os.environ.get("ROUTER_MODEL_ID", "qwen3.8-27b-8bit")
-
 SCRIPT_MODEL_TERMINATE_GRACE_SECONDS = NEMOTRON_TERMINATE_GRACE_SECONDS
 
 
@@ -453,19 +451,21 @@ def _router_probe() -> list[str] | None:
 
 
 def router_models() -> list[dict]:
-    if _router_base_url() is None:
-        return []
     ids = _router_probe()
-    if ids is None or ROUTER_MODEL_ID not in ids:
+    if ids is None:
         return []
-    return [{"id": ROUTER_MODEL_ID, "source": "router"}]
+    seen: set[str] = set()
+    models: list[dict] = []
+    for model_id in ids:
+        if model_id not in seen:
+            seen.add(model_id)
+            models.append({"id": model_id, "source": "router"})
+    return models
 
 
 def is_router_model(model_id: str) -> bool:
-    if model_id != ROUTER_MODEL_ID:
-        return False
     ids = _router_probe()
-    return ids is not None and ROUTER_MODEL_ID in ids
+    return ids is not None and model_id in ids
 
 
 def is_nemotron_loaded() -> bool:
