@@ -5,6 +5,54 @@
 
 ---
 
+## State at 2026-09-01 — T8 v115 spec drafted and staged (offline; build not started)
+
+- **T8 (router recut) spec is authored, staged, and validated — no live
+  run yet.** Staged in `scripts/.approved/incoming/` (gitignored; durable
+  copy in `tasks/T8-v115-spec-draft/`):
+  - `PRD.md` — standing PRD byte-identical + new section
+    `### Router recut — full ready set (v115)`: AC-175..AC-181 (AC-175..178
+    supersede the v107 single-model AC-170..173; AC-179 = the mid-flight
+    404-race not-ready message, exact string pinned; AC-180 = still-ready
+    errors keep the generic fallback; AC-181 = `ROUTER_MODEL_ID` retired).
+  - `ERD-DELTA.md` — v115 delta: design, supersession record, changed files
+    (`src/services/models.py`, `src/api/chat.py`; `src/api/models.py`
+    acceptance-only), 7 new/renamed test families pinned in the
+    `## Test-to-file mapping` section (they are not frozen node-ids yet,
+    so they cannot ride `contracts.test_mapping`).
+  - `contracts.json` — staged merge delta: `erd_version` 115, `files`
+    restated (full oracle-mapping inventory, every member explained by
+    `changed_files` ∪ `no_edit_files`), `changed_files` declared,
+    `no_edit_files` + `src/api/models.py`, `test_mapping` = standing 20
+    minus the 2 retired v107 422-rejection pins.
+  - `tests/test_router_route.py` — 20-test oracle (pytest-httpserver
+    simulates Vortex; `stream_reply`/`httpx` monkeypatched; local `def`
+    mocks only, S6-safe).
+- **Validation (all offline, all green):** `spec_artifacts.py
+  invalid-under` clean; `check-prd-additive.py` clean (D-148);
+  `refreeze.sh --diff` — every preflight GREEN (INV-4, D-78 spec
+  preflight, S5, S6, contracts merge, pin gate), DIFF-SHA
+  `d9dab64de69841e57cbb823a535ba10846907d10d94e1727849d56d0dd50d6ee`.
+- **Oracle against the unmodified code: 8 failed / 12 passed** — the 8
+  failures are exactly the new-behavior pins (full ready set ×4, dynamic
+  `is_router_model`, constant retirement, any-ready-model routing, AC-179
+  race); the 12 passes are regression guards (503, probe-raises,
+  vortex-unset, catalog exclusion, fall-throughs, internal path, generic
+  fallback). Clean collection, no errors — the pre-milestone target state.
+- **Run sequence when the window opens (Linux dev VM, one-live-run-at-a-time):**
+  `scripts/refreeze.sh scripts/.approved/incoming` (D-121: green
+  preflights = auto-apply; no approval step) → `scripts/orchestrate.sh`
+  (fires the local coder; needs a memory/RAM window). Not started.
+- **Gates learned while de-risking (recorded for the next delta):**
+  `contracts.files` must cover every file a `test_mapping` pin points to
+  (milestone-minimal ≠ changed-files-only); S5's AC-block extraction spans
+  from an AC's first mention to the next AC mention/`##` heading, so design
+  prose containing state verbs ("load/unload") inside an AC span trips the
+  post-condition rule — reword the prose, don't add `such that` to design
+  bullets.
+
+---
+
 ## State at 2026-08-23 — current Blueprint adopted and copied-child portability proven
 
 - Testchat advanced from Blueprint `7446a3a` to `5d4969c`, then the complete

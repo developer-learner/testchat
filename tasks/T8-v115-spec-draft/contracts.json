@@ -1,0 +1,46 @@
+{
+  "erd_version": 115,
+  "files": [
+    "src/services/models.py",
+    "src/api/models.py",
+    "src/api/chat.py",
+    "src/static/catalog.js",
+    "src/services/storage.py",
+    "src/api/threads.py",
+    "src/static/threads.js",
+    "src/static/app.js"
+  ],
+  "changed_files": [
+    "src/services/models.py",
+    "src/api/chat.py"
+  ],
+  "no_edit_files": [
+    "src/static/catalog.js",
+    "src/services/storage.py",
+    "src/api/threads.py",
+    "src/static/threads.js",
+    "src/static/app.js",
+    "src/api/models.py"
+  ],
+  "entry_points": [],
+  "test_mapping": {
+    "tests/test_router_route.py::test_router_models_lists_router_when_router_reports_it": "src/services/models.py",
+    "tests/test_router_route.py::test_router_models_empty_when_router_omits_it": "src/services/models.py",
+    "tests/test_router_route.py::test_router_models_empty_when_router_503": "src/services/models.py",
+    "tests/test_router_route.py::test_router_models_empty_when_probe_raises": "src/services/models.py",
+    "tests/test_router_route.py::test_router_models_empty_when_vortex_url_unset": "src/services/models.py",
+    "tests/test_router_route.py::test_router_models_deduplicated": "src/services/models.py",
+    "tests/test_router_route.py::test_is_router_configured_reflects_env": "src/services/models.py",
+    "tests/test_router_route.py::test_router_chat_endpoint_uses_vortex_url": "src/services/models.py",
+    "tests/test_router_route.py::test_router_models_included_in_list_models": "src/services/models.py",
+    "tests/test_router_route.py::test_router_model_never_in_catalog": "src/api/models.py",
+    "tests/test_router_route.py::test_get_models_includes_router_when_ready": "src/api/models.py",
+    "tests/test_router_route.py::test_chat_routes_router_model_to_router_endpoint_and_passes_model": "src/api/chat.py",
+    "tests/test_router_route.py::test_chat_internal_path_untouched_when_vortex_url_unset": "src/api/chat.py",
+    "tests/test_ui_catalog.py::test_model_dropdown_lists_router_model_from_models_list[chromium]": "src/static/catalog.js",
+    "tests/test_storage_service.py::test_roundtrip_preserves_snapshot": "src/services/storage.py",
+    "tests/test_data_safety_storage.py::test_valid_json_with_invalid_thread_schema_is_quarantined": "src/api/threads.py",
+    "tests/test_data_safety_ui.py::test_delete_one_thread_survives_reload[chromium]": "src/static/threads.js",
+    "tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving[chromium]": "src/static/app.js"
+  }
+}

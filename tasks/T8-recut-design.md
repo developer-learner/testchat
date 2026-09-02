@@ -1,5 +1,17 @@
 # T8 — recut Testchat's router seams onto Vortex's real v26 surface
 
+**Status (2026-09-01): v115 spec DRAFTED and staged — all refreeze
+preflights green.** The frozen-spec artifacts (PRD delta AC-175..AC-181,
+ERD-DELTA v115, contracts delta, 20-test oracle) are staged in
+`scripts/.approved/incoming/` and durably recorded in
+`tasks/T8-v115-spec-draft/`. The oracle against the unmodified code is
+**8 failed / 12 passed** — the 8 failures are exactly the new-behavior
+pins (full ready set, dynamic routing, constant retirement, AC-179
+race); the 12 passes are regression guards. The freeze + build still
+need the one-live-run-at-a-time memory/RAM window (Linux dev VM); the
+run is `scripts/refreeze.sh scripts/.approved/incoming` (D-121:
+green preflights = auto-apply) followed by `scripts/orchestrate.sh`.
+
 **Design prep, 2026-09-01 (TPM).** Not the frozen spec — the freeze-first flow
 (PRD/ERD/tests → `refreeze.sh` → build) authors that when the milestone runs.
 Precedes T9 (the deployment cutover; see `T9-cutover-design.md`). T8 is a
