@@ -405,8 +405,12 @@ earns; 38%→~85% on the CI floor is still gated on the mac/Linux delta).
 
 ## Later
 
-### Model add/unload has issues — run a small test LLM through user use cases, note and fix
-**Priority:** P2 (deferred — logged 2026-08-15)
+### ~~Model add/unload has issues — run a small test LLM through user use cases, note and fix~~ — SUPERSEDED 2026-09-03
+**Priority:** ~~P2~~ — parked by CEO direction (2026-09-03): testchat relies on
+Vortex for model load/unload; the in-house loader (`src/services/models.py`
+lifecycle) is frozen as-is and gets no further work. The rough edges below are
+Vortex's concern now, not testchat's. Original entry retained for provenance:
+
 **Why:** Model add/load/unload has known rough edges discovered in 2026-08-15
 session work, but no focused pass has classified them. Known so far:
 - Terminating testchat (SIGINT/SIGTERM, Ctrl+C on `uvicorn`) does NOT unload
@@ -425,8 +429,13 @@ a repro + expected behavior, then fix. This is deliberately "for later":
 session value is higher in the router extraction (below) first.
 **Rough size:** investigation pass + a handful of small direct fixes.
 
-### Model router app — unified engine manager testchat (and other apps) refer to
-**Priority:** P1 (design-validation requested 2026-08-15; build deferred TBD)
+### ~~Model router app — unified engine manager testchat (and other apps) refer to~~ — SUPERSEDED 2026-09-03 (Vortex is this router)
+**Priority:** ~~P1~~ — closed by CEO direction (2026-09-03): **Vortex** is the
+standalone engine-manager/router this item proposed building. testchat delegates
+model load/unload to Vortex rather than extracting its own router, and the
+in-house loader (`src/services/models.py`) is frozen as-is — no further work.
+Original entry retained for provenance:
+
 **Why:** testchat currently owns engine lifecycle inline in
 `src/services/models.py` (SCRIPT_MODELS registry + spawn/ready-probe/terminate
 + sidecars) and hard-codes the per-engine launcher scripts
