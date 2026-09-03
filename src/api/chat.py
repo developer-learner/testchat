@@ -47,21 +47,11 @@ async def chat(request: ChatRequest) -> StreamingResponse:
     # blocking urllib reads in stream_reply/search_web can't stall the event
     # loop (status polls and thread saves kept freezing during think gaps).
     def event_generator():
-        routed_to_router = (
-            endpoint_override is not None
-            and endpoint_override == models_mod.router_chat_endpoint()
-        )
-
         def _messageless_error() -> str:
-            if (
-                routed_to_router
-                and request.model is not None
-                and not models_mod.is_router_model(request.model)
-            ):
-                return (
-                    f"Model {request.model} is not ready in Vortex. "
-                    "Pick a local model or retry once it is loaded."
-                )
+            # Every message-less failure — router-routed or not, model still
+            # ready or gone — shows the one generic retry line (AC-182). No
+            # model-switch suggestion: testchat delegates model management to
+            # Vortex, so "pick a local model" is obsolete.
             return llm_mod.FALLBACK_REPLY
 
         history_dicts = [
