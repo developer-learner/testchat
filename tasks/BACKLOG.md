@@ -7,13 +7,15 @@
 
 ## Up Next
 
-### User-understandable chat error copy (distinct plain cause + retry)
-**Priority:** P2 — CEO-decided 2026-09-03; slotted, not started. When a chat
-fails the user should see the actual cause in plain language (e.g. "The model
-failed to load."), with NO suggestions and retry as the only action. It's a
-freeze (the current spec pins the generic line + a "pick a local model"
-suggestion in `test_chat_api.py` and `test_router_route.py`), ~1 hour. Full
-design + ready code: [`tasks/llm-error-copy-design.md`](llm-error-copy-design.md).
+### ~~User-understandable chat error copy (distinct plain cause + retry)~~ — DELIVERED as one generic message, v122 (2026-09-03)
+**Priority:** ~~P2~~ — CEO refined the decision from *distinct per-cause*
+messages to **one generic retry line for every failure, no suggestions**.
+Shipped as spec **v122** (AC-182 supersedes AC-179): `_messageless_error()` in
+`src/api/chat.py` now always returns the generic `FALLBACK_REPLY`, dropping the
+"pick a local model" suggestion (obsolete now that Vortex owns model
+management). 34 router+chat tests green; ruff/mypy clean. The original
+distinct-cause design (`tasks/llm-error-copy-design.md`) was NOT built — it is
+retained only as provenance for the superseded approach.
 
 
 ### ~~Discover models from generic OpenAI-compatible endpoints~~ — REMOVED 2026-08-08

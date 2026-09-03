@@ -1,6 +1,10 @@
 # Design: user-understandable chat error copy (distinct plain cause + retry)
 
-**Status:** SLOTTED (not started) — CEO-decided product change, parked 2026-09-03.
+**Status:** SUPERSEDED / NOT BUILT (2026-09-03). The CEO refined the decision
+to *one generic retry line for every failure, no suggestions* — shipped as spec
+**v122** (AC-182; `_messageless_error()` always returns `FALLBACK_REPLY`). This
+distinct-per-cause design was not implemented; it is kept only as provenance.
+The generic version is the delivered behavior.
 **Size:** ~1 hour. Milestone-shaped: it changes frozen product behavior, so it
 goes through `scripts/refreeze.sh` (new ERD-DELTA + updated frozen tests), then
 the code lands. NOT a direct patch — the current spec pins the old behavior.
