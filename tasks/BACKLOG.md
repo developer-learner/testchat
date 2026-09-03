@@ -7,6 +7,14 @@
 
 ## Up Next
 
+### User-understandable chat error copy (distinct plain cause + retry)
+**Priority:** P2 — CEO-decided 2026-09-03; slotted, not started. When a chat
+fails the user should see the actual cause in plain language (e.g. "The model
+failed to load."), with NO suggestions and retry as the only action. It's a
+freeze (the current spec pins the generic line + a "pick a local model"
+suggestion in `test_chat_api.py` and `test_router_route.py`), ~1 hour. Full
+design + ready code: [`tasks/llm-error-copy-design.md`](llm-error-copy-design.md).
+
 
 ### ~~Discover models from generic OpenAI-compatible endpoints~~ — REMOVED 2026-08-08
 **Priority:** ~~P1~~ — struck by CEO decision: not needed. Contrary evidence
