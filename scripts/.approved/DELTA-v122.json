@@ -1,0 +1,10 @@
+{
+  "changed_contract_ids": [],
+  "changed_tests": [
+    "tests/test_router_route.py::test_chat_router_404_race_surfaces_not_ready_message"
+  ],
+  "retired_tests": [],
+  "changed_tests_granularity": "function",
+  "changed_files": [],
+  "inventory_files": []
+}

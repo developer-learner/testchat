@@ -350,7 +350,9 @@ def test_chat_router_404_race_surfaces_not_ready_message(
     client, monkeypatch, httpserver
 ):
     # Probe 1 (the routing decision) sees m1 ready; probe 2 (the re-probe
-    # when the stream errors) sees it gone — the unload race.
+    # when the stream errors) sees it gone — the unload race. Per AC-182 the
+    # user sees the single generic retry line, with no model-switch suggestion
+    # (AC-179's model-specific "pick a local model" notice is superseded).
     _serve_router_models_stateful(httpserver, [["m1"], []])
     monkeypatch.setenv("VORTEX_URL", _router_base(httpserver))
     captured = {}
@@ -365,10 +367,7 @@ def test_chat_router_404_race_surfaces_not_ready_message(
     assert captured["endpoint_override"] == (
         _router_base(httpserver) + "/v1/chat/completions"
     )
-    assert _error_message(resp) == (
-        "Model m1 is not ready in Vortex. "
-        "Pick a local model or retry once it is loaded."
-    )
+    assert _error_message(resp) == llm_mod.FALLBACK_REPLY
 
 
 def test_chat_router_error_while_still_ready_is_generic(

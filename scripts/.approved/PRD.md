@@ -452,6 +452,16 @@ blocks above stand as written).
   and no code path SHALL assume a specific router model id, such that the
   router seam is fully dynamic against Vortex's real v26 surface.
 
+* **AC-182:** WHEN a chat request was routed to the router AND the stream
+  errors without a message AND the model is no longer in the router's ready
+  set by the time the error is processed (the mid-flight 404 race),
+  THE SYSTEM SHALL emit the generic fallback error message — identical to the
+  still-ready case (AC-180) — such that every chat failure surfaces one calm
+  generic retry line and never a model-switch suggestion. This supersedes
+  AC-179: testchat delegates model management to Vortex, so a "pick a local
+  model" fallback offer is obsolete; the response SHALL remain a 200 SSE
+  stream.
+
 ## Out of scope
 
 * **Clear-all redesign or removal.** DELETE `/api/v1/threads` retains its
