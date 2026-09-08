@@ -7,6 +7,37 @@
 
 ## Up Next
 
+### Vortex deployment cutover + retire Testchat's local model-management UI
+**Priority:** P1 — roadmap phase 4 (Vortex backlog item 16)
+
+**Why:** Phase 3 is complete: Testchat can discover and route any ready Vortex
+model through `VORTEX_URL`. The deployment is still split-brain, however:
+`LLM_ENDPOINT` defaults to LM Studio on port 1234, while the browser still
+offers Testchat's frozen local catalog, load confirmations, and Eject/unload
+controls. The backlog now assigns model lifecycle to Vortex, so leaving both
+surfaces visible gives the user two apparent owners and preserves a fallback
+path whose product status is unclear.
+
+**Decision needed:** Confirm the recommended scope: make Vortex the normal
+deployment path and remove or hide Testchat's local lifecycle controls.
+Preserve an explicit environment override as the rollback path; do not delete
+the frozen backend loader/routes in this milestone unless the spec separately
+proves they can be retired safely.
+
+**Scope / done when:**
+- the normal configuration sends chat to
+  `http://127.0.0.1:9000/v1/chat/completions` and identifies the selected model;
+- the selector reflects Vortex's ready set, with no Testchat-owned load, unload,
+  or Eject action exposed in the normal UI;
+- streaming, reasoning tokens, generic failure copy, model selection, and the
+  not-ready race are verified end to end against Vortex;
+- an explicit endpoint override provides a documented rollback without
+  restoring the obsolete lifecycle UI; and
+- docs/config examples agree on the ownership boundary.
+
+**Delivery constraint:** author the frozen migration contract and independent
+tests through the normal TPM/refreeze path before changing product code.
+
 ### ~~User-understandable chat error copy (distinct plain cause + retry)~~ — DELIVERED as one generic message, v122 (2026-09-03)
 **Priority:** ~~P2~~ — CEO refined the decision from *distinct per-cause*
 messages to **one generic retry line for every failure, no suggestions**.
