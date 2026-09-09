@@ -1,3 +1,25 @@
+Edit only src/static/app.js. Two changes: 1. Source indicator: get `document.getElementById('active-model-source')`. When the active model is set, read the current models list (or the selected option's group) to determine source; set the element's text to `via Vortex` when the active model's `source === "router"` and the router is reachable, else `via local`. Update it wherever the active model or model list changes (initial load, model switch, and after `fetchModels`). 2. REMOVE the load-on-send flow: delete the branch that, on send with an unloaded selected model, opens `#load-confirm-modal` and POSTs `/api/v1/script-models/{id}/load` before resubmitting; delete the `eject-model-btn`, `load-confirm-modal`, `load-confirm`, `load-cancel` handles and their listeners. Sending with a ready model proceeds directly to chat (unchanged). Do not change chat streaming, routing, websearch, or any other file. Acceptance: no `script-models/.../load`, `load-confirm`, or `eject` reference remains in app.js; the source indicator is set on model change.
+
+Write EXACTLY one file: src/static/app.js — the gate rejects any other change, including new files. Before finishing, re-open src/static/app.js and confirm it satisfies every acceptance condition in this brief.
+
+Reply with ONLY edit blocks in this exact format, nothing else:
+<<<<<<< SEARCH
+(an EXACT, character-for-character copy of a short existing section — 3 to 10 lines)
+=======
+(that same section with the change applied)
+>>>>>>> REPLACE
+Rules:
+- Each SEARCH must appear EXACTLY ONCE in the file. Copy it verbatim — same spaces, same quotes.
+- Several small blocks, not one big one. Do not touch code outside your blocks. Do not reformat or reorder anything.
+- Never include any line containing a think tag in a SEARCH section — anchor on nearby tag-free lines instead.
+- In new code, never write the think tag as one literal string — construct it by concatenation, e.g. '<' + 'think>'.
+- If the file already satisfies the brief, reply with exactly this line and nothing else: === NO CHANGES ===
+- Verify each SEARCH against the file one more time before answering.
+- Your reply's VERY FIRST line must be '<<<<<<< SEARCH' (or the NO CHANGES line). Do not analyze, plan, or explain anything — every design decision is already made in the brief. Prose before the blocks burns your output budget and truncates the edit mid-block.
+- Every block must be COMPLETE working code — never a stub, placeholder, or '...' body. If the brief needs a new function, write its full body in the block.
+
+### existing (src/static/app.js)
+```
     (function () {
       var TC = window.TC;
       var MD = window.MD;
@@ -16,8 +38,17 @@
         webToggle.classList.toggle('active', webArmed);
       });
       var modelSelect = document.getElementById('model-select');
+      var ejectModelBtn = document.getElementById('eject-model-btn');
+      // The load-confirm modal is shared: catalog.js drives it for the
+      // change-handler flow; app.js drives it here for the "Send with
+      // unloaded model → offer load, then auto-resubmit" flow. Both paths
+      // reassign loadCancelBtn.onclick / loadConfirmBtn.onclick; latest
+      // write wins, which is fine because only one flow runs at a time.
+      var loadConfirmModal = document.getElementById('load-confirm-modal');
+      var loadConfirmBtn = document.getElementById('load-confirm');
+      var loadCancelBtn = document.getElementById('load-cancel');
+      var loadConfirmText = document.getElementById('load-confirm-text');
       var newThreadBtn = document.getElementById('new-thread-btn');
-      var activeModelSource = document.getElementById('active-model-source');
 
       var replyText = '';
       var chunkCount = 0;
@@ -44,7 +75,10 @@
         if (!TC.streaming) {
           sendBtn.disabled = !currentLoaded;
         }
-        updateSourceIndicator();
+        // Eject unloads the loaded SCRIPT model, never the selection — so it
+        // is enabled iff the catalog reports one loaded (LM Studio models are
+        // not ours to unload; selecting one must not light the button).
+        ejectModelBtn.disabled = !TC.scriptModelLoaded;
         fetch('/api/v1/status')
           .then(function (r) { return r.json(); })
           .then(function (d) {
@@ -64,18 +98,6 @@
             if (webToggle.disabled) { webArmed = false; webToggle.classList.remove('active'); }
           })
           .catch(function () { statusRam.textContent = ''; });
-      }
-
-      var modelsCache = [];
-      var routerReachable = false;
-
-      function updateSourceIndicator() {
-        if (!activeModelSource) return;
-        var sel = modelSelect.options[modelSelect.selectedIndex];
-        var id = modelSelect.value;
-        var m = modelsCache.find(function (x) { return x.id === id; });
-        var viaRouter = !!(m && m.source === 'router' && routerReachable);
-        activeModelSource.textContent = viaRouter ? 'via Vortex' : 'via local';
       }
 
       setInterval(pollStatus, 5000);
@@ -114,10 +136,6 @@
         bubble.dataset.raw = MD.stripThink(text);
         if (live) appendStreamCursor(bubble);
       }
-
-      modelSelect.addEventListener('change', function () {
-        updateSourceIndicator();
-      });
 
       function appendStreamCursor(bubble) {
         var el = bubble;
@@ -173,6 +191,35 @@
         if (!modelSelect.value) {
           appendBubble('Pick a model from the dropdown before sending.', 'error');
           modelSelect.focus();
+          return;
+        }
+        // Selected model is unloaded. Historically this was reachable only via
+        // the change event, so re-picking the already-shown option was a dead
+        // end; Send now offers the same load modal and auto-resubmits when the
+        // load returns 200, so the user's one Send click is enough.
+        var sel = modelSelect.options[modelSelect.selectedIndex];
+        if (sel && sel.dataset.loaded === 'false' && !TC.modelLoading) {
+          var loadId = modelSelect.value;
+          loadConfirmText.textContent = 'Start ' + loadId + ' first, then send? Uses significant RAM. ' + statusRam.textContent;
+          loadConfirmModal.hidden = false;
+          loadCancelBtn.onclick = function () { loadConfirmModal.hidden = true; };
+          loadConfirmBtn.onclick = function () {
+            loadConfirmModal.hidden = true;
+            TC.modelLoading = true;
+            fetch('/api/v1/script-models/' + encodeURIComponent(loadId) + '/load', { method: 'POST' })
+              .then(function (r) {
+                if (!r.ok) throw new Error('Failed to load model');
+                // Refresh in the background so the option list re-syncs; flip
+                // this option's data-loaded inline so the resubmit's guard
+                // (which reads the DOM, not the server) lets it through.
+                sel.dataset.loaded = 'true';
+                sel.textContent = '🟢 ' + loadId;
+                window.Catalog.refreshModels();
+                form.dispatchEvent(new Event('submit', { cancelable: true }));
+              })
+              .catch(function (err) { appendBubble(err.message || 'Failed to load model', 'error'); })
+              .finally(function () { TC.modelLoading = false; });
+          };
           return;
         }
 
@@ -512,15 +559,7 @@
       // error paths, plus pollStatus after unload / around a load confirm).
       window.App = {
         appendBubble: appendBubble,
-        pollStatus: pollStatus,
-        setModels: function (models) {
-          modelsCache = models || [];
-          updateSourceIndicator();
-        },
-        setRouterReachable: function (reachable) {
-          routerReachable = !!reachable;
-          updateSourceIndicator();
-        }
+        pollStatus: pollStatus
       };
 
       // Initial load — retry loop until GET /api/v1/threads succeeds
@@ -575,9 +614,8 @@
             setTimeout(retryInitialLoad, 1000);
           });
       })();
-      window.Catalog.fetchModels().then(function (models) {
-        modelsCache = models || [];
-        updateSourceIndicator();
-      });
+      window.Catalog.fetchModels();
       input.focus();
     })();
+
+```
