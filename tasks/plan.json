@@ -1,49 +1,52 @@
 {
-  "erd_version": 121,
+  "version": 5,
+  "erd_version": 123,
   "tasks": [
     {
-      "brief": "Do not edit `src/services/models.py`. The dynamic Vortex ready-set recut is already implemented: no fixed router model id exists, the live probe uses a 5-second timeout, results are deduplicated in probe order, and router models are appended to the models list. Acceptance: leave the file byte-identical; its mapped router tests must pass.",
-      "contracts": [],
-      "depends_on": [],
-      "file": "src/services/models.py",
       "id": "T1",
+      "file": "src/services/models.py",
+      "depends_on": [],
+      "brief": "Edit only src/services/models.py. Add one public function `router_status() -> dict[str, bool]` at module scope that returns `{\"configured\": is_router_configured(), \"reachable\": _router_probe() is not None}`. Do not change any existing function, import, or constant. `is_router_configured` and `_router_probe` already exist in this module. Acceptance: `router_status` is defined at module scope and calls the two existing helpers; nothing else changed.",
+      "contracts": [
+        "src.services.models:router_status"
+      ],
       "tests": [
-        "tests/test_router_route.py::test_is_router_configured_reflects_env",
-        "tests/test_router_route.py::test_is_router_model_false_when_not_listed_or_down",
-        "tests/test_router_route.py::test_is_router_model_true_for_any_ready_id",
-        "tests/test_router_route.py::test_router_chat_endpoint_uses_vortex_url",
-        "tests/test_router_route.py::test_router_model_id_constant_retired",
-        "tests/test_router_route.py::test_router_models_deduplicated",
-        "tests/test_router_route.py::test_router_models_empty_when_probe_raises",
-        "tests/test_router_route.py::test_router_models_empty_when_router_503",
+        "tests/test_router_route.py::test_router_models_lists_router_when_router_reports_it",
         "tests/test_router_route.py::test_router_models_empty_when_router_omits_it",
+        "tests/test_router_route.py::test_router_models_empty_when_router_503",
+        "tests/test_router_route.py::test_router_models_empty_when_probe_raises",
         "tests/test_router_route.py::test_router_models_empty_when_vortex_url_unset",
+        "tests/test_router_route.py::test_router_models_deduplicated",
+        "tests/test_router_route.py::test_is_router_configured_reflects_env",
+        "tests/test_router_route.py::test_router_chat_endpoint_uses_vortex_url",
         "tests/test_router_route.py::test_router_models_included_in_list_models",
-        "tests/test_router_route.py::test_router_models_lists_router_when_router_reports_it"
+        "tests/test_router_route.py::test_is_router_model_true_for_any_ready_id",
+        "tests/test_router_route.py::test_is_router_model_false_when_not_listed_or_down",
+        "tests/test_router_route.py::test_router_model_id_constant_retired"
       ]
     },
     {
-      "brief": "Do not edit `src/api/models.py`. Its model-list and catalog routes already expose the service results with the accepted router source schema. Acceptance: leave the file byte-identical; its mapped router API tests must pass.",
-      "contracts": [],
+      "id": "T2",
+      "file": "src/api/models.py",
       "depends_on": [
         "T1"
       ],
-      "file": "src/api/models.py",
-      "id": "T2",
+      "brief": "Edit only src/api/models.py. Import `router_status` from `src.services.models`. Add a Pydantic model `class RouterStatus(BaseModel): configured: bool; reachable: bool`. Add a field `router: RouterStatus` to `ModelsListResponse`. In `get_models()`, build the response as `ModelsListResponse(models=[ModelInfo(**m) for m in list_models()], router=RouterStatus(**router_status()))`. Do not change the route path, the `ModelInfo` shape, or any other route. Acceptance: `GET /api/v1/models` still returns `models`, and now also `router` with `configured` and `reachable` booleans.",
+      "contracts": [
+        "schema:ModelsListResponse",
+        "schema:RouterStatus"
+      ],
       "tests": [
-        "tests/test_router_route.py::test_get_models_includes_router_when_ready",
-        "tests/test_router_route.py::test_router_model_never_in_catalog"
+        "tests/test_router_route.py::test_router_model_never_in_catalog",
+        "tests/test_router_route.py::test_get_models_includes_router_when_ready"
       ]
     },
     {
-      "brief": "Edit only `src/api/chat.py`; do not change routing, imports, token/think/done handling, or any other file. `stream_reply()` reports transport failure as a message-less `(\"error\",)` item, so the primary fix belongs in the stream loop's existing `elif item[0] == \"error\":` branch, not only in the outer exception handler.\n\nInside `event_generator`, compute once:\n`routed_to_router = endpoint_override is not None and endpoint_override == models_mod.router_chat_endpoint()`.\nAdd a small local helper for message-less errors. It returns\n`Model {request.model} is not ready in Vortex. Pick a local model or retry once it is loaded.`\nwhen the request was router-routed, `request.model` is not `None`, and a fresh\n`models_mod.is_router_model(request.model)` call is false; otherwise it returns\n`llm_mod.FALLBACK_REPLY`.\n\nIn the stream-loop error branch, preserve `item[1]` exactly when present; only\nwhen `len(item) == 1` use the helper. In the outer\n`except (ConnectionError, TimeoutError, OSError) as e`, preserve `str(e)` when\nnon-empty; only a message-less exception uses the same helper. JSON-encode the\nselected message and retain the existing SSE error shape. Acceptance: the 404\nrace emits the exact Vortex not-ready message; still-ready, non-router, and\nmessage-bearing errors retain their prior results.",
-      "contracts": [],
-      "depends_on": [
-        "T1",
-        "T2"
-      ],
-      "file": "src/api/chat.py",
       "id": "T3",
+      "file": "src/api/chat.py",
+      "depends_on": [],
+      "brief": "Edit only src/api/chat.py. In `event_generator`, remove the `routed_to_router` local and simplify `_messageless_error()` so it takes no router context and always returns `llm_mod.FALLBACK_REPLY`. Do not change routing, imports, token/think/done handling, the stream-loop `item[1]` relay, or any other file. Acceptance: the 404-race and still-ready router errors both emit the generic `FALLBACK_REPLY`; message-bearing errors are unchanged.",
+      "contracts": [],
       "tests": [
         "tests/test_router_route.py::test_chat_internal_path_untouched_when_vortex_url_unset",
         "tests/test_router_route.py::test_chat_router_404_race_surfaces_not_ready_message",
@@ -54,57 +57,72 @@
       ]
     },
     {
-      "brief": "Do not edit `src/static/catalog.js`. Its existing models-list/catalog merge already turns every models-list entry, including a router entry, into one loaded non-script option. Acceptance: leave the file byte-identical and pass its frozen smoke check.",
-      "contracts": [],
-      "depends_on": [
-        "T1",
-        "T2",
-        "T3"
-      ],
-      "file": "src/static/catalog.js",
       "id": "T4",
-      "tests": []
+      "file": "src/static/catalog.js",
+      "depends_on": [
+        "T2",
+        "T3",
+        "T5",
+        "T6",
+        "T7",
+        "T8",
+        "T9"
+      ],
+      "brief": "Edit only src/static/catalog.js. Rebuild the model-dropdown module as a ready-only, grouped picker with no load/unload/Eject behavior and no script-model catalog fetch. KEEP: the `THREAD_MODEL_STORE_KEY` store and its helpers (`readThreadModelStore`, `storeThreadModel`, `storedThreadModel`); the `model-select` handle; the `appendBubble`/`pollStatus` delegators; `refreshModels` (calls `fetchModels`); the returned object exposing `fetchModels`, `refreshModels`, `storedThreadModel`, `storeThreadModel`. REMOVE: every `getElementById` handle and listener for `eject-model-btn`, `load-confirm-modal`, `load-confirm`, `load-cancel`, `load-confirm-text`, `unload-confirm-modal`, `unload-confirm`, `unload-cancel`, `unload-confirm-text`; the `TC.scriptModelLoaded` computation; the selector focus/blur/mousedown Eject-reveal listeners; and, in the `change` listener, the entire unloaded-pick load-confirm branch \u2014 a change now only records the thread's model (`previousModelValue`, `thread.model`, `storeThreadModel`) and calls `pollStatus()`. CHANGE `fetchModels`: request ONLY `/api/v1/models`. Read `data.models` (each has `id` and `source`) and `data.router` (`{configured, reachable}`; if absent, treat as `{configured:false, reachable:false}`). Build the `<select>` with two `<optgroup>`s: `Vortex \u00b7 shared \u00b7 primary` (models whose `source === \"router\"`; set its `disabled = true` if `data.router.reachable` is false); `Local \u00b7 this machine \u00b7 fallback` (all other models, always selectable). Omit an optgroup with no models. Render each option as `\ud83d\udfe2 <id>`. Preserve previous/stored selection restore and the `select-empty` toggle. On fetch failure, set `modelSelect.innerHTML = '<option value=\"\">Failed to load models</option>'`. Add the manage control: get `document.getElementById('manage-in-vortex')`; set its `disabled`/`hidden` to reflect `!data.router.reachable`. Its click opens `http://127.0.0.1:9000/` in a new tab (`window.open('http://127.0.0.1:9000/', '_blank')`); if it is an anchor with a correct `href`/`target`, no click handler is needed. Do not change any other file. Acceptance: no reference to `eject`, `load-confirm`, `unload`, or `/models/catalog` remains; the dropdown has two labelled optgroups; the manage control reflects `router.reachable`.",
+      "contracts": [],
+      "tests": [
+        "tests/test_ui_catalog.py::test_model_dropdown_lists_router_model_from_models_list[chromium]",
+        "tests/test_vortex_cutover.py::test_get_models_includes_router_object",
+        "tests/test_vortex_cutover.py::test_router_status_reflects_configured_and_reachable"
+      ]
     },
     {
-      "brief": "Do not edit `src/services/storage.py`. It is carried only as a previously accepted behavioral owner. Acceptance: leave the file byte-identical and pass its frozen smoke check.",
-      "contracts": [],
-      "depends_on": [
-        "T4"
-      ],
-      "file": "src/services/storage.py",
       "id": "T5",
+      "file": "src/services/storage.py",
+      "depends_on": [],
+      "brief": "No changes to this file in this delta. The file is carried forward unchanged; no edits are required. Acceptance: the file is byte-identical to its current state.",
+      "contracts": [],
       "tests": []
     },
     {
-      "brief": "Do not edit `src/api/threads.py`. It is carried only as a previously accepted behavioral owner. Acceptance: leave the file byte-identical and pass its frozen smoke check.",
-      "contracts": [],
-      "depends_on": [
-        "T5"
-      ],
-      "file": "src/api/threads.py",
       "id": "T6",
+      "file": "src/api/threads.py",
+      "depends_on": [],
+      "brief": "No changes to this file in this delta. The file is carried forward unchanged; no edits are required. Acceptance: the file is byte-identical to its current state.",
+      "contracts": [],
       "tests": []
     },
     {
-      "brief": "Do not edit `src/static/threads.js`. It is carried only as a previously accepted behavioral owner. Acceptance: leave the file byte-identical and pass its frozen smoke check.",
-      "contracts": [],
-      "depends_on": [
-        "T6"
-      ],
-      "file": "src/static/threads.js",
       "id": "T7",
+      "file": "src/static/threads.js",
+      "depends_on": [],
+      "brief": "No changes to this file in this delta. The file is carried forward unchanged; no edits are required. Acceptance: the file is byte-identical to its current state.",
+      "contracts": [],
       "tests": []
     },
     {
-      "brief": "Do not edit `src/static/app.js`. It is carried only as a previously accepted behavioral owner. Acceptance: leave the file byte-identical and pass its frozen smoke check.",
-      "contracts": [],
-      "depends_on": [
-        "T7"
-      ],
-      "file": "src/static/app.js",
       "id": "T8",
+      "file": "src/static/app.js",
+      "depends_on": [
+        "T2"
+      ],
+      "brief": "Edit only src/static/app.js. Two changes: 1. Source indicator: get `document.getElementById('active-model-source')`. When the active model is set, read the current models list (or the selected option's group) to determine source; set the element's text to `via Vortex` when the active model's `source === \"router\"` and the router is reachable, else `via local`. Update it wherever the active model or model list changes (initial load, model switch, and after `fetchModels`). 2. REMOVE the load-on-send flow: delete the branch that, on send with an unloaded selected model, opens `#load-confirm-modal` and POSTs `/api/v1/script-models/{id}/load` before resubmitting; delete the `eject-model-btn`, `load-confirm-modal`, `load-confirm`, `load-cancel` handles and their listeners. Sending with a ready model proceeds directly to chat (unchanged). Do not change chat streaming, routing, websearch, or any other file. Acceptance: no `script-models/.../load`, `load-confirm`, or `eject` reference remains in app.js; the source indicator is set on model change.",
+      "contracts": [
+        "ui:active-model-source"
+      ],
+      "tests": [
+        "tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving[chromium]"
+      ]
+    },
+    {
+      "id": "T9",
+      "file": "src/static/index.html",
+      "depends_on": [],
+      "brief": "Edit only src/static/index.html. Two additions and three removals, nothing else: ADD (in the status strip, near `#status-model`): an element `<span id=\"active-model-source\" data-testid=\"active-model-source\"></span>` for the source indicator; and an anchor `<a id=\"manage-in-vortex\" data-testid=\"manage-in-vortex\" href=\"http://127.0.0.1:9000/\" target=\"_blank\" rel=\"noopener\">Manage models in Vortex \u2197</a>` placed with the model selector. REMOVE: the Eject button (`id=\"eject-model-btn\"`); the entire `#load-confirm-modal` overlay block; the entire `#unload-confirm-modal` overlay block. Leave every other element unchanged (settings modal, delete-confirm modal, `model-select`, status strip). Acceptance: the file contains `active-model-source`, `manage-in-vortex`, `model-select`, `delete-confirm-modal`; and no `eject-model-btn`, `load-confirm-modal`, or `unload-confirm-modal`.",
+      "contracts": [
+        "ui:manage-in-vortex"
+      ],
       "tests": []
     }
-  ],
-  "version": 3
+  ]
 }
