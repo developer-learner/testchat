@@ -1,6 +1,6 @@
 {
-  "version": 5,
-  "erd_version": 123,
+  "version": 6,
+  "erd_version": 125,
   "tasks": [
     {
       "id": "T1",
@@ -57,26 +57,6 @@
       ]
     },
     {
-      "id": "T4",
-      "file": "src/static/catalog.js",
-      "depends_on": [
-        "T2",
-        "T3",
-        "T5",
-        "T6",
-        "T7",
-        "T8",
-        "T9"
-      ],
-      "brief": "Edit only src/static/catalog.js. Rebuild the model-dropdown module as a ready-only, grouped picker with no load/unload/Eject behavior and no script-model catalog fetch. KEEP: the `THREAD_MODEL_STORE_KEY` store and its helpers (`readThreadModelStore`, `storeThreadModel`, `storedThreadModel`); the `model-select` handle; the `appendBubble`/`pollStatus` delegators; `refreshModels` (calls `fetchModels`); the returned object exposing `fetchModels`, `refreshModels`, `storedThreadModel`, `storeThreadModel`. REMOVE: every `getElementById` handle and listener for `eject-model-btn`, `load-confirm-modal`, `load-confirm`, `load-cancel`, `load-confirm-text`, `unload-confirm-modal`, `unload-confirm`, `unload-cancel`, `unload-confirm-text`; the `TC.scriptModelLoaded` computation; the selector focus/blur/mousedown Eject-reveal listeners; and, in the `change` listener, the entire unloaded-pick load-confirm branch \u2014 a change now only records the thread's model (`previousModelValue`, `thread.model`, `storeThreadModel`) and calls `pollStatus()`. CHANGE `fetchModels`: request ONLY `/api/v1/models`. Read `data.models` (each has `id` and `source`) and `data.router` (`{configured, reachable}`; if absent, treat as `{configured:false, reachable:false}`). Build the `<select>` with two `<optgroup>`s: `Vortex \u00b7 shared \u00b7 primary` (models whose `source === \"router\"`; set its `disabled = true` if `data.router.reachable` is false); `Local \u00b7 this machine \u00b7 fallback` (all other models, always selectable). Omit an optgroup with no models. Render each option as `\ud83d\udfe2 <id>`. Preserve previous/stored selection restore and the `select-empty` toggle. On fetch failure, set `modelSelect.innerHTML = '<option value=\"\">Failed to load models</option>'`. Add the manage control: get `document.getElementById('manage-in-vortex')`; set its `disabled`/`hidden` to reflect `!data.router.reachable`. Its click opens `http://127.0.0.1:9000/` in a new tab (`window.open('http://127.0.0.1:9000/', '_blank')`); if it is an anchor with a correct `href`/`target`, no click handler is needed. Do not change any other file. Acceptance: no reference to `eject`, `load-confirm`, `unload`, or `/models/catalog` remains; the dropdown has two labelled optgroups; the manage control reflects `router.reachable`.",
-      "contracts": [],
-      "tests": [
-        "tests/test_ui_catalog.py::test_model_dropdown_lists_router_model_from_models_list[chromium]",
-        "tests/test_vortex_cutover.py::test_get_models_includes_router_object",
-        "tests/test_vortex_cutover.py::test_router_status_reflects_configured_and_reachable"
-      ]
-    },
-    {
       "id": "T5",
       "file": "src/services/storage.py",
       "depends_on": [],
@@ -101,20 +81,6 @@
       "tests": []
     },
     {
-      "id": "T8",
-      "file": "src/static/app.js",
-      "depends_on": [
-        "T2"
-      ],
-      "brief": "Edit only src/static/app.js. Two changes: 1. Source indicator: get `document.getElementById('active-model-source')`. When the active model is set, read the current models list (or the selected option's group) to determine source; set the element's text to `via Vortex` when the active model's `source === \"router\"` and the router is reachable, else `via local`. Update it wherever the active model or model list changes (initial load, model switch, and after `fetchModels`). 2. REMOVE the load-on-send flow: delete the branch that, on send with an unloaded selected model, opens `#load-confirm-modal` and POSTs `/api/v1/script-models/{id}/load` before resubmitting; delete the `eject-model-btn`, `load-confirm-modal`, `load-confirm`, `load-cancel` handles and their listeners. Sending with a ready model proceeds directly to chat (unchanged). Do not change chat streaming, routing, websearch, or any other file. Acceptance: no `script-models/.../load`, `load-confirm`, or `eject` reference remains in app.js; the source indicator is set on model change.",
-      "contracts": [
-        "ui:active-model-source"
-      ],
-      "tests": [
-        "tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving[chromium]"
-      ]
-    },
-    {
       "id": "T9",
       "file": "src/static/index.html",
       "depends_on": [],
@@ -123,6 +89,44 @@
         "ui:manage-in-vortex"
       ],
       "tests": []
+    },
+    {
+      "id": "T4",
+      "file": "src/static/catalog.js",
+      "depends_on": [
+        "T9"
+      ],
+      "brief": "Edit only src/static/catalog.js. Replace the old catalog/lifecycle module with the T9 ready-only grouped picker. Preserve the localStorage thread-model helpers and the public exports fetchModels, refreshModels, storedThreadModel and storeThreadModel. Preserve lazy pollStatus/appendBubble delegation to window.App. fetchModels RETURNS the fetch promise for /api/v1/models. Parse data.models and data.router (default configured:false, reachable:false), populate the picker, then resolve to the models array. On error show a blank-valued failure option, disable the manage link, poll status, and resolve to [] to avoid an unhandled rejection. refreshModels returns fetchModels(). Fetch only /api/v1/models. populateModelOptions(models, router) captures the old selection, or stored active thread model, or active thread.model, BEFORE clearing the select. Partition by source === 'router'. Create real optgroups labelled 'Vortex \u00b7 shared \u00b7 primary' first and 'Local \u00b7 this machine \u00b7 fallback' second. Keep a configured Vortex group visible even with zero models; disable it when router.reachable is false. Local group stays enabled. Each option uses model.id as value, green glyph plus id as text, and dataset.loaded='true'. Preserve an existing selection only if its group is enabled; otherwise choose the first enabled option. If none is available use a blank-valued 'No models available' placeholder. Synchronize the active thread.model to the chosen value and toggle select-empty. After rebuilding, pollStatus() so the status/source/Send state updates immediately. Set manage-in-vortex aria-disabled='true' when unreachable and remove that attribute when reachable. Its click handler prevents navigation while disabled (aria-disabled alone does not prevent navigation). The model-select change listener records thread.model, calls storeThreadModel and pollStatus; it never opens a modal. Remove all local lifecycle controls, their listeners/timers, scriptModelLoaded references, and catalog endpoint calls. Self-verify: real optgroups, enabled fallback selection, promise return, dataset.loaded, reachability-aware manage action, no null Eject listener.",
+      "contracts": [
+        "ui:model-select",
+        "ui:manage-in-vortex"
+      ],
+      "tests": [
+        "tests/test_ui_catalog.py::test_model_dropdown_lists_router_model_from_models_list[chromium]",
+        "tests/test_vortex_cutover.py::test_picker_is_ready_only_and_grouped[chromium]",
+        "tests/test_vortex_cutover.py::test_vortex_group_and_manage_disabled_when_unreachable[chromium]"
+      ]
+    },
+    {
+      "id": "T8",
+      "file": "src/static/app.js",
+      "depends_on": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+        "T6",
+        "T7"
+      ],
+      "brief": "Edit only src/static/app.js. Preserve chat streaming, thread hydration, history, websearch, and routing. Keep existing ready-only send behavior. Replace updateSourceIndicator's model-cache lookup with selected option's parent optgroup: enabled group whose label contains 'Vortex' means 'via Vortex'; all other cases mean 'via local'. Remove modelsCache and routerReachable declarations and assignments. The old cache is both stale and read before initialization by the first pollStatus call; the DOM-based helper must be safe at that first call. Keep the helper called by pollStatus and the model-select change listener. At initialization replace Catalog.fetchModels().then callback with a callback that calls pollStatus after the returned promise resolves. Catalog now returns a promise and sets dataset.loaded on ready options. Thread switches already invoke pollStatus via the public App interface, so source follows thread changes. Remove any remaining local load/unload/Eject UI flow if present. Self-verify: source reads the enabled optgroup, first pollStatus is safe, Send remains enabled for a selected ready option, models load without a synchronous exception.",
+      "contracts": [
+        "ui:active-model-source"
+      ],
+      "tests": [
+        "tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving[chromium]",
+        "tests/test_vortex_cutover.py::test_active_model_source_indicator[chromium]"
+      ]
     }
   ]
 }
