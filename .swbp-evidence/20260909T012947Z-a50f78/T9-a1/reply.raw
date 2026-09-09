@@ -1,0 +1,55 @@
+The file doesn't yet satisfy the brief, so I'll make the edits.
+
+<<<<<<< SEARCH
+        <div class="model-field">
+          <select id="model-select" data-testid="model-select"><option value="">Loading models...</option></select>
+          <button type="button" class="theme-toggle no-auto-margin" id="eject-model-btn" data-testid="eject-model-btn" title="Unload the active model" hidden>⏏</button>
+        </div>
+=======
+        <div class="model-field">
+          <select id="model-select" data-testid="model-select"><option value="">Loading models...</option></select>
+          <a id="manage-in-vortex" data-testid="manage-in-vortex" href="http://127.0.0.1:9000/" target="_blank" rel="noopener">Manage models in Vortex ↗</a>
+        </div>
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+      <div class="status-strip" id="status-strip" data-testid="status-strip">
+        <span id="status-model">no model</span>
+        <span id="status-ram"></span>
+=======
+      <div class="status-strip" id="status-strip" data-testid="status-strip">
+        <span id="status-model">no model</span>
+        <span id="active-model-source" data-testid="active-model-source"></span>
+        <span id="status-ram"></span>
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+  <div class="modal-overlay" id="load-confirm-modal" data-testid="load-confirm-modal" hidden>
+    <div class="modal">
+      <div class="modal-title">Load model?</div>
+      <p id="load-confirm-text" class="modal-hint"></p>
+      <div class="modal-actions">
+        <button type="button" id="load-cancel" data-testid="load-cancel">Cancel</button>
+        <button type="button" id="load-confirm" data-testid="load-confirm" class="primary">Load model</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="delete-confirm-modal" data-testid="delete-confirm-modal" hidden>
+=======
+  <div class="modal-overlay" id="delete-confirm-modal" data-testid="delete-confirm-modal" hidden>
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+  <div class="modal-overlay" id="unload-confirm-modal" data-testid="unload-confirm-modal" hidden>
+    <div class="modal">
+      <div class="modal-title">Unload model?</div>
+      <p id="unload-confirm-text" class="modal-hint"></p>
+      <div class="modal-actions">
+        <button type="button" id="unload-cancel" data-testid="unload-cancel">Cancel</button>
+        <button type="button" id="unload-confirm" data-testid="unload-confirm" class="primary">Unload</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/rain.js"></script>
+=======
+  <script src="/static/rain.js"></script>
+>>>>>>> REPLACE
