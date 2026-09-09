@@ -462,40 +462,6 @@ blocks above stand as written).
   model" fallback offer is obsolete; the response SHALL remain a 200 SSE
   stream.
 
-* **AC-183 (Vortex cutover / T9):** `GET /api/v1/models` SHALL return, alongside
-  the `models` list, a `router` object with boolean fields `configured` and
-  `reachable`, such that a client can distinguish an unreachable router from a
-  reachable-but-empty one.
-
-* **AC-184 (Vortex cutover / T9):** the model picker SHALL be ready-only and
-  grouped — a `Vortex · shared · primary` optgroup listing models whose source
-  is `router`, and a `Local · this machine · fallback` optgroup listing the
-  rest — and SHALL NOT list the full catalog of unloaded models, such that only
-  chat-ready models are selectable.
-
-* **AC-185 (Vortex cutover / T9):** a `manage-in-vortex` control labelled
-  "Manage models in Vortex ↗" SHALL target `http://127.0.0.1:9000/` and open in
-  a new browser tab, such that model management is reached in Vortex rather than
-  in Testchat.
-
-* **AC-186 (Vortex cutover / T9):** WHEN `router.reachable` is false, the Vortex
-  optgroup and the `manage-in-vortex` control SHALL be disabled while local
-  models remain selectable, such that Testchat keeps working on the local
-  fallback when Vortex is unreachable.
-
-* **AC-187 (Vortex cutover / T9):** the `active-model-source` indicator SHALL
-  read "via Vortex" when the active model is a reachable router model and "via
-  local" otherwise, such that the active model's source is visible in the status
-  strip.
-
-* **AC-188 (Vortex cutover / T9):** the normal UI SHALL expose no local
-  model-lifecycle action — the Eject button and the load-confirm and
-  unload-confirm modals SHALL be absent from the page — and selecting a ready
-  model SHALL perform no load confirmation; it SHALL simply become the thread's
-  model, such that Vortex is the single owner of model lifecycle. This
-  supersedes AC-31, AC-132, and AC-167; the internal script-model management
-  routes remain for the local fallback and rollback.
-
 ## Out of scope
 
 * **Clear-all redesign or removal.** DELETE `/api/v1/threads` retains its

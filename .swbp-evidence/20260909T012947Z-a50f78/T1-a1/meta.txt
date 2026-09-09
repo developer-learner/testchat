@@ -1,3 +1,0 @@
-model=Qwen3.8-27B-MLX-8bit
-call_id=chatcmpl-bb98b404
-ts=2026-09-09T01:32:48Z

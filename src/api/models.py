@@ -10,7 +10,6 @@ from src.services.models import (
     list_model_catalog,
     list_models,
     load_script_model,
-    router_status,
     unload_script_model,
 )
 
@@ -45,14 +44,8 @@ class ModelInfo(BaseModel):
     ]
 
 
-class RouterStatus(BaseModel):
-    configured: bool
-    reachable: bool
-
-
 class ModelsListResponse(BaseModel):
     models: list[ModelInfo]
-    router: RouterStatus
 
 
 class ScriptModelLoadResponse(BaseModel):
@@ -87,10 +80,8 @@ NemotronUnloadResponse = ScriptModelUnloadResponse
 # off the loop — the same fix class as the AC-165 load/unload endpoints.
 @router.get("/models")
 def get_models() -> ModelsListResponse:
-    return ModelsListResponse(
-        models=[ModelInfo(**m) for m in list_models()],
-        router=RouterStatus(**router_status()),
-    )
+    models = list_models()
+    return ModelsListResponse(models=[ModelInfo(**m) for m in models])
 
 
 @router.get("/models/catalog")

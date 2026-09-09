@@ -1,45 +1,61 @@
-# ERD-DELTA v126 — T9 acceptance-only closeout
+# ERD-DELTA v122 — chat failures show one generic retry line (no model-switch suggestion)
+
+Freeze context: a CEO product decision (2026-09-03). testchat now delegates
+model load/unload to Vortex, so the router-not-ready error's "pick a local
+model" suggestion is obsolete. Every chat failure should surface a single calm
+generic retry line with no suggestion. This is a focused behavioral delta on
+one file (`src/api/chat.py`): it collapses the message-less-error path onto the
+generic fallback message, superseding AC-179 with AC-182 (which matches the
+already-generic still-ready case, AC-180).
 
 ## Design
 
-T9 implementation is complete at 3693f42. The final deterministic repairs
-landed directly under D-132 after the coder failed, as recorded in
- tasks/T9-completion-review.md. All 237 frozen tests pass on both macOS and
-sandbox. The six original T9 tests and all owner mappings remain unchanged.
-This freeze declares the entire existing inventory acceptance-only so the
-orchestrator verifies the outstanding mapped acceptance and records completion
-without rebuilding already-verified files. No source edit is requested.
-The carried empty-picker wording is Select model..., as required by AC-130.
-Browser review also verified removal of stale modal handlers in chrome.js.
+- `src/api/chat.py`'s `event_generator` previously computed `routed_to_router`
+  and a `_messageless_error()` helper returning a model-specific
+  "not ready in Vortex — pick a local model" line for the 404 race and the
+  generic `FALLBACK_REPLY` otherwise. The helper now always returns
+  `llm_mod.FALLBACK_REPLY`; the `routed_to_router` computation and the Vortex
+  readiness re-probe are removed.
+- No other file changes. `stream_reply` still reports transport failure as a
+  message-less `("error",)`; the stream loop still relays `item[1]` when a
+  message is present. Only the message-less fallback text changes.
 
 ## Changed acceptance criteria
 
-None. AC-183 through AC-188 and the carried regression suite remain binding.
+- **AC-182 (new):** the router-routed, message-less, model-left-the-ready-set
+  error (the 404 race) now emits the generic fallback error message, identical
+  to the still-ready case (AC-180) — one calm generic retry line, no
+  model-switch suggestion. The response stays a 200 SSE stream.
 
 ## Superseded acceptance criteria
 
-None.
+- **AC-179:** the model-specific `Model {id} is not ready in Vortex. Pick a
+  local model or retry once it is loaded.` notice is retired. testchat
+  delegates model load/unload to Vortex, so a local-model fallback offer is
+  obsolete; AC-182 replaces it with the generic message.
 
 ## Changed files
 
-- `src/static/catalog.js` — acceptance-only: the picker contract now records
-  the already-tested compatibility behavior, exact-ID restore, carried AC-130
-  placeholder, and unready marking for offline New Chat. No code is owed.
-
-All inventoried files are explicit no_edit_files. The changed picker contract
-invalidates its existing acceptance; it grants no new coder work.
+- `src/api/chat.py`: `_messageless_error()` always returns
+  `llm_mod.FALLBACK_REPLY`; the `routed_to_router` local and the Vortex
+  readiness re-probe are removed. No other file changes.
 
 ## Coder briefs (verbatim)
 
-No coder work is required. Preserve the implementation byte-for-byte and run
-all existing mapped tests. In particular, retain the ready grouped options,
-offline local default, source indicator, and removed lifecycle UI handlers.
+### T1 — src/api/chat.py
+
+Edit only `src/api/chat.py`. In `event_generator`, remove the `routed_to_router`
+local and simplify `_messageless_error()` so it takes no router context and
+always returns `llm_mod.FALLBACK_REPLY`. Do not change routing, imports,
+token/think/done handling, the stream-loop `item[1]` relay, or any other file.
+Acceptance: the 404-race and still-ready router errors both emit the generic
+`FALLBACK_REPLY`; message-bearing errors are unchanged.
 
 ## Task DAG
 
-Preserve the validated task dependencies. Every task is acceptance-only.
+Single task; no dependencies. `src/api/chat.py` is the only changed file.
 
 ## Test-to-file mapping
 
-Retain all standing owner pins, including the six T9 tests. Do not move tests
-away from their owners and do not drop any test from the milestone verdict.
+* `tests/test_router_route.py::test_chat_router_404_race_surfaces_not_ready_message` -> `src/api/chat.py`
+* `tests/test_router_route.py::test_chat_router_error_while_still_ready_is_generic` -> `src/api/chat.py`

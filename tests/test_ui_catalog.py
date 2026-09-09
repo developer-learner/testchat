@@ -15,10 +15,34 @@ change, and no option when the router is absent from the list.
 from playwright.sync_api import Page, expect
 
 
-# AC-167 (script-catalog dedup) retired in v123 (Vortex cutover, T9): catalog.js
-# no longer fetches or merges /api/v1/models/catalog, so there is no second
-# source to dedup against. The picker is built from /api/v1/models alone —
-# see tests/test_vortex_cutover.py::test_picker_is_ready_only_and_grouped.
+def test_model_dropdown_shows_each_script_model_once(
+    page: Page, app_url: str
+) -> None:
+    page.route(
+        "**/api/v1/models",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"models":[{"type":"llm","key":"nemotron","loaded_instances":[{"identifier":"nemotron"}]}]}',
+        ),
+    )
+    page.route(
+        "**/api/v1/models/catalog",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"models":[{"id":"nemotron","source":"nemotron","loaded":true},{"id":"solo-script","source":"other","loaded":true}]}',
+        ),
+    )
+    page.goto(app_url)
+    select = page.get_by_test_id("model-select")
+    expect(select).to_contain_text("solo-script")
+    counts = page.evaluate(
+        "[...document.querySelector('[data-testid=\"model-select\"]').options]"
+        ".reduce((m, o) => (m[o.value] = (m[o.value] || 0) + 1, m), {})"
+    )
+    assert counts.get("nemotron") == 1, f"overlap id duplicated: {counts!r}"
+    assert counts.get("solo-script") == 1, f"catalog id duplicated: {counts!r}"
 
 
 def test_model_dropdown_lists_router_model_from_models_list(

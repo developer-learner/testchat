@@ -1,15 +1,5 @@
 # DECISIONS.md — Architectural Decision Log
 
-## T9 execution note — 2026-09-09 (applies existing D-132; no new rule)
-
-After the bounded local-coder attempt failed, the remaining identified frontend
-defects were repaired directly under D-132. Tests stayed frozen. Full host and
-sandbox runs passed 237/237. Acceptance-only v126 then protected the repaired
-files and let the orchestrator record its full-suite success and nine durable
-task completions (`6cb5b67`). This is mixed coder/direct-repair provenance,
-not evidence that the local coder completed T9 unaided. Detailed evidence lives
-in `tasks/T9-completion-review.md`.
-
 > Every non-obvious technical decision goes here with the reasoning.
 > This prevents the LLM from "helpfully" undoing choices you already made.
 > Format: date, decision, why, what not to suggest.

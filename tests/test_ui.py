@@ -73,10 +73,35 @@ def test_history_sent_to_backend_has_no_think_markup(
         )
 
 
-# AC-31 retired in v123 (Vortex cutover, T9): the selection-stability check was
-# driven by the Eject → unload flow, which the cutover removes. Selector
-# behavior is covered by AC-133 (selector enabled) plus AC-184 (grouped
-# ready-only picker) in tests/test_vortex_cutover.py.
+# AC-31 [new — selection-stability fix]
+def test_model_selection_survives_models_refresh(page: Page, app_url: str) -> None:
+    page.route(
+        "**/api/v1/models/catalog",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"models":[{"id":"nemotron","source":"nemotron","loaded":true}]}',
+        ),
+    )
+    page.route(
+        "**/api/v1/script-models/nemotron/unload",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"status":"unloaded","message":null}',
+        ),
+    )
+    page.goto(app_url)
+    select = page.get_by_test_id("model-select")
+    expect(select).to_have_value("alpha-model")
+    stamp = re.search(r"refresh-(\d+)", select.inner_text())
+    assert stamp, "stub stamps every models response with refresh-N"
+    n = int(stamp.group(1))
+    select.select_option("beta-model")
+    page.get_by_test_id("eject-model-btn").click()
+    page.get_by_test_id("unload-confirm").click()
+    expect(select).to_contain_text(f"refresh-{n + 1}")
+    expect(select).to_have_value("beta-model")
 
 
 # AC-32 [retrofits AC-19; v67 (M32) dropped the trailing selector-enabled
@@ -941,9 +966,34 @@ def test_no_loaded_model_shows_placeholder_and_disables_send(
     expect(page.get_by_test_id("msg-error")).to_have_count(1)
 
 
-# AC-132 retired in v123 (Vortex cutover, T9): there is no load-confirm flow —
-# the picker lists only ready models and Vortex owns loading. Covered by
-# AC-184/AC-188 in tests/test_vortex_cutover.py.
+# AC-132: picking an unloaded model asks first; cancel reverts and sends nothing
+def test_unloaded_model_pick_asks_and_cancel_reverts(
+    page: Page, app_url: str
+) -> None:
+    page.route(
+        "**/api/v1/models",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body='{"models":[]}'
+        ),
+    )
+    page.route(
+        "**/api/v1/models/catalog",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"models":[{"id":"nemotron","source":"nemotron","loaded":false}]}',
+        ),
+    )
+    page.goto(app_url)
+    select = page.get_by_test_id("model-select")
+    expect(select).to_have_value("")
+    select.select_option("nemotron")
+    expect(page.get_by_test_id("load-confirm-modal")).to_be_visible()
+    page.get_by_test_id("load-cancel").click()
+    expect(page.get_by_test_id("load-confirm-modal")).to_be_hidden()
+    # Reverted to the prior (placeholder) selection; nothing loaded or sent.
+    expect(select).to_have_value("")
+    expect(page.get_by_test_id("msg-user")).to_have_count(0)
 
 
 # =============================================================================
@@ -1118,6 +1168,27 @@ def test_thread_model_selection_persists_across_reload_without_send(
     expect(select).to_have_value("beta-model")
 
 
-# P2-9 retired in v123 (Vortex cutover, T9): the eject (⏏) button is removed —
-# the app no longer unloads models (Vortex owns lifecycle). Absence of every
-# local lifecycle control is pinned by AC-188 in tests/test_vortex_cutover.py.
+# P2-9 [the eject (⏏) button unloads a loaded SCRIPT-model server; LM Studio
+# models are not the app's to unload. When only LM Studio models are loaded
+# and no script model is, the button must not render — not at rest, and not
+# when the selector is focused.]
+def test_eject_button_hidden_when_only_lmstudio_models_loaded(
+    page: Page, app_url: str
+) -> None:
+    # Catalog reports a script model that is NOT loaded — so the only loaded
+    # models are the LM Studio ones from /api/v1/models (alpha/beta/…).
+    page.route(
+        "**/api/v1/models/catalog",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"models":[{"id":"nemotron","source":"nemotron","loaded":false}]}',
+        ),
+    )
+    page.goto(app_url)
+    select = page.get_by_test_id("model-select")
+    expect(select).to_have_value("alpha-model")  # LM Studio model, loaded
+    eject = page.get_by_test_id("eject-model-btn")
+    expect(eject).to_be_hidden()          # at rest: no script model loaded
+    select.focus()
+    expect(eject).to_be_hidden()          # focusing the selector must not reveal it

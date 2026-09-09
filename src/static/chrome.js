@@ -153,9 +153,19 @@ window.Chrome = (function () {
   // Confirm-modal dismissals: click on the overlay backdrop = cancel.
   // Each modal keeps its cancel button as the primary dismiss path;
   // this is a convenience mirror, so it just triggers that button.
+  var loadConfirmModal = document.getElementById('load-confirm-modal');
+  var loadCancelBtn = document.getElementById('load-cancel');
+  var unloadConfirmModal = document.getElementById('unload-confirm-modal');
+  var unloadCancelBtn = document.getElementById('unload-cancel');
   var deleteConfirmModal = document.getElementById('delete-confirm-modal');
   var deleteCancelBtn = document.getElementById('delete-cancel');
 
+  loadConfirmModal.addEventListener('click', function (e) {
+    if (e.target === loadConfirmModal) loadCancelBtn.click();
+  });
+  unloadConfirmModal.addEventListener('click', function (e) {
+    if (e.target === unloadConfirmModal) unloadCancelBtn.click();
+  });
   deleteConfirmModal.addEventListener('click', function (e) {
     if (e.target === deleteConfirmModal) deleteCancelBtn.click();
   });
@@ -164,6 +174,10 @@ window.Chrome = (function () {
     if (e.key !== 'Escape') return;
     if (!settingsModal.hidden) {
       closeSettings();
+    } else if (!loadConfirmModal.hidden) {
+      loadCancelBtn.click();
+    } else if (!unloadConfirmModal.hidden) {
+      unloadCancelBtn.click();
     } else if (!deleteConfirmModal.hidden) {
       deleteCancelBtn.click();
     } else if (document.body.classList.contains('zen')) {

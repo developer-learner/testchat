@@ -59,14 +59,23 @@ def _allocate_port() -> int:
                 return port
 
 
-# shape: capture lmstudio-models.json (fields the backend reads). Real
-# choices so selection behavior is observable across a models refresh.
+# shape: capture lmstudio-models.json (fields the backend reads). Two real
+# choices so selection-stability is observable, plus a refresh-N stamp model
+# whose N increments per response — the ONLY deterministic, DOM-visible
+# proof that a dropdown rebuild actually happened (AC-31 would false-pass
+# in the window before the rebuild otherwise).
+_models_calls = 0
+
+
 def _models_response() -> dict:
+    global _models_calls
+    _models_calls += 1
     return {
         "models": [
             {"type": "llm", "key": "alpha-model", "loaded_instances": [{"identifier": "alpha-model"}]},
             {"type": "llm", "key": "beta-model", "loaded_instances": [{"identifier": "beta-model"}]},
             {"type": "llm", "key": "slow-model", "loaded_instances": [{"identifier": "slow-model"}]},
+            {"type": "llm", "key": f"refresh-{_models_calls}", "loaded_instances": [{"identifier": "stamp"}]},
         ]
     }
 

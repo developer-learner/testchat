@@ -471,10 +471,6 @@ def is_router_model(model_id: str) -> bool:
     return ids is not None and model_id in ids
 
 
-def router_status() -> dict[str, bool]:
-    return {"configured": is_router_configured(), "reachable": _router_probe() is not None}
-
-
 def is_nemotron_loaded() -> bool:
     return _responds_ready(NEMOTRON_READY_URL)
 

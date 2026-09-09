@@ -16,8 +16,17 @@
         webToggle.classList.toggle('active', webArmed);
       });
       var modelSelect = document.getElementById('model-select');
+      var ejectModelBtn = document.getElementById('eject-model-btn');
+      // The load-confirm modal is shared: catalog.js drives it for the
+      // change-handler flow; app.js drives it here for the "Send with
+      // unloaded model → offer load, then auto-resubmit" flow. Both paths
+      // reassign loadCancelBtn.onclick / loadConfirmBtn.onclick; latest
+      // write wins, which is fine because only one flow runs at a time.
+      var loadConfirmModal = document.getElementById('load-confirm-modal');
+      var loadConfirmBtn = document.getElementById('load-confirm');
+      var loadCancelBtn = document.getElementById('load-cancel');
+      var loadConfirmText = document.getElementById('load-confirm-text');
       var newThreadBtn = document.getElementById('new-thread-btn');
-      var activeModelSource = document.getElementById('active-model-source');
 
       var replyText = '';
       var chunkCount = 0;
@@ -32,8 +41,7 @@
         // selected option), not merely that a dropdown value exists — otherwise
         // an unloaded script model selected + never confirmed reads as loaded.
         var currentOpt = modelSelect.options[modelSelect.selectedIndex];
-        var currentLoaded = !!(currentOpt && currentOpt.dataset.loaded === 'true' &&
-          !currentOpt.parentElement.disabled);
+        var currentLoaded = !!(currentOpt && currentOpt.dataset.loaded === 'true');
         if (!modelSelect.value) {
           statusModel.textContent = 'no model';
         } else {
@@ -45,7 +53,10 @@
         if (!TC.streaming) {
           sendBtn.disabled = !currentLoaded;
         }
-        updateSourceIndicator();
+        // Eject unloads the loaded SCRIPT model, never the selection — so it
+        // is enabled iff the catalog reports one loaded (LM Studio models are
+        // not ours to unload; selecting one must not light the button).
+        ejectModelBtn.disabled = !TC.scriptModelLoaded;
         fetch('/api/v1/status')
           .then(function (r) { return r.json(); })
           .then(function (d) {
@@ -65,15 +76,6 @@
             if (webToggle.disabled) { webArmed = false; webToggle.classList.remove('active'); }
           })
           .catch(function () { statusRam.textContent = ''; });
-      }
-
-      function updateSourceIndicator() {
-        if (!activeModelSource) return;
-        var sel = modelSelect.options[modelSelect.selectedIndex];
-        var group = sel && sel.parentElement;
-        var viaRouter = !!(group && group.tagName === 'OPTGROUP' &&
-          !group.disabled && /Vortex/.test(group.label));
-        activeModelSource.textContent = viaRouter ? 'via Vortex' : 'via local';
       }
 
       setInterval(pollStatus, 5000);
@@ -112,10 +114,6 @@
         bubble.dataset.raw = MD.stripThink(text);
         if (live) appendStreamCursor(bubble);
       }
-
-      modelSelect.addEventListener('change', function () {
-        updateSourceIndicator();
-      });
 
       function appendStreamCursor(bubble) {
         var el = bubble;
@@ -168,11 +166,38 @@
         // No model chosen (fresh chat, nothing loaded): don't hit /api/v1/chat
         // with an unset model — the server would return a bare 422 the UI has
         // no handler for. Focus the selector so the fix is one keystroke away.
-        var selectedOption = modelSelect.options[modelSelect.selectedIndex];
-        if (!modelSelect.value || !selectedOption || selectedOption.dataset.loaded !== 'true' ||
-            selectedOption.parentElement.disabled) {
+        if (!modelSelect.value) {
           appendBubble('Pick a model from the dropdown before sending.', 'error');
           modelSelect.focus();
+          return;
+        }
+        // Selected model is unloaded. Historically this was reachable only via
+        // the change event, so re-picking the already-shown option was a dead
+        // end; Send now offers the same load modal and auto-resubmits when the
+        // load returns 200, so the user's one Send click is enough.
+        var sel = modelSelect.options[modelSelect.selectedIndex];
+        if (sel && sel.dataset.loaded === 'false' && !TC.modelLoading) {
+          var loadId = modelSelect.value;
+          loadConfirmText.textContent = 'Start ' + loadId + ' first, then send? Uses significant RAM. ' + statusRam.textContent;
+          loadConfirmModal.hidden = false;
+          loadCancelBtn.onclick = function () { loadConfirmModal.hidden = true; };
+          loadConfirmBtn.onclick = function () {
+            loadConfirmModal.hidden = true;
+            TC.modelLoading = true;
+            fetch('/api/v1/script-models/' + encodeURIComponent(loadId) + '/load', { method: 'POST' })
+              .then(function (r) {
+                if (!r.ok) throw new Error('Failed to load model');
+                // Refresh in the background so the option list re-syncs; flip
+                // this option's data-loaded inline so the resubmit's guard
+                // (which reads the DOM, not the server) lets it through.
+                sel.dataset.loaded = 'true';
+                sel.textContent = '🟢 ' + loadId;
+                window.Catalog.refreshModels();
+                form.dispatchEvent(new Event('submit', { cancelable: true }));
+              })
+              .catch(function (err) { appendBubble(err.message || 'Failed to load model', 'error'); })
+              .finally(function () { TC.modelLoading = false; });
+          };
           return;
         }
 
@@ -506,12 +531,10 @@
 
       newThreadBtn.addEventListener('click', function () {
         Threads.createThread();
-        pollStatus();
       });
 
-      document.getElementById('thread-list').addEventListener('click', pollStatus);
-
-      // Exposed for chrome.js errors and catalog.js model refreshes.
+      // Exposed for chrome.js (fsDiag error) and catalog.js (load/unload
+      // error paths, plus pollStatus after unload / around a load confirm).
       window.App = {
         appendBubble: appendBubble,
         pollStatus: pollStatus
@@ -560,7 +583,6 @@
             } else {
               Threads.createThread();
             }
-            pollStatus();
           })
           .catch(function () {
             // On failure: the warning text was already written at the top of
@@ -570,6 +592,6 @@
             setTimeout(retryInitialLoad, 1000);
           });
       })();
-      window.Catalog.fetchModels().then(pollStatus);
+      window.Catalog.fetchModels();
       input.focus();
     })();
