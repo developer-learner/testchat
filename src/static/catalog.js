@@ -97,7 +97,7 @@ window.Catalog = (function () {
     // Vortex group: 'Vortex · shared · primary' first.
     var vortexGroup = document.createElement('optgroup');
     vortexGroup.label = 'Vortex · shared · primary';
-    if (router && router.configured) {
+    if (router.configured || routerModels.length) {
       if (!router.reachable) {
         vortexGroup.disabled = true;
       }
@@ -105,7 +105,7 @@ window.Catalog = (function () {
         var ro = document.createElement('option');
         ro.value = routerModels[r].id;
         ro.textContent = '🟢 ' + routerModels[r].id;
-        ro.dataset.loaded = 'true';
+        ro.dataset.loaded = router.reachable ? 'true' : 'false';
         vortexGroup.appendChild(ro);
       }
       modelSelect.appendChild(vortexGroup);
@@ -126,7 +126,9 @@ window.Catalog = (function () {
     // Determine if the previous selection's group is enabled.
     var previousEnabled = false;
     if (previous) {
-      var prevOpt = modelSelect.querySelector('option[value="' + previous + '"]');
+      var prevOpt = Array.from(modelSelect.options).find(function (option) {
+        return option.value === previous;
+      });
       if (prevOpt) {
         var prevGroup = prevOpt.parentElement;
         if (prevGroup && prevGroup.tagName === 'OPTGROUP') {
@@ -155,7 +157,7 @@ window.Catalog = (function () {
     if (!chosen) {
       var ph = document.createElement('option');
       ph.value = '';
-      ph.textContent = 'No models available';
+      ph.textContent = 'Select model...';
       modelSelect.insertBefore(ph, modelSelect.firstChild);
       modelSelect.value = '';
     } else {

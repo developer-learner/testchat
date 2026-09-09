@@ -32,7 +32,8 @@
         // selected option), not merely that a dropdown value exists — otherwise
         // an unloaded script model selected + never confirmed reads as loaded.
         var currentOpt = modelSelect.options[modelSelect.selectedIndex];
-        var currentLoaded = !!(currentOpt && currentOpt.dataset.loaded === 'true');
+        var currentLoaded = !!(currentOpt && currentOpt.dataset.loaded === 'true' &&
+          !currentOpt.parentElement.disabled);
         if (!modelSelect.value) {
           statusModel.textContent = 'no model';
         } else {
@@ -66,15 +67,12 @@
           .catch(function () { statusRam.textContent = ''; });
       }
 
-      var modelsCache = [];
-      var routerReachable = false;
-
       function updateSourceIndicator() {
         if (!activeModelSource) return;
         var sel = modelSelect.options[modelSelect.selectedIndex];
-        var id = modelSelect.value;
-        var m = modelsCache.find(function (x) { return x.id === id; });
-        var viaRouter = !!(m && m.source === 'router' && routerReachable);
+        var group = sel && sel.parentElement;
+        var viaRouter = !!(group && group.tagName === 'OPTGROUP' &&
+          !group.disabled && /Vortex/.test(group.label));
         activeModelSource.textContent = viaRouter ? 'via Vortex' : 'via local';
       }
 
@@ -170,7 +168,9 @@
         // No model chosen (fresh chat, nothing loaded): don't hit /api/v1/chat
         // with an unset model — the server would return a bare 422 the UI has
         // no handler for. Focus the selector so the fix is one keystroke away.
-        if (!modelSelect.value) {
+        var selectedOption = modelSelect.options[modelSelect.selectedIndex];
+        if (!modelSelect.value || !selectedOption || selectedOption.dataset.loaded !== 'true' ||
+            selectedOption.parentElement.disabled) {
           appendBubble('Pick a model from the dropdown before sending.', 'error');
           modelSelect.focus();
           return;
@@ -506,21 +506,15 @@
 
       newThreadBtn.addEventListener('click', function () {
         Threads.createThread();
+        pollStatus();
       });
 
-      // Exposed for chrome.js (fsDiag error) and catalog.js (load/unload
-      // error paths, plus pollStatus after unload / around a load confirm).
+      document.getElementById('thread-list').addEventListener('click', pollStatus);
+
+      // Exposed for chrome.js errors and catalog.js model refreshes.
       window.App = {
         appendBubble: appendBubble,
-        pollStatus: pollStatus,
-        setModels: function (models) {
-          modelsCache = models || [];
-          updateSourceIndicator();
-        },
-        setRouterReachable: function (reachable) {
-          routerReachable = !!reachable;
-          updateSourceIndicator();
-        }
+        pollStatus: pollStatus
       };
 
       // Initial load — retry loop until GET /api/v1/threads succeeds
@@ -566,6 +560,7 @@
             } else {
               Threads.createThread();
             }
+            pollStatus();
           })
           .catch(function () {
             // On failure: the warning text was already written at the top of
@@ -575,9 +570,6 @@
             setTimeout(retryInitialLoad, 1000);
           });
       })();
-      window.Catalog.fetchModels().then(function (models) {
-        modelsCache = models || [];
-        updateSourceIndicator();
-      });
+      window.Catalog.fetchModels().then(pollStatus);
       input.focus();
     })();
