@@ -1,3 +1,25 @@
+Edit only src/services/models.py. Add one public function `router_status() -> dict[str, bool]` at module scope that returns `{"configured": is_router_configured(), "reachable": _router_probe() is not None}`. Do not change any existing function, import, or constant. `is_router_configured` and `_router_probe` already exist in this module. Acceptance: `router_status` is defined at module scope and calls the two existing helpers; nothing else changed.
+
+Write EXACTLY one file: src/services/models.py — the gate rejects any other change, including new files. Before finishing, re-open src/services/models.py and confirm it satisfies every acceptance condition in this brief.
+
+Reply with ONLY edit blocks in this exact format, nothing else:
+<<<<<<< SEARCH
+(an EXACT, character-for-character copy of a short existing section — 3 to 10 lines)
+=======
+(that same section with the change applied)
+>>>>>>> REPLACE
+Rules:
+- Each SEARCH must appear EXACTLY ONCE in the file. Copy it verbatim — same spaces, same quotes.
+- Several small blocks, not one big one. Do not touch code outside your blocks. Do not reformat or reorder anything.
+- Never include any line containing a think tag in a SEARCH section — anchor on nearby tag-free lines instead.
+- In new code, never write the think tag as one literal string — construct it by concatenation, e.g. '<' + 'think>'.
+- If the file already satisfies the brief, reply with exactly this line and nothing else: === NO CHANGES ===
+- Verify each SEARCH against the file one more time before answering.
+- Your reply's VERY FIRST line must be '<<<<<<< SEARCH' (or the NO CHANGES line). Do not analyze, plan, or explain anything — every design decision is already made in the brief. Prose before the blocks burns your output budget and truncates the edit mid-block.
+- Every block must be COMPLETE working code — never a stub, placeholder, or '...' body. If the brief needs a new function, write its full body in the block.
+
+### existing (src/services/models.py)
+```
 """Model management service for LM Studio and script-run local model servers."""
 
 import functools
@@ -471,10 +493,6 @@ def is_router_model(model_id: str) -> bool:
     return ids is not None and model_id in ids
 
 
-def router_status() -> dict[str, bool]:
-    return {"configured": is_router_configured(), "reachable": _router_probe() is not None}
-
-
 def is_nemotron_loaded() -> bool:
     return _responds_ready(NEMOTRON_READY_URL)
 
@@ -485,3 +503,5 @@ def load_nemotron() -> dict:
 
 def unload_nemotron() -> dict:
     return unload_script_model("nemotron")
+
+```
