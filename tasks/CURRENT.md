@@ -1023,3 +1023,13 @@ recorded.
 ## Results
 
   Full frozen TPM suite green against spec v126 (on-demand regression check, D-112). Feature built and validated.
+
+## T9 reviewed closeout — 2026-09-09
+
+`6cb5b67` records the supervised acceptance-only v126 success. Final source
+passed 237/237 frozen tests on macOS and sandbox, including all six T9 tests;
+isolated online/offline browser checks emitted zero page errors. D-132 direct
+repairs followed the bounded coder failure; see `tasks/T9-completion-review.md`
+for exact provenance. Live deployment configuration was not changed, and no
+live inference-session result is claimed. Ready Local remains the approved
+fallback; Vortex is primary when configured. Frozen tests stayed unchanged.

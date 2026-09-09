@@ -43,7 +43,8 @@ controls and their handlers are removed. Backend routing remains unchanged.
 
 ## Closeout
 
-The next acceptance-only freeze protects the verified files from further coder
-edits and lets the orchestrator execute its mapped acceptance and record durable
-completion. It does not claim that the local coder completed every repair.
+Acceptance-only v126 protected the verified files from further coder edits.
+The orchestrator ran the full frozen suite and recorded nine durable task
+completions at **6cb5b67**, `[success] spec v126`. No coder was invoked during
+closeout. This does not claim that the local coder completed every repair.
 Main's unrelated TESTCHAT_COVERAGE_HANDOFF.md is outside this work.
