@@ -1,0 +1,159 @@
+Edit only src/api/threads.py.
+
+1. Add `delete_thread_snapshot` and `save_thread_snapshot` to the existing `from src.services.storage import (...)` list.
+2. In `class ThreadSnapshot`, add the field `revision: int | None = Field(default=None, ge=0)` after `locked`.
+3. Add `class ThreadSavePayload(BaseModel):` with fields `revision: int = Field(ge=0)` and `thread: ThreadSnapshot`.
+4. At the end of the file add `@router.put("/api/v1/threads/{thread_id}")` on `def put_thread(thread_id: int, payload: ThreadSavePayload):`. When `payload.thread.id != thread_id`, return `JSONResponse(status_code=422, content={"detail": "thread id mismatch"})`. Build `thread = payload.thread.model_dump(exclude_none=True)` then `thread.pop("revision", None)`, and call `new_revision = save_thread_snapshot(thread, payload.revision)`. On `except SnapshotConflict as exc:` return `JSONResponse(status_code=409, content={"error": "revision_conflict", "current_revision": exc.current_revision})`. On `except SnapshotUnavailableError:` return `JSONResponse({"detail": "snapshot unavailable"}, status_code=503)`. On success return `{"status": "ok", "revision": new_revision}`.
+5. Then add `@router.delete("/api/v1/threads/{thread_id}")` on `def delete_thread(thread_id: int, body: ThreadsRevisionPrecondition | None = None):`. When `body is None`, return `JSONResponse(status_code=422, content={"detail": "Missing required field: revision"})`. Call `delete_thread_snapshot(thread_id, body.revision)` with the same 409 and 503 handling, and return `{"status": "ok"}` on success.
+
+Do not change `get_threads`, `put_threads`, or `delete_threads`. Acceptance: a PUT to `/api/v1/threads/1` with `{"revision": 0, "thread": {...id 1...}}` on an empty store returns `{"status": "ok", "revision": 1}`.
+
+Write EXACTLY one file: src/api/threads.py — the gate rejects any other change, including new files. Before finishing, re-open src/api/threads.py and confirm it satisfies every acceptance condition in this brief.
+
+The previous attempt failed with: edit-block FAIL: block 4: SEARCH matches 2 places in src/api/threads.py — ambiguous anchor. Fix the cause, do not just retry the same content. NOTE: the file may already contain a previous attempt's partial work — read its CURRENT state, find the SMALLEST remaining delta that satisfies the brief, and emit only that; if the file already satisfies the brief, reply === NO CHANGES ===. Do not re-describe or re-apply work that is already present.
+
+Reply with ONLY edit blocks in this exact format, nothing else:
+<<<<<<< SEARCH
+(an EXACT, character-for-character copy of a short existing section — 3 to 10 lines)
+=======
+(that same section with the change applied)
+>>>>>>> REPLACE
+Rules:
+- Each SEARCH must appear EXACTLY ONCE in the file. Copy it verbatim — same spaces, same quotes.
+- Several small blocks, not one big one. Do not touch code outside your blocks. Do not reformat or reorder anything.
+- Never include any line containing a think tag in a SEARCH section — anchor on nearby tag-free lines instead.
+- In new code, never write the think tag as one literal string — construct it by concatenation, e.g. '<' + 'think>'.
+- If the file already satisfies the brief, reply with exactly this line and nothing else: === NO CHANGES ===
+- Verify each SEARCH against the file one more time before answering.
+- Your reply's VERY FIRST line must be '<<<<<<< SEARCH' (or the NO CHANGES line). Do not analyze, plan, or explain anything — every design decision is already made in the brief. Prose before the blocks burns your output budget and truncates the edit mid-block.
+- Every block must be COMPLETE working code — never a stub, placeholder, or '...' body. If the brief needs a new function, write its full body in the block.
+
+### existing (src/api/threads.py)
+```
+from typing import Literal
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
+from src.services.storage import (
+    SnapshotConflict,
+    SnapshotUnavailableError,
+    load_versioned_snapshot,
+    quarantine_files,
+    save_versioned_snapshot,
+)
+
+router = APIRouter()
+
+
+class SourceLink(BaseModel):
+    title: str
+    url: str
+
+
+class HistoryEntry(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+    ts: float = 0
+    model: str = ""
+    sources: list[SourceLink] | None = None
+
+
+class ThreadSnapshot(BaseModel):
+    id: int
+    title: str
+    messages: list[HistoryEntry]
+    model: str = ""
+    locked: bool = False
+
+
+class ThreadsListResponse(BaseModel):
+    threads: list[ThreadSnapshot]
+    revision: int
+    quarantined: bool
+
+
+class ThreadsPayload(BaseModel):
+    revision: int = Field(ge=0)
+    threads: list[ThreadSnapshot]
+
+
+class ThreadsRevisionPrecondition(BaseModel):
+    revision: int = Field(ge=0)
+
+
+def _validate_snapshot_document(document) -> bool:
+    if isinstance(document, dict):
+        threads = document.get("threads")
+        if not isinstance(threads, list):
+            raise ValueError("threads not a list")
+    elif isinstance(document, list):
+        threads = document
+    else:
+        raise ValueError("invalid document shape")
+    for item in threads:
+        ThreadSnapshot.model_validate(item)
+    return True
+
+
+@router.get("/api/v1/threads")
+def get_threads():
+    try:
+        threads, revision = load_versioned_snapshot(
+            validator=_validate_snapshot_document
+        )
+    except SnapshotUnavailableError:
+        return JSONResponse({"detail": "snapshot unavailable"}, status_code=503)
+    quarantined = bool(quarantine_files())
+    return ThreadsListResponse(
+        threads=threads, revision=revision, quarantined=quarantined
+    ).model_dump(exclude_none=True)
+
+
+@router.put("/api/v1/threads")
+def put_threads(payload: ThreadsPayload):
+    for t in payload.threads:
+        for msg in t.messages:
+            if msg.role not in ("user", "assistant"):
+                return JSONResponse(content={"detail": "Invalid role"}, status_code=422)
+    serialized = [t.model_dump(exclude_none=True) for t in payload.threads]
+    for item in serialized:
+        try:
+            ThreadSnapshot(**item)
+        except Exception:
+            return JSONResponse(
+                content={"detail": "Malformed payload"}, status_code=422
+            )
+    try:
+        new_revision = save_versioned_snapshot(serialized, payload.revision)
+    except SnapshotConflict as exc:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": "revision_conflict",
+                "current_revision": exc.current_revision,
+            },
+        )
+    return {"status": "ok", "revision": new_revision}
+
+
+@router.delete("/api/v1/threads")
+def delete_threads(body: ThreadsRevisionPrecondition | None = None):
+    if body is None or not isinstance(body, ThreadsRevisionPrecondition):
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "Missing required field: revision"},
+        )
+    try:
+        new_revision = save_versioned_snapshot([], body.revision)
+    except SnapshotConflict as exc:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": "revision_conflict",
+                "current_revision": exc.current_revision,
+            },
+        )
+    return {"status": "ok", "revision": new_revision}
+
+```
