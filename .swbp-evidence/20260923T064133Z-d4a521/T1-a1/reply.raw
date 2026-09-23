@@ -1,0 +1,109 @@
+<<<<<<< SEARCH
+def _save_versioned_snapshot_locked(threads: list[dict], expected_revision: int) -> int:
+=======
+def _read_threads_for_write(path: str) -> tuple[list[dict], int]:
+    if not os.path.exists(path):
+        return [], 0
+    data = _read_any(path)
+    if isinstance(data, list):
+        return list(data), 0
+    if isinstance(data, dict) and isinstance(data.get("threads"), list):
+        rev = data.get("revision")
+        if isinstance(rev, int) and rev >= 0:
+            return list(data["threads"]), rev
+        return list(data["threads"]), 0
+    raise SnapshotUnavailableError()
+
+
+def _thread_revision(thread: dict) -> int:
+    rev = thread.get("revision")
+    if isinstance(rev, int) and rev >= 0:
+        return rev
+    return 0
+
+
+def _write_threads_locked(path: str, threads: list[dict], revision: int) -> None:
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    payload = {"revision": revision, "threads": threads}
+    fd, tmp_path = tempfile.mkstemp(dir=parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        bak_path = f"{path}.bak"
+        if os.path.exists(path):
+            try:
+                shutil.copy2(path, bak_path)
+            except OSError as exc:
+                logger.warning(
+                    "Could not back up snapshot: primary=%s backup=%s error=%s",
+                    path,
+                    bak_path,
+                    exc,
+                )
+                raise
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError as cleanup_exc:
+            logger.warning(
+                "temp cleanup failed: temp=%s error=%s",
+                tmp_path,
+                cleanup_exc,
+            )
+        raise
+
+
+def _save_versioned_snapshot_locked(threads: list[dict], expected_revision: int) -> int:
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+def save_versioned_snapshot(threads: list[dict], expected_revision: int) -> int:
+    with _lock:
+        return _save_versioned_snapshot_locked(threads, expected_revision)
+=======
+def save_thread_snapshot(thread: dict, expected_revision: int) -> int:
+    with _lock:
+        path = _data_path()
+        threads, envelope = _read_threads_for_write(path)
+        index = None
+        for i, t in enumerate(threads):
+            if t.get("id") == thread["id"]:
+                index = i
+                break
+        current = _thread_revision(threads[index]) if index is not None else 0
+        if current != expected_revision:
+            raise SnapshotConflict(current)
+        stored = {**thread, "revision": current + 1}
+        if index is not None:
+            threads[index] = stored
+        else:
+            threads.append(stored)
+        _write_threads_locked(path, threads, envelope + 1)
+        return current + 1
+
+
+def delete_thread_snapshot(thread_id: int, expected_revision: int) -> bool:
+    with _lock:
+        path = _data_path()
+        threads, envelope = _read_threads_for_write(path)
+        index = None
+        for i, t in enumerate(threads):
+            if t.get("id") == thread_id:
+                index = i
+                break
+        if index is None:
+            return False
+        current = _thread_revision(threads[index])
+        if current != expected_revision:
+            raise SnapshotConflict(current)
+        del threads[index]
+        _write_threads_locked(path, threads, envelope + 1)
+        return True
+
+
+def save_versioned_snapshot(threads: list[dict], expected_revision: int) -> int:
+    with _lock:
+        return _save_versioned_snapshot_locked(threads, expected_revision)
+>>>>>>> REPLACE

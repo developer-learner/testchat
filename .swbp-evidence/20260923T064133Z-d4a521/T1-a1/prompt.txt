@@ -1,3 +1,33 @@
+Edit only src/services/storage.py. Add three private helpers and two public functions directly above `def save_versioned_snapshot`.
+
+1. `def _read_threads_for_write(path: str) -> tuple[list[dict], int]:` — if `os.path.exists(path)` is False, return `([], 0)`. Otherwise `data = _read_any(path)`. If `data` is a list, return `(list(data), 0)`. If `data` is a dict whose `"threads"` value is a list, return `(list(data["threads"]), rev)` where `rev` is `data.get("revision")` when it is an int >= 0, else 0. In every other case `raise SnapshotUnavailableError()`.
+2. `def _thread_revision(thread: dict) -> int:` — return `thread.get("revision")` when it is an int >= 0, else 0.
+3. `def _write_threads_locked(path: str, threads: list[dict], revision: int) -> None:` — make the parent directory exactly as `_save_versioned_snapshot_locked` does, then write `{"revision": revision, "threads": threads}` with the same `tempfile.mkstemp` write, `shutil.copy2` to `f"{path}.bak"` when the primary exists, `os.replace`, and the same temp-file cleanup and re-raise on error.
+4. `def save_thread_snapshot(thread: dict, expected_revision: int) -> int:` — inside `with _lock:`, set `path = _data_path()` and `threads, envelope = _read_threads_for_write(path)`. Find the index of the stored thread whose `"id"` equals `thread["id"]`. `current = _thread_revision(threads[index])` when found, else 0. If `current != expected_revision`, `raise SnapshotConflict(current)`. Otherwise build `stored = {**thread, "revision": current + 1}`, replace it at that index (or append when not found), call `_write_threads_locked(path, threads, envelope + 1)`, and return `current + 1`.
+5. `def delete_thread_snapshot(thread_id: int, expected_revision: int) -> bool:` — inside `with _lock:`, read the same way. When no stored thread has `"id" == thread_id`, return False without writing. Otherwise `current = _thread_revision(that thread)`; if it differs from `expected_revision`, `raise SnapshotConflict(current)`; else remove that thread, call `_write_threads_locked(path, threads, envelope + 1)`, and return True.
+
+Do not modify any existing function. Acceptance: `save_thread_snapshot(new_thread, 0)` on an empty store returns 1; `SnapshotUnavailableError` propagates to the caller.
+
+Write EXACTLY one file: src/services/storage.py — the gate rejects any other change, including new files. Before finishing, re-open src/services/storage.py and confirm it satisfies every acceptance condition in this brief.
+
+Reply with ONLY edit blocks in this exact format, nothing else:
+<<<<<<< SEARCH
+(an EXACT, character-for-character copy of a short existing section — 3 to 10 lines)
+=======
+(that same section with the change applied)
+>>>>>>> REPLACE
+Rules:
+- Each SEARCH must appear EXACTLY ONCE in the file. Copy it verbatim — same spaces, same quotes.
+- Several small blocks, not one big one. Do not touch code outside your blocks. Do not reformat or reorder anything.
+- Never include any line containing a think tag in a SEARCH section — anchor on nearby tag-free lines instead.
+- In new code, never write the think tag as one literal string — construct it by concatenation, e.g. '<' + 'think>'.
+- If the file already satisfies the brief, reply with exactly this line and nothing else: === NO CHANGES ===
+- Verify each SEARCH against the file one more time before answering.
+- Your reply's VERY FIRST line must be '<<<<<<< SEARCH' (or the NO CHANGES line). Do not analyze, plan, or explain anything — every design decision is already made in the brief. Prose before the blocks burns your output budget and truncates the edit mid-block.
+- Every block must be COMPLETE working code — never a stub, placeholder, or '...' body. If the brief needs a new function, write its full body in the block.
+
+### existing (src/services/storage.py)
+```
 import json
 import logging
 import os
@@ -140,61 +170,6 @@ def load_snapshot(validator=None) -> list[dict]:
     return threads
 
 
-def _read_threads_for_write(path: str) -> tuple[list[dict], int]:
-    if not os.path.exists(path):
-        return [], 0
-    data = _read_any(path)
-    if isinstance(data, list):
-        return list(data), 0
-    if isinstance(data, dict) and isinstance(data.get("threads"), list):
-        rev = data.get("revision")
-        if isinstance(rev, int) and rev >= 0:
-            return list(data["threads"]), rev
-        return list(data["threads"]), 0
-    raise SnapshotUnavailableError()
-
-
-def _thread_revision(thread: dict) -> int:
-    rev = thread.get("revision")
-    if isinstance(rev, int) and rev >= 0:
-        return rev
-    return 0
-
-
-def _write_threads_locked(path: str, threads: list[dict], revision: int) -> None:
-    parent = os.path.dirname(path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    payload = {"revision": revision, "threads": threads}
-    fd, tmp_path = tempfile.mkstemp(dir=parent, suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-        bak_path = f"{path}.bak"
-        if os.path.exists(path):
-            try:
-                shutil.copy2(path, bak_path)
-            except OSError as exc:
-                logger.warning(
-                    "Could not back up snapshot: primary=%s backup=%s error=%s",
-                    path,
-                    bak_path,
-                    exc,
-                )
-                raise
-        os.replace(tmp_path, path)
-    except BaseException:
-        try:
-            os.unlink(tmp_path)
-        except OSError as cleanup_exc:
-            logger.warning(
-                "temp cleanup failed: temp=%s error=%s",
-                tmp_path,
-                cleanup_exc,
-            )
-        raise
-
-
 def _save_versioned_snapshot_locked(threads: list[dict], expected_revision: int) -> int:
     path = _data_path()
     parent = os.path.dirname(path)
@@ -240,46 +215,6 @@ def _save_versioned_snapshot_locked(threads: list[dict], expected_revision: int)
     return new_revision
 
 
-def save_thread_snapshot(thread: dict, expected_revision: int) -> int:
-    with _lock:
-        path = _data_path()
-        threads, envelope = _read_threads_for_write(path)
-        index = None
-        for i, t in enumerate(threads):
-            if t.get("id") == thread["id"]:
-                index = i
-                break
-        current = _thread_revision(threads[index]) if index is not None else 0
-        if current != expected_revision:
-            raise SnapshotConflict(current)
-        stored = {**thread, "revision": current + 1}
-        if index is not None:
-            threads[index] = stored
-        else:
-            threads.append(stored)
-        _write_threads_locked(path, threads, envelope + 1)
-        return current + 1
-
-
-def delete_thread_snapshot(thread_id: int, expected_revision: int) -> bool:
-    with _lock:
-        path = _data_path()
-        threads, envelope = _read_threads_for_write(path)
-        index = None
-        for i, t in enumerate(threads):
-            if t.get("id") == thread_id:
-                index = i
-                break
-        if index is None:
-            return False
-        current = _thread_revision(threads[index])
-        if current != expected_revision:
-            raise SnapshotConflict(current)
-        del threads[index]
-        _write_threads_locked(path, threads, envelope + 1)
-        return True
-
-
 def save_versioned_snapshot(threads: list[dict], expected_revision: int) -> int:
     with _lock:
         return _save_versioned_snapshot_locked(threads, expected_revision)
@@ -305,3 +240,5 @@ def quarantine_files() -> list[str]:
         )
     except OSError:
         return []  # no data directory yet means nothing is quarantined
+
+```
