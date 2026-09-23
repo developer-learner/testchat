@@ -1,0 +1,525 @@
+Decompose the frozen ERD into atomic ONE-FILE tasks and reply with ONLY the plan as JSON matching the schema you were given — no prose, no markdown fence. SCHEMA — name these keys verbatim; the validator rejects any others. Top-level object: {"erd_version": N, "version": N, "tasks": [ ... ]} — the tasks array is under the key "tasks" (never "plan"). Each task object has EXACTLY these six keys: {"id": "...", "file": "...", "depends_on": [], "brief": "...", "contracts": [], "tests": ["<node-id>", ...]}. The names test_nodes, acceptance, regression, and status are NOT valid task keys and are rejected. CONTRACT IDS — the task "contracts" array holds ONLY exact strings from the valid-id list the shell prints after this rule (or is empty). Copy ids VERBATIM: a registered id is its exact string — never convert a file path to dotted form (src/api/models.py is a path; "src.api.models" is not a registered id), never add or drop a file extension, never invent a prefix. The validator rejects any contracts entry not on the list. Valid contract ids (copy verbatim): src/services/storage.py, src/api/threads.py, src/static/app.js, src/static/threads.js, src/api/chat.py, src/services/llm.py, src/api/status.py, src.services.llm, src.services.llm:stream_reply, src.api.chat, src.services.storage, src.services.storage:load_snapshot, src.services.storage:save_snapshot, src.services.storage:load_versioned_snapshot, src.services.storage:save_versioned_snapshot, src.services.storage:SnapshotConflict, src.services.storage:SnapshotUnavailableError, src.api.threads, src.api.status, src.services.storage:save_thread_snapshot, src.services.storage:delete_thread_snapshot, route:POST /api/v1/chat, route:GET /api/v1/threads, route:PUT /api/v1/threads, route:DELETE /api/v1/threads, route:GET /api/v1/status, route:PUT /api/v1/threads/{thread_id}, route:DELETE /api/v1/threads/{thread_id}, schema:ChatRequest, schema:HistoryEntry, schema:SourceLink, schema:SSESources, schema:SSEToken, schema:SSEThink, schema:SSEDone, schema:SSEError, schema:ThreadSnapshot, schema:ThreadsPayload, schema:ThreadsRevisionPrecondition, schema:ThreadsListResponse, schema:ThreadsMutationResponse, schema:RevisionConflictResponse, schema:StatusResponse, schema:ThreadSavePayload, schema:ThreadSaveResponse, schema:ThreadDeleteResponse, error:422-validation, error:409-revision-conflict, error:503-snapshot-unavailable, external:lmstudio-models, external:lmstudio-chat-stream, external:tavily-search, ui:new-thread-btn, ui:thread-item, ui:message-input, ui:send-btn, ui:think-toggle, ui:msg-user, ui:msg-assistant, ui:delete-confirm-modal, ui:delete-confirm, ui:delete-cancel, ui:status-strip, ui:thread-rename-btn, ui:thread-delete-btn, ui:thread-rename-input, ui:thread-search-input, ui:search-hit, ui:search-hit-count, ui:search-prev-btn, ui:search-next-btn, ui:save-status, ui:history-status, ui:msg-meta, ui:web-toggle, ui:msg-sources, ui:source-link, ui:web-notice, ui:msg-error, ui:active-model-source ERD-DELTA active packet is the authoritative current-change slice; it includes every skipped freeze since the last successful milestone. Requirements: exactly one task per file in this exact active inventory and no others: src/services/storage.py, src/api/threads.py, src/static/app.js, src/static/threads.js, src/api/chat.py, src/services/llm.py, src/api/status.py. Every test node-id in test-nodeids that exercises an active-inventory file maps to exactly one task (the task after which it should pass, given its depends_on) — node-ids testing only carried-forward files are handled by the shell: do NOT map them and do NOT emit a 'regression' key (the validator rejects it); when unsure, omit the node-id — the validator names any you must map. Placement is gate-owned, never yours: a node-id pinned by contracts.json's test_mapping is auto-placed by the gate at the task owning its pinned file; a node-id from a Playwright-importing test file with no mapping entry is auto-placed at the DAG's final task (D-64) — map every node-id where natural and add NO depends_on edges for this. Every task's contracts list uses ids that exist in contracts.json; when no registered id covers a file, use an empty contracts array and never invent one. Every brief self-contained per BLUEPRINT.md Rule 8 (exact path, signatures, inputs/outputs, acceptance) — the coder sees only the brief. For an EXISTING file (D-59 edit mode: the coder gets the file content and emits anchored SEARCH/REPLACE blocks; carried behavior is structurally untouched) the brief describes ONLY the change from current behavior — do NOT restate what the file already does (the plan gate rejects an existing-file brief that backticks a symbol the file already defines but the active ERD-delta packet never names as changed — restated carried behavior, D-133); for a NEW file the brief describes the whole file (target under 150 lines). Do NOT include a smoke_check field — smoke checks are TPM-authored and live in contracts.json. Set erd_version to 127. Set the top-level version key to an integer >= 1 (1 for a fresh plan; bump it on every re-emit). NO status fields. The previous plan failed validation with these errors — fix all of them: PLAN GATE FAIL: task T2 claims contract(s) ['error:409-revision-conflict', 'error:503-snapshot-unavailable'] that are unchanged in the active milestone delta range and pinned to its own file 'src/api/threads.py' — a task claims only contracts this milestone changed and interfaces it directly depends on; unchanged self-owned contracts must not ride (v99: GET-only milestone claiming PUT/DELETE). Trim these claims or the milestone's acceptance and invalidation both over-reach.
+PLAN GATE FAIL: task T4 claims contract(s) ['ui:save-status'] that are unchanged in the active milestone delta range and pinned to its own file 'src/static/threads.js' — a task claims only contracts this milestone changed and interfaces it directly depends on; unchanged self-owned contracts must not ride (v99: GET-only milestone claiming PUT/DELETE). Trim these claims or the milestone's acceptance and invalidation both over-reach.
+PLAN GATE FAIL: task T5 claims contract(s) ['src.api.chat'] that are unchanged in the active milestone delta range and pinned to its own file 'src/api/chat.py' — a task claims only contracts this milestone changed and interfaces it directly depends on; unchanged self-owned contracts must not ride (v99: GET-only milestone claiming PUT/DELETE). Trim these claims or the milestone's acceptance and invalidation both over-reach.
+PLAN GATE FAIL: task T6 claims contract(s) ['src.services.llm:stream_reply'] that are unchanged in the active milestone delta range and pinned to its own file 'src/services/llm.py' — a task claims only contracts this milestone changed and interfaces it directly depends on; unchanged self-owned contracts must not ride (v99: GET-only milestone claiming PUT/DELETE). Trim these claims or the milestone's acceptance and invalidation both over-reach.
+PLAN GATE FAIL: task T7 claims contract(s) ['src.api.status'] that are unchanged in the active milestone delta range and pinned to its own file 'src/api/status.py' — a task claims only contracts this milestone changed and interfaces it directly depends on; unchanged self-owned contracts must not ride (v99: GET-only milestone claiming PUT/DELETE). Trim these claims or the milestone's acceptance and invalidation both over-reach.
+PLAN GATE FAIL: mapped test node-id(s) not in the frozen suite: ['tests/test_data_safety_ui.py::test_delete_one_thread_survives_reload[chromium]', 'tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving[chromium]', 'tests/test_vortex_cutover.py::test_active_model_source_indicator[chromium]']
+
+### standing (.pipeline-state/standing-summary.md)
+```
+ERD — testchat (standing architecture)
+
+## Model-selector invariant
+
+**The `#model-select` element MUST NEVER be programmatically disabled by
+JavaScript based on a thread's `.locked` field or any per-thread state.** The
+only transient disable permitted is the load-in-progress pattern
+(`modelSelect.disabled = true` at load start, `modelSelect.disabled = false` at
+load completion, unconditionally re-enabled in the `.finally` handler) — a
+lifecycle-of-the-load state, not a lifecycle-of-the-thread state. The `.locked`
+boolean remains in the persistence schema for backward compatibility but is
+never read to disable the selector. Frozen tests assert this
+(`test_selector_stays_enabled_across_all_ui_states`,
+`test_mid_chat_switch_updates_thread_model_and_routes_next_send`).
+
+## File map
+
+- `src/static/chrome.js` — themes (10 including matrix and phosphor with their side effects: matrix-rain canvas start/stop, phosphor titlebar `display: flex`)...
+
+- `src/static/catalog.js` — model dropdown lifecycle: `fetchModels` (parallel `/api/v1/models` + `/api/v1/models/catalog` with LM-Studio-first merging)...
+
+- `src/static/current-chat.js` — owns the header title for the active thread: display + tooltip refresh, inline rename (click → input focused and pre-selected...
+
+- `src/static/current-chat.css` — header-title truncation (`max-width: 38%`, ellipsis, native tooltip carries the full string), edit-input styling, the `data-active`...
+
+- `src/static/sidebar-resize.js` — drag handle logic on `#sidebar-resizer`: drives a `--sidebar-w` CSS custom property, clamps to [250px, 50vw], persists the width to...
+
+- `src/static/sidebar-resize.css` — re-points `.sidebar`'s fixed width at `var(--sidebar-w, 250px)` with `max-width: 50vw`, and styles the 5px grab strip (hover/active...
+
+- `src/static/index.html` — links both new stylesheets after `style.css`, hosts the header title span + rename input (between the model field and the settings...
+
+- `src/static/threads.js` — sidebar rows carry `data-active="true|false"` and `data-thread-id`; `renderSidebar()` re-syncs the header via `CurrentChat.refresh()`...
+
+- `src/static/app.js` — the chat surface: initial-load hydration opens the **newest** thread (`threads[]` is oldest-first, so the last element — AC-123) and...
+
+- `src/services/storage.py` — public surface: `load_snapshot()` (list-only compatibility view for frozen imports), `save_snapshot()`, `quarantine_files()`...
+
+- `src/api/threads.py` — `ThreadsPayload` carries required `revision: int >= 0`; DELETE carries a body model with required `revision: int >= 0`. GET performs...
+
+- `src/services/models.py` — LM Studio discovery plus the script-model registry. `SCRIPT_MODELS` maps a model id to a launch/probe descriptor (`id`, `base_url`...
+
+- `src/api/models.py` — projects the registry to the UI. `ModelInfo` (`GET /api/v1/models`) and `CatalogEntry` (`GET /api/v1/models/catalog`) each pin a closed...
+
+```
+
+### ERD-delta (.pipeline-state/active-erd-delta.md)
+```
+## Active freeze instructions — v127
+# ERD-DELTA v127 — per-thread saving + regression oracles for the 2026-09-23 fixes
+
+Freeze context: standing spec v126 (T9 acceptance-only closeout). Every save
+today sends the whole history under one revision, so two tabs conflict on
+unrelated chats and saves grow with history. v127 gives each thread its own
+revision and saves one chat per request. It also freezes regression oracles
+for the three direct fixes of 2026-09-23 (D-132), which landed without tests.
+
+## Design
+
+- Each stored thread may carry an integer `revision` (absent = 0). The
+  envelope `revision` stays and still guards the whole-history PUT/DELETE,
+  which remain for clear-all and seeding; every per-thread write also bumps
+  it by one.
+- `save_thread_snapshot(thread, expected_revision)` and
+  `delete_thread_snapshot(thread_id, expected_revision)` in
+  `src/services/storage.py` compare against the named thread's revision only,
+  under the existing process lock, and write through the same temp-file,
+  `.bak` and `os.replace` steps. A primary that exists but is not a readable
+  threads document raises `SnapshotUnavailableError`; it is never
+  overwritten by a per-thread write.
+- `PUT /api/v1/threads/{thread_id}` (body `{revision, thread}`) and
+  `DELETE /api/v1/threads/{thread_id}` (body `{revision}`) map conflicts to
+  the existing 409 shape and an unreadable primary to the existing 503.
+  `ThreadSnapshot` gains an optional `revision` so GET returns it; threads
+  never saved per thread come back unchanged.
+- The browser keeps, per chat, a fingerprint of its last queued content and
+  its last accepted revision. `persistThreads()` queues one per-thread PUT
+  for each chat whose fingerprint changed and one per-thread DELETE for each
+  chat that disappeared. The fingerprint leaves out `model`: the picker sets
+  a chat's model in memory on load, and that alone must not save (two tabs
+  would conflict before anyone edits). The model rides along with the chat's
+  next content change; bare model picks stay in the client store (P2-8).
+- `app.js` hands the hydrated chats to the saver right after startup
+  hydration, so they start clean.
+- The queue, serial drain, conflict latch and exact warning text are carried
+  unchanged; only the request shape changes.
+
+## Changed acceptance criteria
+
+- AC-189 (new): PUT with the thread's current revision stores it at n+1.
+- AC-190 (new): PUT with a stale revision is a 409, nothing changes.
+- AC-191 (new): saves to two different threads are both accepted.
+- AC-192 (new): PUT without a revision is a 422, nothing changes.
+- AC-193 (new): PUT whose body id differs from the path id is a 422.
+- AC-194 (new): DELETE with the current revision removes exactly that thread,
+  such that a later GET lists every other thread and not that one.
+- AC-195 (new): DELETE with a stale revision is a 409, such that the primary
+  and backup bytes are unchanged.
+- AC-196 (new): DELETE of a thread that is not stored is a 200, such that the
+  primary and backup bytes are unchanged.
+- AC-197 (new): an unreadable primary is a 503 and is never overwritten.
+- AC-198 (new): concurrent saves of one thread accept exactly one.
+- AC-199 (new): one chat per save request, model-only changes ride along.
+- AC-200 (new, supersedes AC-146): serial saves chain each chat's accepted
+  revision.
+- AC-201 (new, supersedes AC-147): a 409 on a per-thread save or delete shows
+  the exact warning, such that the page sends no further save or delete.
+- AC-202 (new, supersedes AC-156 and AC-157): deleting one chat sends its
+  per-thread DELETE and no whole-history save, such that after a reload all
+  and only the surviving chats appear.
+- AC-203 (new): a failed per-thread save shows `not saved` and the next
+  accepted save clears it (AC-75/AC-76 continue for this path).
+- AC-204 (new): two tabs editing different chats both persist, no warning.
+- AC-205, AC-206, AC-207 (new): regression oracles for the 2026-09-23 direct
+  fixes in `src/api/chat.py`, `src/services/llm.py`, `src/api/status.py`.
+- AC-148 and AC-158 are carried unchanged; their tests are restaged for the
+  per-thread request shape.
+
+## Superseded acceptance criteria
+
+- AC-146 (rapid mutations PUT the whole snapshot in revision order) —
+  superseded by AC-200.
+- AC-147 (409 on the whole-snapshot PUT latches the page, such that no later
+  save or delete is sent) — superseded by AC-201.
+- AC-156 (deleting one thread persists the survivor snapshot through the
+  revisioned replacement path) — superseded by AC-202.
+- AC-157 (per-thread deletion uses PUT with the survivor snapshot, such that
+  survivors can never be replaced by an empty snapshot) — superseded by
+  AC-202.
+
+## Changed files
+
+- `src/services/storage.py` (UPDATED): per-thread save and delete.
+- `src/api/threads.py` (UPDATED): per-thread routes; optional `revision` on
+  `ThreadSnapshot`; `ThreadSavePayload`.
+- `src/static/app.js` (UPDATED): one line — hand hydrated chats to the saver.
+- `src/static/threads.js` (UPDATED): per-chat saving.
+- `src/api/chat.py`, `src/services/llm.py`, `src/api/status.py` (no edit —
+  acceptance-only): the 2026-09-23 fixes are in place; their new oracles run.
+- Tests: `tests/test_thread_saves_api.py`, `tests/test_ui_thread_saves.py`,
+  `tests/test_live_fix_regressions.py` (new); `tests/test_ui_persistence_conflicts.py`,
+  `tests/test_data_safety_ui.py`, `tests/test_ui.py` (restaged for the
+  per-thread request shape; every in-page wait is now bounded at 10 s so a
+  wrong build fails fast instead of hanging the suite).
+
+## Coder briefs (verbatim)
+
+### T1 — src/services/storage.py (per-thread save and delete)
+
+Add three private helpers and two public functions to `src/services/storage.py`, placed directly above `def save_versioned_snapshot`.
+
+1. `def _read_threads_for_write(path: str) -> tuple[list[dict], int]:` — if `os.path.exists(path)` is False, return `([], 0)`. Otherwise `data = _read_any(path)`. If `data` is a list, return `(list(data), 0)`. If `data` is a dict whose `"threads"` value is a list, return `(list(data["threads"]), rev)` where `rev` is `data.get("revision")` when it is an int >= 0, else 0. In every other case `raise SnapshotUnavailableError()`.
+2. `def _thread_revision(thread: dict) -> int:` — return `thread.get("revision")` when it is an int >= 0, else 0.
+3. `def _write_threads_locked(path: str, threads: list[dict], revision: int) -> None:` — make the parent directory exactly as `_save_versioned_snapshot_locked` does, then write `{"revision": revision, "threads": threads}` with the same `tempfile.mkstemp` write, `shutil.copy2` to `f"{path}.bak"` when the primary exists, `os.replace`, and the same temp-file cleanup and re-raise on error.
+4. `def save_thread_snapshot(thread: dict, expected_revision: int) -> int:` — inside `with _lock:`, set `path = _data_path()` and `threads, envelope = _read_threads_for_write(path)`. Find the index of the stored thread whose `"id"` equals `thread["id"]`. `current = _thread_revision(threads[index])` when found, else 0. If `current != expected_revision`, `raise SnapshotConflict(current)`. Otherwise build `stored = {**thread, "revision": current + 1}`, replace it at that index (or append it when not found), call `_write_threads_locked(path, threads, envelope + 1)`, and return `current + 1`.
+5. `def delete_thread_snapshot(thread_id: int, expected_revision: int) -> bool:` — inside `with _lock:`, read the same way. When no stored thread has `"id" == thread_id`, return False without writing. Otherwise `current = _thread_revision(that thread)`; if it differs from `expected_revision`, `raise SnapshotConflict(current)`; else remove that thread, call `_write_threads_locked(path, threads, envelope + 1)`, and return True.
+
+Self-verify: the existing functions are untouched; `save_thread_snapshot(new_thread, 0)` on an empty store returns 1; `SnapshotUnavailableError` propagates to the caller.
+
+### T2 — src/api/threads.py (per-thread routes)
+
+1. Add `delete_thread_snapshot` and `save_thread_snapshot` to the existing `from src.services.storage import (...)` list.
+2. In `class ThreadSnapshot`, add the field `revision: int | None = Field(default=None, ge=0)` after `locked`.
+3. Add `class ThreadSavePayload(BaseModel):` with fields `revision: int = Field(ge=0)` and `thread: ThreadSnapshot`.
+4. At the end of the file add `@router.put("/api/v1/threads/{thread_id}")` on `def put_thread(thread_id: int, payload: ThreadSavePayload):`. When `payload.thread.id != thread_id`, return `JSONResponse(status_code=422, content={"detail": "thread id mismatch"})`. Build `thread = payload.thread.model_dump(exclude_none=True)` then `thread.pop("revision", None)`, and call `new_revision = save_thread_snapshot(thread, payload.revision)`. On `except SnapshotConflict as exc:` return `JSONResponse(status_code=409, content={"error": "revision_conflict", "current_revision": exc.current_revision})`. On `except SnapshotUnavailableError:` return `JSONResponse({"detail": "snapshot unavailable"}, status_code=503)`. On success return `{"status": "ok", "revision": new_revision}`.
+5. Then add `@router.delete("/api/v1/threads/{thread_id}")` on `def delete_thread(thread_id: int, body: ThreadsRevisionPrecondition | None = None):`. When `body is None`, return `JSONResponse(status_code=422, content={"detail": "Missing required field: revision"})`. Call `delete_thread_snapshot(thread_id, body.revision)` with the same 409 and 503 handling, and return `{"status": "ok"}` on success.
+
+Self-verify: `get_threads`, `put_threads` and `delete_threads` are unchanged; a PUT to `/api/v1/threads/1` with `{"revision": 0, "thread": {...id 1...}}` on an empty store returns `{"status": "ok", "revision": 1}`.
+
+### T3 — src/static/app.js (hand hydrated chats to the saver)
+
+In the startup hydration success handler, inside `if (data.threads && data.threads.length > 0) {`, directly after the `for` loop that sets `TC.threadCounter`, add exactly this line:
+
+`if (Threads.markHydrated) Threads.markHydrated(TC.threads);`
+
+Self-verify: one line added, at that position; the rest of the file is byte-identical.
+
+### T4 — src/static/threads.js (save one chat per request)
+
+1. Below `var _conflictLatched = false;` add `var _savedThreads = {};` (chat id -> fingerprint of its last queued content) and `var _threadRevisions = {};` (chat id -> last accepted revision).
+2. Inside the `window.Threads` function, after `setHydratedRevision`, add `function _fingerprint(t)` returning `JSON.stringify({ id: t.id, title: t.title, messages: t.messages, locked: !!t.locked })` (no `model`, on purpose); `function _threadPayload(t)` returning `{ id: t.id, title: t.title, messages: t.messages, model: t.model || '', locked: !!t.locked }`; and `function markHydrated(threads)` that sets `_savedThreads[t.id] = _fingerprint(t)` and `_threadRevisions[t.id] = t.revision || 0` for each thread.
+3. In `_drainPersistQueue`, make the hydration guard also return when the head type is `'THREAD_PUT'`, and send types `'THREAD_PUT'` and `'THREAD_DELETE'` to `_doThreadMutation(entry)`.
+4. Add `function _doThreadMutation(entry)`: `id = entry.payload.id`; body `{ revision: _threadRevisions[id] || 0 }`, plus `thread: entry.payload.thread` for THREAD_PUT; `fetch('/api/v1/threads/' + id, ...)` with method PUT or DELETE and a JSON header. On 409 call `_handleConflict()`. On any other non-ok status or a rejected fetch: set `el('status-save').textContent = 'not saved'`, `delete _savedThreads[id]`, shift the queue, set `_persistRunning = false`, drain. On 200: PUT sets `_threadRevisions[id] = data.revision`, DELETE deletes it; clear `status-save`; shift, set `_persistRunning = false`, drain.
+5. Make `persistThreads()` loop over `TC.threads`: when `_fingerprint(t) !== _savedThreads[t.id]`, store the new fingerprint and `_enqueueMutation('THREAD_PUT', { id: t.id, thread: _threadPayload(t) })`. Then, for every key in `_savedThreads` with no chat left in `TC.threads`, delete the key and `_enqueueMutation('THREAD_DELETE', { id: Number(key) })`.
+6. In `deleteThread`, replace `_enqueueMutation('PUT', { threads: _captureSnapshot() });` with `persistThreads();`.
+7. Add `markHydrated: markHydrated` to the returned object.
+
+Self-verify: renaming one chat queues exactly one `THREAD_PUT` for it.
+
+### T5 — src/api/chat.py (acceptance-only)
+
+No code change. The 2026-09-23 fix (sync `chat` handler) is in place. Preserve the file byte-for-byte and run its mapped tests.
+
+### T6 — src/services/llm.py (acceptance-only)
+
+No code change. The 2026-09-23 fix (skip chunks with no `choices`) is in place. Preserve the file byte-for-byte and run its mapped tests.
+
+### T7 — src/api/status.py (acceptance-only)
+
+No code change. The 2026-09-23 fix (RAM readout by listening port) is in place. Preserve the file byte-for-byte and run its mapped tests.
+
+## Task DAG
+
+Task order: T1 (storage) -> T2 (threads API) -> T3 (app.js) -> T4 (threads.js)
+
+T5, T6 and T7 are acceptance-only and independent. Browser oracles are pinned
+to `src/static/threads.js`, the last task, so they run with the full stack.
+
+## Test-to-file mapping
+
+* `tests/test_thread_saves_api.py::test_storage_saves_a_new_thread_at_revision_one`
+  -> `src/services/storage.py`
+* `tests/test_thread_saves_api.py::test_storage_stale_thread_revision_raises_conflict`
+  -> `src/services/storage.py`
+* `tests/test_thread_saves_api.py::test_storage_deletes_only_the_named_thread`
+  -> `src/services/storage.py`
+* `tests/test_thread_saves_api.py::test_storage_refuses_to_save_over_an_unreadable_primary`
+  -> `src/services/storage.py`
+* `tests/test_thread_saves_api.py::test_put_thread_with_current_revision_is_accepted`
+  -> `src/api/threads.py`
+* `tests/test_thread_saves_api.py::test_put_thread_treats_a_legacy_thread_as_revision_zero`
+  -> `src/api/threads.py`
+* `tests/test_thread_saves_api.py::test_put_thread_with_stale_revision_conflicts`
+  -> `src/api/threads.py`
+* `tests/test_thread_saves_api.py::test_put_thread_that_was_deleted_elsewhere_conflicts`
+  -> `src/api/threads.py`
+* `tests/test_thread_saves_api.py::test_edits_to_different_threads_from_the_same_state_both_persist`
+  -> `src/api/threads.py`
+* `tests/test_thread_saves_api.py::test_put_thread_without_revision_is_rejected`
+  -> `src/api/threads.py`
+* `tests/test_thread_saves_api.py::test_put_thread_with_mismatched_id_is_rejected`
+  -> `src/api/threads.py`
+* `tests/test_thread_saves_api.py::test_delete_thread_with_current_revision_removes_only_it`
+  -> `src/api/threads.py`
+* `tests/test_thread_saves_api.py::test_delete_thread_with_stale_revision_conflicts`
+  -> `src/api/threads.py`
+* `tests/test_thread_saves_api.py::test_delete_thread_already_gone_is_ok_and_changes_nothing`
+  -> `src/api/threads.py`
+* `tests/test_thread_saves_api.py::test_put_thread_over_unreadable_primary_returns_503`
+  -> `src/api/threads.py`
+* `tests/test_thread_saves_api.py::test_concurrent_saves_of_one_thread_accept_exactly_one`
+  -> `src/api/threads.py`
+* `tests/test_ui_thread_saves.py::test_editing_one_chat_saves_only_that_chat`
+  -> `src/static/threads.js`
+* `tests/test_ui_thread_saves.py::test_two_tabs_editing_different_chats_both_persist`
+  -> `src/static/threads.js`
+* `tests/test_ui_persistence_conflicts.py::test_browser_serializes_rapid_mutations_in_revision_order`
+  -> `src/static/threads.js`
+* `tests/test_ui_persistence_conflicts.py::test_browser_conflict_warns_and_stops_further_writes`
+  -> `src/static/threads.js`
+* `tests/test_ui_persistence_conflicts.py::test_reload_after_conflict_hydrates_and_allows_a_new_save`
+  -> `src/static/threads.js`
+* `tests/test_data_safety_ui.py::test_delete_one_thread_survives_reload`
+  -> `src/static/threads.js`
+* `tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving`
+  -> `src/static/threads.js`
+* `tests/test_ui.py::test_save_failure_indicator_shows_then_clears`
+  -> `src/static/threads.js`
+* `tests/test_live_fix_regressions.py::test_chat_precheck_does_not_stall_other_requests`
+  -> `src/api/chat.py`
+* `tests/test_live_fix_regressions.py::test_stream_skips_a_chunk_without_choices`
+  -> `src/services/llm.py`
+* `tests/test_live_fix_regressions.py::test_ram_readout_finds_external_server_by_listening_port`
+  -> `src/api/status.py`
+
+## Changed contracts (machine-computed from the active DELTA range)
+
+The milestone's DELTA snapshots declare these contracts changed:
+- `route:DELETE /api/v1/threads/{thread_id}`
+- `route:PUT /api/v1/threads/{thread_id}`
+- `schema:ThreadDeleteResponse`
+- `schema:ThreadSavePayload`
+- `schema:ThreadSaveResponse`
+- `schema:ThreadSnapshot`
+- `src.services.storage:delete_thread_snapshot`
+- `src.services.storage:save_thread_snapshot`
+
+Claim rule: a task claims only ids listed here, plus cross-file interfaces its work directly depends on (pinned to another file, or unpinned). A contract pinned to the task's OWN file that is not listed here must not be claimed — the plan gate rejects ride-along claims (v99: a GET-only milestone claiming PUT/DELETE dragged unchanged behavior into acceptance and invalidation).
+
+```
+
+### contracts (.pipeline-state/contracts-delta.json)
+```
+{"erd_version":127,"files":["src/services/storage.py","src/api/threads.py","src/static/app.js","src/static/threads.js","src/api/chat.py","src/services/llm.py","src/api/status.py"],"changed_files":["src/services/storage.py","src/api/threads.py","src/static/app.js","src/static/threads.js"],"no_edit_files":["src/api/chat.py","src/services/llm.py","src/api/status.py"],"entry_points":["src.services.llm","src.services.llm:stream_reply","src.api.chat","src.services.storage","src.services.storage:load_snapshot","src.services.storage:save_snapshot","src.services.storage:load_versioned_snapshot","src.services.storage:save_versioned_snapshot","src.services.storage:SnapshotConflict","src.services.storage:SnapshotUnavailableError","src.api.threads","src.api.status","src.services.storage:save_thread_snapshot","src.services.storage:delete_thread_snapshot"],"routes":[{"id":"route:POST /api/v1/chat","method":"POST","path":"/api/v1/chat","file":"src/api/chat.py"},{"id":"route:GET /api/v1/threads","method":"GET","path":"/api/v1/threads","file":"src/api/threads.py"},{"id":"route:PUT /api/v1/threads","method":"PUT","path":"/api/v1/threads","file":"src/api/threads.py"},{"id":"route:DELETE /api/v1/threads","method":"DELETE","path":"/api/v1/threads","file":"src/api/threads.py"},{"id":"route:GET /api/v1/status","method":"GET","path":"/api/v1/status","file":"src/api/status.py"},{"id":"route:PUT /api/v1/threads/{thread_id}","method":"PUT","path":"/api/v1/threads/{thread_id}","file":"src/api/threads.py"},{"id":"route:DELETE /api/v1/threads/{thread_id}","method":"DELETE","path":"/api/v1/threads/{thread_id}","file":"src/api/threads.py"}],"schemas":[{"id":"schema:ChatRequest","fields":{"message":"string","history":"array of HistoryEntry, optional, default []","model":"string, optional, default null","web":"boolean, optional, default false — when true the backend performs one Tavily search before the LLM call (AC-86)"},"file":"src/api/chat.py"},{"id":"schema:HistoryEntry","fields":{"role":"string, literal 'user' or 'assistant'","content":"string"},"file":"src/api/chat.py"},{"id":"schema:SourceLink","fields":{"title":"string","url":"string"},"file":"src/api/threads.py"},{"id":"schema:SSESources","fields":{"event":"literal 'sources' — emitted at most once, BEFORE any token event, only when the request had web=true","sources":"array of {n: integer 1-based, title, url}; empty on search failure","notice":"string, present only on search failure: 'web search unavailable' (AC-89)"},"file":"src/api/chat.py"},{"id":"schema:SSEToken","fields":{"event":"literal 'token'","content":"string"},"file":"src/api/chat.py"},{"id":"schema:SSEThink","fields":{"event":"literal 'think'","content":"string"},"file":"src/api/chat.py"},{"id":"schema:SSEDone","fields":{"event":"literal 'done'"},"file":"src/api/chat.py"},{"id":"schema:SSEError","fields":{"event":"literal 'error'","message":"string"},"file":"src/api/chat.py"},{"id":"schema:ThreadSnapshot","fields":{"id":"integer","title":"string","messages":"array of HistoryEntry (role: \"user\"|\"assistant\", content, ts, model, optional sources: array of SourceLink — absent, never empty-list, when the message had no web sources)","model":"string, may be empty","locked":"boolean","revision":"integer >= 0, optional — this thread's accepted per-thread revision; absent means 0 (never saved per thread)"},"file":"src/api/threads.py"},{"id":"schema:ThreadsPayload","fields":{"revision":"integer >= 0, required expected current persisted generation","threads":"array of ThreadSnapshot"},"file":"src/api/threads.py"},{"id":"schema:ThreadsRevisionPrecondition","fields":{"revision":"integer >= 0, required expected current persisted generation"},"file":"src/api/threads.py"},{"id":"schema:ThreadsListResponse","fields":{"threads":"array of ThreadSnapshot","revision":"integer >= 0, current persisted generation","quarantined":"boolean — true while a quarantined (unreadable) snapshot file sits beside the data file"},"file":"src/api/threads.py"},{"id":"schema:ThreadsMutationResponse","fields":{"status":"string, literal 'ok'","revision":"integer >= 1, newly accepted persisted generation"},"file":"src/api/threads.py"},{"id":"schema:RevisionConflictResponse","fields":{"error":"string, literal 'revision_conflict'","current_revision":"integer >= 0, authoritative persisted generation"},"file":"src/api/threads.py"},{"id":"schema:StatusResponse","fields":{"nemotron_loaded":"boolean","nemotron_rss_gb":"number","ram_used_gb":"number","ram_total_gb":"number","loadable_gb":"number","web_configured":"boolean — true iff TAVILY_API_KEY is set (AC-90)"},"file":"src/api/status.py"},{"id":"schema:ThreadSavePayload","fields":{"revision":"integer >= 0, required — the thread's expected current per-thread revision (0 when not yet stored)","thread":"ThreadSnapshot whose id equals the path thread_id"},"file":"src/api/threads.py"},{"id":"schema:ThreadSaveResponse","fields":{"status":"string, literal 'ok'","revision":"integer >= 1, the thread's newly accepted per-thread revision"},"file":"src/api/threads.py"},{"id":"schema:ThreadDeleteResponse","fields":{"status":"string, literal 'ok'"},"file":"src/api/threads.py"}],"smoke_checks":{"src/services/storage.py":"grep -q 'def save_thread_snapshot' src/services/storage.py","src/api/threads.py":"grep -Fq '/api/v1/threads/{thread_id}' src/api/threads.py","src/static/app.js":"grep -Fq 'markHydrated' src/static/app.js","src/static/threads.js":"grep -Fq '/api/v1/threads/' src/static/threads.js"},"test_mapping":{"tests/test_router_route.py::test_chat_routes_router_model_to_router_endpoint_and_passes_model":"src/api/chat.py","tests/test_router_route.py::test_chat_internal_path_untouched_when_vortex_url_unset":"src/api/chat.py","tests/test_storage_service.py::test_roundtrip_preserves_snapshot":"src/services/storage.py","tests/test_data_safety_storage.py::test_valid_json_with_invalid_thread_schema_is_quarantined":"src/api/threads.py","tests/test_data_safety_ui.py::test_delete_one_thread_survives_reload[chromium]":"src/static/threads.js","tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving[chromium]":"src/static/app.js","tests/test_router_route.py::test_chat_router_model_not_listed_falls_through_to_local_path":"src/api/chat.py","tests/test_router_route.py::test_chat_router_model_router_down_falls_through_to_local_path":"src/api/chat.py","tests/test_router_route.py::test_chat_router_404_race_surfaces_not_ready_message":"src/api/chat.py","tests/test_router_route.py::test_chat_router_error_while_still_ready_is_generic":"src/api/chat.py","tests/test_vortex_cutover.py::test_active_model_source_indicator[chromium]":"src/static/app.js"},"externals":[{"id":"external:lmstudio-models","probe":"curl -sS http://localhost:1234/api/v1/models","capture":"captures/lmstudio-models.json","notes":"Backend reads models[].key and models[].loaded_instances (non-empty = loaded). The UI-test mock serves this shape."},{"id":"external:lmstudio-chat-stream","probe":"curl -sS -N -X POST http://localhost:1234/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"qwen/qwen3.6-27b\",\"messages\":[{\"role\":\"user\",\"content\":\"/no_think Say hi in three words\"}],\"stream\":true}'","capture":"captures/lmstudio-chat-stream.txt","notes":"OpenAI chunk shape. Captured reality (2026-07-08): thinking arrives INLINE as <think>...</think> inside delta.content — this LM Studio config emits no reasoning_content. Think text therefore reaches the frontend through SSE 'token' events; the frontend must render it via the think toggle AND strip it from stored/POSTed history. The 'think' SSE event path (reasoning_content) remains contractually valid for configs that parse reasoning."},{"id":"external:tavily-search","probe":"curl -sS https://api.tavily.com/search -H 'Content-Type: application/json' -H \"Authorization: Bearer $TAVILY_API_KEY\" -d '{\"query\":\"latest stable Python version July 2026\",\"max_results\":4}'","capture":"captures/tavily-search.json","notes":"Captured 2026-07-17 against the live API. Backend reads top-level results[] only: url, title, content (extracted page prose — quality varies by page, hence the per-source char cap). score/raw_content/answer/images are present in the shape but unread. Key travels as Authorization: Bearer; TAVILY_ENDPOINT env overrides the URL so the sandboxed suite binds a loopback stub."}],"errors":[{"id":"error:422-validation","status":422,"file":"src/api/chat.py"},{"id":"error:409-revision-conflict","status":409,"file":"src/api/threads.py"},{"id":"error:503-snapshot-unavailable","status":503,"file":"src/api/threads.py"}],"ui":[{"id":"ui:new-thread-btn","testid":"new-thread-btn","description":"sidebar 'New Chat' button","file":"src/static/app.js"},{"id":"ui:thread-item","testid":"thread-item","description":"each thread entry in the sidebar list (one per thread, newest thread first — reverse creation order)","file":"src/static/threads.js"},{"id":"ui:message-input","testid":"message-input","description":"chat text input","file":"src/static/app.js"},{"id":"ui:send-btn","testid":"send-btn","description":"send button","file":"src/static/app.js"},{"id":"ui:think-toggle","testid":"think-toggle","description":"global thinking-visibility toggle button","file":"src/static/app.js"},{"id":"ui:msg-user","testid":"msg-user","description":"each user message bubble in the chat container","file":"src/static/app.js"},{"id":"ui:msg-assistant","testid":"msg-assistant","description":"each assistant reply bubble in the chat container","file":"src/static/app.js"},{"id":"ui:delete-confirm-modal","testid":"delete-confirm-modal","description":"confirmation dialog for destructive actions (message-pair delete, thread delete); reuses the settings-modal overlay pattern (M28d)","file":"src/static/threads.js"},{"id":"ui:delete-confirm","testid":"delete-confirm","description":"confirm button inside delete-confirm-modal; closes the modal and executes the pending delete (M28d)","file":"src/static/threads.js"},{"id":"ui:delete-cancel","testid":"delete-cancel","description":"cancel button inside delete-confirm-modal; closes the modal, nothing is deleted (M28d)","file":"src/static/threads.js"},{"id":"ui:status-strip","testid":"status-strip","description":"footer status strip (model / RAM / tok-s)","file":"src/static/app.js"},{"id":"ui:thread-rename-btn","testid":"thread-rename-btn","description":"per-thread rename button in the sidebar (one per thread)","file":"src/static/threads.js"},{"id":"ui:thread-delete-btn","testid":"thread-delete-btn","description":"per-thread delete button in the sidebar (one per thread)","file":"src/static/threads.js"},{"id":"ui:thread-rename-input","testid":"thread-rename-input","description":"inline rename input that replaces a thread title during rename","file":"src/static/threads.js"},{"id":"ui:thread-search-input","testid":"thread-search-input","description":"sidebar search box; typing filters the thread list to threads whose title or message content contains the text (case-insensitive); empty restores the full list","file":"src/static/threads.js"},{"id":"ui:search-hit","testid":"search-hit","description":"highlight wrapper around each occurrence of the active sidebar search text inside an opened thread's messages; present ONLY while a search is active","file":"src/static/threads.js"},{"id":"ui:search-hit-count","testid":"search-hit-count","description":"current-position/total counter for search hits in the open thread (e.g. '2/7'); visible only while a search is active","file":"src/static/threads.js"},{"id":"ui:search-prev-btn","testid":"search-prev-btn","description":"moves the current-search-hit selection to the previous hit, wrapping from the first to the last","file":"src/static/threads.js"},{"id":"ui:search-next-btn","testid":"search-next-btn","description":"moves the current-search-hit selection to the next hit, wrapping from the last back to the first","file":"src/static/threads.js"},{"id":"ui:save-status","testid":"save-status","description":"status-strip save indicator: empty while persists succeed; 'not saved' after ordinary failure (AC-75/76); exact 'history changed elsewhere — reload required' after a 409 until reload (AC-147/148)","file":"src/static/threads.js"},{"id":"ui:history-status","testid":"history-status","description":"status-strip history indicator: empty after healthy hydration; 'history unreadable (backup kept)' after quarantine (AC-80/81); exact 'history unavailable — retrying' while initial hydration is failing and retrying (AC-158/159)","file":"src/static/threads.js"},{"id":"ui:msg-meta","testid":"msg-meta","description":"per-bubble meta span; its data-meta attribute carries the hover text: time for today's messages, date + time for past-day messages (AC-83), plus the model name when stored","file":"src/static/threads.js"},{"id":"ui:web-toggle","testid":"web-toggle","description":"composer globe button arming web search for the NEXT message only; default OFF, carries class 'active' while armed, resets to OFF on send (AC-84); disabled while the backend reports web_configured false (AC-90)","file":"src/static/app.js"},{"id":"ui:msg-sources","testid":"msg-sources","description":"container under an assistant reply bubble holding that reply's source links (and the failure notice); present ONLY on web-informed replies (AC-88)","file":"src/static/threads.js"},{"id":"ui:source-link","testid":"source-link","description":"each numbered source anchor inside msg-sources; href = the source URL, opens in a new tab (AC-88)","file":"src/static/threads.js"},{"id":"ui:web-notice","testid":"web-notice","description":"'web search unavailable' span inside msg-sources when the search failed (AC-89); live-render only, never persisted","file":"src/static/threads.js"},{"id":"ui:msg-error","testid":"msg-error","description":"guidance/error bubble in the chat container (AC-131); distinct from msg-assistant","file":"src/static/app.js"},{"id":"ui:active-model-source","testid":"active-model-source","description":"Status-strip indicator reading 'via Vortex' for the selected option in an enabled Vortex group, else 'via local'; updates after models load, refresh, thread selection and picker change (AC-187).","file":"src/static/app.js"}]}
+
+```
+
+### test-nodeids (.pipeline-state/nodeids-scope.txt)
+```
+tests/test_data_safety_storage.py::test_valid_json_with_invalid_thread_schema_is_quarantined
+tests/test_data_safety_ui.py::test_delete_one_thread_survives_reload
+tests/test_data_safety_ui.py::test_delete_one_thread_survives_reload[chromium]
+tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving
+tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving[chromium]
+tests/test_live_fix_regressions.py::test_chat_precheck_does_not_stall_other_requests
+tests/test_live_fix_regressions.py::test_ram_readout_finds_external_server_by_listening_port
+tests/test_live_fix_regressions.py::test_stream_skips_a_chunk_without_choices
+tests/test_storage_service.py::test_roundtrip_preserves_snapshot
+tests/test_thread_saves_api.py::test_concurrent_saves_of_one_thread_accept_exactly_one
+tests/test_thread_saves_api.py::test_delete_thread_already_gone_is_ok_and_changes_nothing
+tests/test_thread_saves_api.py::test_delete_thread_with_current_revision_removes_only_it
+tests/test_thread_saves_api.py::test_delete_thread_with_stale_revision_conflicts
+tests/test_thread_saves_api.py::test_edits_to_different_threads_from_the_same_state_both_persist
+tests/test_thread_saves_api.py::test_put_thread_over_unreadable_primary_returns_503
+tests/test_thread_saves_api.py::test_put_thread_that_was_deleted_elsewhere_conflicts
+tests/test_thread_saves_api.py::test_put_thread_treats_a_legacy_thread_as_revision_zero
+tests/test_thread_saves_api.py::test_put_thread_with_current_revision_is_accepted
+tests/test_thread_saves_api.py::test_put_thread_with_mismatched_id_is_rejected
+tests/test_thread_saves_api.py::test_put_thread_with_stale_revision_conflicts
+tests/test_thread_saves_api.py::test_put_thread_without_revision_is_rejected
+tests/test_thread_saves_api.py::test_storage_deletes_only_the_named_thread
+tests/test_thread_saves_api.py::test_storage_refuses_to_save_over_an_unreadable_primary
+tests/test_thread_saves_api.py::test_storage_saves_a_new_thread_at_revision_one
+tests/test_thread_saves_api.py::test_storage_stale_thread_revision_raises_conflict
+tests/test_ui.py::test_bubble_meta_includes_date_for_past_messages
+tests/test_ui.py::test_click_header_title_enters_edit_mode
+tests/test_ui.py::test_current_thread_is_highlighted_in_sidebar
+tests/test_ui.py::test_current_thread_title_shows_in_header
+tests/test_ui.py::test_empty_header_title_commit_reverts_to_prior
+tests/test_ui.py::test_enter_commits_header_title_edit
+tests/test_ui.py::test_escape_reverts_header_title_edit
+tests/test_ui.py::test_failed_reply_keeps_user_message
+tests/test_ui.py::test_header_rename_updates_sidebar_row_immediately
+tests/test_ui.py::test_header_title_updates_when_switching_threads
+tests/test_ui.py::test_highlight_moves_when_current_thread_deleted
+tests/test_ui.py::test_highlight_moves_when_switching_threads
+tests/test_ui.py::test_history_quarantine_indicator_shows
+tests/test_ui.py::test_history_sent_to_backend_has_no_think_markup
+tests/test_ui.py::test_history_status_empty_when_healthy
+tests/test_ui.py::test_long_header_title_truncates_with_full_text_in_tooltip
+tests/test_ui.py::test_markdown_renders_readably
+tests/test_ui.py::test_message_input_cmd_enter_does_not_send
+tests/test_ui.py::test_message_input_ctrl_enter_does_not_send
+tests/test_ui.py::test_message_input_placeholder_states_send_shortcut
+tests/test_ui.py::test_message_input_plain_enter_sends
+tests/test_ui.py::test_message_input_shift_enter_inserts_newline_without_sending
+tests/test_ui.py::test_mid_chat_switch_updates_thread_model_and_routes_next_send
+tests/test_ui.py::test_model_option_labels_never_carry_checkmark
+tests/test_ui.py::test_new_chat_creates_unlocked_empty_thread
+tests/test_ui.py::test_newlines_in_header_title_are_stripped_on_commit
+tests/test_ui.py::test_no_loaded_model_shows_placeholder_and_disables_send
+tests/test_ui.py::test_rain_backdrop_only_in_matrix
+tests/test_ui.py::test_reload_after_current_deleted_opens_newest_remaining
+tests/test_ui.py::test_reload_opens_newest_thread
+tests/test_ui.py::test_reply_copy_source_strips_think_after_reload
+tests/test_ui.py::test_save_failure_indicator_shows_then_clears
+tests/test_ui.py::test_saved_system_prompt_reaches_requests
+tests/test_ui.py::test_search_hit_count_and_navigation
+tests/test_ui.py::test_search_hits_highlighted_in_open_thread
+tests/test_ui.py::test_selector_stays_enabled_across_all_ui_states
+tests/test_ui.py::test_sidebar_divider_drags_and_clamps
+tests/test_ui.py::test_sidebar_lists_newest_thread_first
+tests/test_ui.py::test_sidebar_rename_updates_header_immediately
+tests/test_ui.py::test_sidebar_search_filters_threads
+tests/test_ui.py::test_sidebar_width_persists_across_reload
+tests/test_ui.py::test_stop_button_keeps_partial_reply
+tests/test_ui.py::test_switching_threads_mid_edit_commits_pending_rename
+tests/test_ui.py::test_terminal_titlebar_only_in_phosphor
+tests/test_ui.py::test_theme_cycle_reaches_phosphor_and_wraps
+tests/test_ui.py::test_theme_switch_persists_across_reload
+tests/test_ui.py::test_think_toggle_reveals_and_hides_thinking
+tests/test_ui.py::test_thinking_placeholder_shows_then_clears
+tests/test_ui.py::test_thread_delete_removes_thread
+tests/test_ui.py::test_thread_model_selection_persists_across_reload_without_send
+tests/test_ui.py::test_thread_rename_via_sidebar_control
+tests/test_ui.py::test_thread_switch_restores_history
+tests/test_ui.py::test_thread_switch_restores_stored_model
+tests/test_ui.py::test_thread_title_set_from_first_message
+tests/test_ui.py::test_thread_title_stores_full_text_beyond_thirty_chars
+tests/test_ui.py::test_threads_survive_reload
+tests/test_ui.py::test_title_renders_as_text_not_html
+tests/test_ui_persistence_conflicts.py::test_browser_conflict_warns_and_stops_further_writes
+tests/test_ui_persistence_conflicts.py::test_browser_serializes_rapid_mutations_in_revision_order
+tests/test_ui_persistence_conflicts.py::test_reload_after_conflict_hydrates_and_allows_a_new_save
+tests/test_ui_thread_saves.py::test_editing_one_chat_saves_only_that_chat
+tests/test_ui_thread_saves.py::test_two_tabs_editing_different_chats_both_persist
+tests/test_vortex_cutover.py::test_active_model_source_indicator[chromium]
+
+```
+
+### plan-being-revised (tasks/plan.json)
+```
+{
+  "version": 8,
+  "erd_version": 127,
+  "tasks": [
+    {
+      "id": "T1",
+      "file": "src/services/storage.py",
+      "depends_on": [],
+      "brief": "Edit only src/services/storage.py. Add three private helpers and two public functions directly above `def save_versioned_snapshot`.\n\n1. `def _read_threads_for_write(path: str) -> tuple[list[dict], int]:` \u2014 if `os.path.exists(path)` is False, return `([], 0)`. Otherwise `data = _read_any(path)`. If `data` is a list, return `(list(data), 0)`. If `data` is a dict whose `\"threads\"` value is a list, return `(list(data[\"threads\"]), rev)` where `rev` is `data.get(\"revision\")` when it is an int >= 0, else 0. In every other case `raise SnapshotUnavailableError()`.\n2. `def _thread_revision(thread: dict) -> int:` \u2014 return `thread.get(\"revision\")` when it is an int >= 0, else 0.\n3. `def _write_threads_locked(path: str, threads: list[dict], revision: int) -> None:` \u2014 make the parent directory exactly as `_save_versioned_snapshot_locked` does, then write `{\"revision\": revision, \"threads\": threads}` with the same `tempfile.mkstemp` write, `shutil.copy2` to `f\"{path}.bak\"` when the primary exists, `os.replace`, and the same temp-file cleanup and re-raise on error.\n4. `def save_thread_snapshot(thread: dict, expected_revision: int) -> int:` \u2014 inside `with _lock:`, set `path = _data_path()` and `threads, envelope = _read_threads_for_write(path)`. Find the index of the stored thread whose `\"id\"` equals `thread[\"id\"]`. `current = _thread_revision(threads[index])` when found, else 0. If `current != expected_revision`, `raise SnapshotConflict(current)`. Otherwise build `stored = {**thread, \"revision\": current + 1}`, replace it at that index (or append when not found), call `_write_threads_locked(path, threads, envelope + 1)`, and return `current + 1`.\n5. `def delete_thread_snapshot(thread_id: int, expected_revision: int) -> bool:` \u2014 inside `with _lock:`, read the same way. When no stored thread has `\"id\" == thread_id`, return False without writing. Otherwise `current = _thread_revision(that thread)`; if it differs from `expected_revision`, `raise SnapshotConflict(current)`; else remove that thread, call `_write_threads_locked(path, threads, envelope + 1)`, and return True.\n\nDo not modify any existing function. Acceptance: `save_thread_snapshot(new_thread, 0)` on an empty store returns 1; `SnapshotUnavailableError` propagates to the caller.",
+      "contracts": [
+        "src.services.storage:save_thread_snapshot",
+        "src.services.storage:delete_thread_snapshot"
+      ],
+      "tests": [
+        "tests/test_thread_saves_api.py::test_storage_saves_a_new_thread_at_revision_one",
+        "tests/test_thread_saves_api.py::test_storage_stale_thread_revision_raises_conflict",
+        "tests/test_thread_saves_api.py::test_storage_deletes_only_the_named_thread",
+        "tests/test_thread_saves_api.py::test_storage_refuses_to_save_over_an_unreadable_primary",
+        "tests/test_storage_service.py::test_roundtrip_preserves_snapshot"
+      ]
+    },
+    {
+      "id": "T2",
+      "file": "src/api/threads.py",
+      "depends_on": [
+        "T1"
+      ],
+      "brief": "Edit only src/api/threads.py.\n\n1. Add `delete_thread_snapshot` and `save_thread_snapshot` to the existing `from src.services.storage import (...)` list.\n2. In `class ThreadSnapshot`, add the field `revision: int | None = Field(default=None, ge=0)` after `locked`.\n3. Add `class ThreadSavePayload(BaseModel):` with fields `revision: int = Field(ge=0)` and `thread: ThreadSnapshot`.\n4. At the end of the file add `@router.put(\"/api/v1/threads/{thread_id}\")` on `def put_thread(thread_id: int, payload: ThreadSavePayload):`. When `payload.thread.id != thread_id`, return `JSONResponse(status_code=422, content={\"detail\": \"thread id mismatch\"})`. Build `thread = payload.thread.model_dump(exclude_none=True)` then `thread.pop(\"revision\", None)`, and call `new_revision = save_thread_snapshot(thread, payload.revision)`. On `except SnapshotConflict as exc:` return `JSONResponse(status_code=409, content={\"error\": \"revision_conflict\", \"current_revision\": exc.current_revision})`. On `except SnapshotUnavailableError:` return `JSONResponse({\"detail\": \"snapshot unavailable\"}, status_code=503)`. On success return `{\"status\": \"ok\", \"revision\": new_revision}`.\n5. Then add `@router.delete(\"/api/v1/threads/{thread_id}\")` on `def delete_thread(thread_id: int, body: ThreadsRevisionPrecondition | None = None):`. When `body is None`, return `JSONResponse(status_code=422, content={\"detail\": \"Missing required field: revision\"})`. Call `delete_thread_snapshot(thread_id, body.revision)` with the same 409 and 503 handling, and return `{\"status\": \"ok\"}` on success.\n\nDo not change `get_threads`, `put_threads`, or `delete_threads`. Acceptance: a PUT to `/api/v1/threads/1` with `{\"revision\": 0, \"thread\": {...id 1...}}` on an empty store returns `{\"status\": \"ok\", \"revision\": 1}`.",
+      "contracts": [
+        "route:PUT /api/v1/threads/{thread_id}",
+        "route:DELETE /api/v1/threads/{thread_id}",
+        "schema:ThreadSavePayload",
+        "schema:ThreadSaveResponse",
+        "schema:ThreadDeleteResponse",
+        "schema:ThreadSnapshot",
+        "src.services.storage:save_thread_snapshot",
+        "src.services.storage:delete_thread_snapshot",
+        "error:409-revision-conflict",
+        "error:503-snapshot-unavailable"
+      ],
+      "tests": [
+        "tests/test_thread_saves_api.py::test_put_thread_with_current_revision_is_accepted",
+        "tests/test_thread_saves_api.py::test_put_thread_treats_a_legacy_thread_as_revision_zero",
+        "tests/test_thread_saves_api.py::test_put_thread_with_stale_revision_conflicts",
+        "tests/test_thread_saves_api.py::test_put_thread_that_was_deleted_elsewhere_conflicts",
+        "tests/test_thread_saves_api.py::test_edits_to_different_threads_from_the_same_state_both_persist",
+        "tests/test_thread_saves_api.py::test_put_thread_without_revision_is_rejected",
+        "tests/test_thread_saves_api.py::test_put_thread_with_mismatched_id_is_rejected",
+        "tests/test_thread_saves_api.py::test_delete_thread_with_current_revision_removes_only_it",
+        "tests/test_thread_saves_api.py::test_delete_thread_with_stale_revision_conflicts",
+        "tests/test_thread_saves_api.py::test_delete_thread_already_gone_is_ok_and_changes_nothing",
+        "tests/test_thread_saves_api.py::test_put_thread_over_unreadable_primary_returns_503",
+        "tests/test_thread_saves_api.py::test_concurrent_saves_of_one_thread_accept_exactly_one",
+        "tests/test_data_safety_storage.py::test_valid_json_with_invalid_thread_schema_is_quarantined"
+      ]
+    },
+    {
+      "id": "T3",
+      "file": "src/static/app.js",
+      "depends_on": [
+        "T2"
+      ],
+      "brief": "Edit only src/static/app.js. In the startup hydration success handler, inside `if (data.threads && data.threads.length > 0) {`, directly after the `for` loop that sets `TC.threadCounter`, add exactly this line:\n\n`if (Threads.markHydrated) Threads.markHydrated(TC.threads);`\n\nDo not change any other line. Acceptance: exactly one line added at that position; the rest of the file is byte-identical.",
+      "contracts": [],
+      "tests": [
+        "tests/test_data_safety_ui.py::test_hydration_failure_warns_retries_and_recovers_saving[chromium]",
+        "tests/test_vortex_cutover.py::test_active_model_source_indicator[chromium]"
+      ]
+    },
+    {
+      "id": "T4",
+      "file": "src/static/threads.js",
+      "depends_on": [
+        "T2",
+        "T3",
+        "T5",
+        "T6",
+        "T7"
+      ],
+      "brief": "Edit only src/static/threads.js.\n\n1. Below `var _conflictLatched = false;` add `var _savedThreads = {};` (chat id -> fingerprint of its last queued content) and `var _threadRevisions = {};` (chat id -> last accepted revision).\n2. Inside the `window.Threads` function, after `setHydratedRevision`, add `function _fingerprint(t)` returning `JSON.stringify({ id: t.id, title: t.title, messages: t.messages, locked: !!t.locked })` (no `model`, on purpose); `function _threadPayload(t)` returning `{ id: t.id, title: t.title, messages: t.messages, model: t.model || '', locked: !!t.locked }`; and `function markHydrated(threads)` that sets `_savedThreads[t.id] = _fingerprint(t)` and `_threadRevisions[t.id] = t.revision || 0` for each thread.\n3. In `_drainPersistQueue`, make the hydration guard also return when the head type is `'THREAD_PUT'`, and send types `'THREAD_PUT'` and `'THREAD_DELETE'` to `_doThreadMutation(entry)`.\n4. Add `function _doThreadMutation(entry)`: `id = entry.payload.id`; body `{ revision: _threadRevisions[id] || 0 }`, plus `thread: entry.payload.thread` for THREAD_PUT; `fetch('/api/v1/threads/' + id, ...)` with method PUT or DELETE and a JSON header. On 409 call `_handleConflict()`. On any other non-ok status or a rejected fetch: set `el('status-save').textContent = 'not saved'`, `delete _savedThreads[id]`, shift the queue, set `_persistRunning = false`, drain. On 200: PUT sets `_threadRevisions[id] = data.revision`, DELETE deletes it; clear `status-save`; shift, set `_persistRunning = false`, drain.\n5. Make `persistThreads()` loop over `TC.threads`: when `_fingerprint(t) !== _savedThreads[t.id]`, store the new fingerprint and `_enqueueMutation('THREAD_PUT', { id: t.id, thread: _threadPayload(t) })`. Then, for every key in `_savedThreads` with no chat left in `TC.threads`, delete the key and `_enqueueMutation('THREAD_DELETE', { id: Number(key) })`.\n6. In `deleteThread`, replace `_enqueueMutation('PUT', { threads: _captureSnapshot() });` with `persistThreads();`.\n7. Add `markHydrated: markHydrated` to the returned object.\n\nAcceptance: renaming one chat queues exactly one `THREAD_PUT` for it.",
+      "contracts": [
+        "route:PUT /api/v1/threads/{thread_id}",
+        "route:DELETE /api/v1/threads/{thread_id}",
+        "ui:save-status"
+      ],
+      "tests": [
+        "tests/test_ui_thread_saves.py::test_editing_one_chat_saves_only_that_chat",
+        "tests/test_ui_thread_saves.py::test_two_tabs_editing_different_chats_both_persist",
+        "tests/test_ui_persistence_conflicts.py::test_browser_serializes_rapid_mutations_in_revision_order",
+        "tests/test_ui_persistence_conflicts.py::test_browser_conflict_warns_and_stops_further_writes",
+        "tests/test_ui_persistence_conflicts.py::test_reload_after_conflict_hydrates_and_allows_a_new_save",
+        "tests/test_data_safety_ui.py::test_delete_one_thread_survives_reload[chromium]",
+        "tests/test_ui.py::test_save_failure_indicator_shows_then_clears"
+      ]
+    },
+    {
+      "id": "T5",
+      "file": "src/api/chat.py",
+      "depends_on": [],
+      "brief": "Edit only src/api/chat.py. No code change is required: the 2026-09-23 fix (sync `chat` handler) is already in place. Preserve the file byte-for-byte and run its mapped tests. Acceptance: the file is byte-identical to its current state and the mapped regression oracle passes.",
+      "contracts": [
+        "src.api.chat"
+      ],
+      "tests": [
+        "tests/test_live_fix_regressions.py::test_chat_precheck_does_not_stall_other_requests"
+      ]
+    },
+    {
+      "id": "T6",
+      "file": "src/services/llm.py",
+      "depends_on": [],
+      "brief": "Edit only src/services/llm.py. No code change is required: the 2026-09-23 fix (skip chunks with no `choices`) is already in place. Preserve the file byte-for-byte and run its mapped tests. Acceptance: the file is byte-identical to its current state and the mapped regression oracle passes.",
+      "contracts": [
+        "src.services.llm:stream_reply"
+      ],
+      "tests": [
+        "tests/test_live_fix_regressions.py::test_stream_skips_a_chunk_without_choices"
+      ]
+    },
+    {
+      "id": "T7",
+      "file": "src/api/status.py",
+      "depends_on": [],
+      "brief": "Edit only src/api/status.py. No code change is required: the 2026-09-23 fix (RAM readout by listening port) is already in place. Preserve the file byte-for-byte and run its mapped tests. Acceptance: the file is byte-identical to its current state and the mapped regression oracle passes.",
+      "contracts": [
+        "src.api.status"
+      ],
+      "tests": [
+        "tests/test_live_fix_regressions.py::test_ram_readout_finds_external_server_by_listening_port"
+      ]
+    }
+  ]
+}
+
+```
