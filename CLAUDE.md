@@ -17,6 +17,24 @@
 
 ---
 
+## Running the pipeline (D-186 — this app carries no control plane)
+
+Testchat is a builder-targeted app: product code, `tests/`, the frozen spec
+(`scripts/.approved/`) and its own adaptations — nothing of the pipeline.
+Every `scripts/<name>.sh` named below means running that step **from the
+builder, against this app**:
+
+```
+~/dev/sw-dev-blueprint/scripts/swbp <name> --app <this checkout> [-- args]
+```
+
+The builder version is pinned in `.swbp` (`ref=`); change it only between
+milestones. A person's change to tests, the frozen spec, or pipeline
+adaptations goes through `swbp commit --app <checkout> -- "<subject>" <files>`
+— `swbp-guard` in CI flags anything else.
+
+---
+
 ## Tech Stack
 
 > Default template stack shown below. ADAPT to this project's real stack
