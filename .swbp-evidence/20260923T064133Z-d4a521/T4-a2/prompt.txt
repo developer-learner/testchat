@@ -1,3 +1,37 @@
+Edit only src/static/threads.js.
+
+1. Below `var _conflictLatched = false;` add `var _savedThreads = {};` (chat id -> fingerprint of its last queued content) and `var _threadRevisions = {};` (chat id -> last accepted revision).
+2. Inside the `window.Threads` function, after `setHydratedRevision`, add `function _fingerprint(t)` returning `JSON.stringify({ id: t.id, title: t.title, messages: t.messages, locked: !!t.locked })` (no `model`, on purpose); `function _threadPayload(t)` returning `{ id: t.id, title: t.title, messages: t.messages, model: t.model || '', locked: !!t.locked }`; and `function markHydrated(threads)` that sets `_savedThreads[t.id] = _fingerprint(t)` and `_threadRevisions[t.id] = t.revision || 0` for each thread.
+3. In `_drainPersistQueue`, make the hydration guard also return when the head type is `'THREAD_PUT'`, and send types `'THREAD_PUT'` and `'THREAD_DELETE'` to `_doThreadMutation(entry)`.
+4. Add `function _doThreadMutation(entry)`: `id = entry.payload.id`; body `{ revision: _threadRevisions[id] || 0 }`, plus `thread: entry.payload.thread` for THREAD_PUT; `fetch('/api/v1/threads/' + id, ...)` with method PUT or DELETE and a JSON header. On 409 call `_handleConflict()`. On any other non-ok status or a rejected fetch: set `el('status-save').textContent = 'not saved'`, `delete _savedThreads[id]`, shift the queue, set `_persistRunning = false`, drain. On 200: PUT sets `_threadRevisions[id] = data.revision`, DELETE deletes it; clear `status-save`; shift, set `_persistRunning = false`, drain.
+5. Make `persistThreads()` loop over `TC.threads`: when `_fingerprint(t) !== _savedThreads[t.id]`, store the new fingerprint and `_enqueueMutation('THREAD_PUT', { id: t.id, thread: _threadPayload(t) })`. Then, for every key in `_savedThreads` with no chat left in `TC.threads`, delete the key and `_enqueueMutation('THREAD_DELETE', { id: Number(key) })`.
+6. In `deleteThread`, replace `_enqueueMutation('PUT', { threads: _captureSnapshot() });` with `persistThreads();`.
+7. Add `markHydrated: markHydrated` to the returned object.
+
+Acceptance: renaming one chat queues exactly one `THREAD_PUT` for it.
+
+Write EXACTLY one file: src/static/threads.js — the gate rejects any other change, including new files. Before finishing, re-open src/static/threads.js and confirm it satisfies every acceptance condition in this brief.
+
+The previous attempt failed with: mapped tests failing: tests/test_ui.py::test_save_failure_indicator_shows_then_clears[chromium]|tests/test_ui_persistence_conflicts.py::test_browser_conflict_warns_and_stops_further_writes[chromium]|tests/test_ui_persistence_conflicts.py::test_browser_serializes_rapid_mutations_in_revision_order[chromium]|tests/test_ui_persistence_conflicts.py::test_reload_after_conflict_hydrates_and_allows_a_new_save[chromium]|tests/test_ui_thread_saves.py::test_editing_one_chat_saves_only_that_chat[chromium]|tests/test_ui_thread_saves.py::test_two_tabs_editing_different_chats_both_persist[chromium] — tests/test_ui.py::test_save_failure_indicator_shows_then_clears[chromium]: ... text: close. - text: 06:58 · alpha-model - button "⧉" - button "✕" - textbox "Type a message... (Enter to send, Shift+Enter for newline)" - button "💭" - button "🌐" - button "Send" - text: ● alpha-model via local RAM 0/0 GB · ~0 GB loadable || tests/test_ui_persistence_conflicts.py::test_browser_conflict_warns_and_stops_further_writes[chromium]: playwright._impl._errors.Error: Page.evaluate: Error: timed out after 10000 ms: window.__m33Stub.waitForPuts(1) at eval (eval at evaluate (:303:30), <anonymous>:4:30) || tests/test_ui_persistence_conflicts.py::test_browser_serializes_rapid_mutations_in_revision_order[chromium]: playwright._impl._errors.Error: Page.evaluate: Error: timed out after 10000 ms: window.__m33Stub.waitForPuts(1) at eval (eval at evaluate (:303:30), <anonymous>:4:30). Fix the cause, do not just retry the same content. NOTE: the file may already contain a previous attempt's partial work — read its CURRENT state, find the SMALLEST remaining delta that satisfies the brief, and emit only that; if the file already satisfies the brief, reply === NO CHANGES ===. Do not re-describe or re-apply work that is already present.
+
+Reply with ONLY edit blocks in this exact format, nothing else:
+<<<<<<< SEARCH
+(an EXACT, character-for-character copy of a short existing section — 3 to 10 lines)
+=======
+(that same section with the change applied)
+>>>>>>> REPLACE
+Rules:
+- Each SEARCH must appear EXACTLY ONCE in the file. Copy it verbatim — same spaces, same quotes.
+- Several small blocks, not one big one. Do not touch code outside your blocks. Do not reformat or reorder anything.
+- Never include any line containing a think tag in a SEARCH section — anchor on nearby tag-free lines instead.
+- In new code, never write the think tag as one literal string — construct it by concatenation, e.g. '<' + 'think>'.
+- If the file already satisfies the brief, reply with exactly this line and nothing else: === NO CHANGES ===
+- Verify each SEARCH against the file one more time before answering.
+- Your reply's VERY FIRST line must be '<<<<<<< SEARCH' (or the NO CHANGES line). Do not analyze, plan, or explain anything — every design decision is already made in the brief. Prose before the blocks burns your output budget and truncates the edit mid-block.
+- Every block must be COMPLETE working code — never a stub, placeholder, or '...' body. If the brief needs a new function, write its full body in the block.
+
+### existing (src/static/threads.js)
+```
 window.TC = {
   threads: [],
   activeThreadId: null,
@@ -77,7 +111,8 @@ window.Threads = (function () {
   // --- ERD-DELTA v73: drain the serialized queue, one at a time ---
   function _drainPersistQueue() {
     if (_persistRunning || _conflictLatched || _persistQueue.length === 0) return;
-    if (_hydratedRevision == null && (_persistQueue[0].type === 'PUT' || _persistQueue[0].type === 'THREAD_PUT')) return; // cannot persist without a hydrated revision
+    if (_hydratedRevision == null && _persistQueue[0].type === 'PUT') return; // cannot PUT without a hydrated revision
+    if (_persistQueue[0].type === 'THREAD_PUT') return; // cannot persist per-thread without a hydrated revision
     _persistRunning = true;
     var entry = _persistQueue[0];          // do NOT shift yet — only on 200 or after clearing on 409
     if (entry.type === 'PUT') {
@@ -162,11 +197,11 @@ window.Threads = (function () {
 
   function _doThreadMutation(entry) {
     var id = entry.payload.id;
-    var body = { revision: _hydratedRevision };
+    var body = { revision: _threadRevisions[id] || 0 };
     if (entry.type === 'THREAD_PUT') {
-      body.threads = _captureSnapshot();
+      body.thread = entry.payload.thread;
     }
-    fetch('/api/v1/threads', {
+    fetch('/api/v1/threads/' + id, {
       method: entry.type === 'THREAD_PUT' ? 'PUT' : 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -183,8 +218,9 @@ window.Threads = (function () {
         return;
       }
       return res.json().then(function (data) {
-        _hydratedRevision = data.revision;
-        if (entry.type === 'THREAD_DELETE') {
+        if (entry.type === 'THREAD_PUT') {
+          _threadRevisions[id] = data.revision;
+        } else {
           delete _threadRevisions[id];
         }
         el('status-save').textContent = '';
@@ -707,3 +743,5 @@ function addSources(bubble, sources, notice) {
 })();
 
 
+
+```
