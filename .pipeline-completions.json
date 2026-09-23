@@ -141,6 +141,45 @@
         }
       }
     },
+    "128": {
+      "tasks": {
+        "T1": {
+          "file": "src/services/storage.py",
+          "file_sha256": "2fc7aec5f95eacfda1871883ab76c6c1ad508128c08eac2b85c7ebe8bd113eaf",
+          "fingerprint": "78fac604396ad0b42c99ba95158cac8e89034884e5ffbe2155eb1931db43354c"
+        },
+        "T2": {
+          "file": "src/api/threads.py",
+          "file_sha256": "9d9f784df8ebdcca14b90d86762102bc9f0418a6f41ed4f3aebb62d7c46387f0",
+          "fingerprint": "fa359fab9e5a1ea9fb1efa00bc1da93ed2a0c6042f9157359763f550c3ea23e0"
+        },
+        "T3": {
+          "file": "src/static/app.js",
+          "file_sha256": "27ff7693be4a04fdaacb898204529ecd65c34878a3e7360ddc323d91732a6fd9",
+          "fingerprint": "6609107add5bcddad981ecbf0442b15a482f6c1f8f4a6b96fc07649f6f36904b"
+        },
+        "T4": {
+          "file": "src/static/threads.js",
+          "file_sha256": "7a34816d0f836038977a0a3ac26e6d0e82e406b9d4636881cbfed050d670fdf6",
+          "fingerprint": "a71b1be706d28523b2337f5ae08861771c1c17d2812780674a06c17e18cbae89"
+        },
+        "T5": {
+          "file": "src/api/chat.py",
+          "file_sha256": "dd5619de84729cc6c203fcb6ef1ddd272d607be8276ad901c637f934324ff015",
+          "fingerprint": "c00b4a4718dee578b1fe8580b9be7bde2623acb34b3d6847c4d360df10e6ca08"
+        },
+        "T6": {
+          "file": "src/services/llm.py",
+          "file_sha256": "46a16367cec5bf724155565d6bc63f38f95fb721817f355f897ab10e5ad84949",
+          "fingerprint": "caf7cfc13d05a5ac795553b81ed112baa4c1bca098cb2e82f4e583712ea8a1a7"
+        },
+        "T7": {
+          "file": "src/api/status.py",
+          "file_sha256": "a293222d073e05d5875e0b028d0d5bf42786286c1e057417f3c88b59d947b22a",
+          "fingerprint": "21988676deca5848fc1e173f6476d0bfaa0942fc2f366f6d3c440752f4a7f32d"
+        }
+      }
+    },
     "77": {
       "tasks": {
         "T1": {

@@ -1033,3 +1033,7 @@ repairs followed the bounded coder failure; see `tasks/T9-completion-review.md`
 for exact provenance. Live deployment configuration was not changed, and no
 live inference-session result is claimed. Ready Local remains the approved
 fallback; Vortex is primary when configured. Frozen tests stayed unchanged.
+
+## Results
+
+  Delta-mapped frozen tests green against spec v128 — feature done (verdict scope: mapped tests only, D-112). Feature built and validated.
