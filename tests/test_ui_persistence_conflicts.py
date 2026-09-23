@@ -1,10 +1,27 @@
-"""M33 browser oracle: ordered saves, conflict latch, reload recovery.
+"""Browser oracle: ordered per-thread saves, conflict latch, reload recovery.
 
-Element location uses contracts.ui testids only. Synchronization uses explicit
-Promise barriers fired by captured PUTs or committed title mutations; there
-are no sleeps, guessed microtask turns, or retry allowances.
+M33 introduced ordered saves and the conflict latch over whole-history saves;
+v127 moves saving to one chat per request (AC-200 supersedes AC-146, AC-201
+supersedes AC-147; AC-148 is carried). Element location uses contracts.ui
+testids only. Synchronization uses explicit Promise barriers fired by captured
+saves or committed title mutations; there are no sleeps, guessed microtask
+turns, or retry allowances.
 """
+import json
+
 from playwright.sync_api import Page, expect
+
+
+def _wait(page: Page, promise_js: str, ms: int = 10000):
+    """Await an in-page promise, failing fast instead of hanging the suite."""
+    label = json.dumps(promise_js)
+    return page.evaluate(
+        f"""() => Promise.race([
+            Promise.resolve({promise_js}),
+            new Promise((_, reject) => setTimeout(
+                () => reject(new Error('timed out after {ms} ms: ' + {label})), {ms}))
+        ])"""
+    )
 
 
 def _rename(page: Page, title: str) -> None:
@@ -37,16 +54,15 @@ def _install_queue_stub(page: Page) -> None:
         window.fetch = function(input, init) {
           const url = typeof input === 'string' ? input : input.url;
           const method = String((init && init.method) || input.method || 'GET').toUpperCase();
-          if (!url.endsWith('/api/v1/threads')) return nativeFetch(input, init);
-          if (method === 'GET') {
+          if (url.endsWith('/api/v1/threads') && method === 'GET') {
             return Promise.resolve(new Response(JSON.stringify({
-              threads: [{id: 1, title: 'Initial', messages: [], model: 'alpha-model', locked: false}],
-              revision: 7,
+              threads: [{id: 1, title: 'Initial', messages: [], model: 'alpha-model', locked: false, revision: 7}],
+              revision: 12,
               quarantined: false
             }), {status: 200, headers: {'Content-Type': 'application/json'}}));
           }
-          if (method === 'PUT') {
-            stub.puts.push(JSON.parse(init.body));
+          if (/\\/api\\/v1\\/threads\\/\\d+$/.test(url) && method === 'PUT') {
+            stub.puts.push({path: new URL(url, location.href).pathname, body: JSON.parse(init.body)});
             stub.notifyPuts();
             return new Promise(resolve => stub.resolvers.push(resolve));
           }
@@ -56,7 +72,7 @@ def _install_queue_stub(page: Page) -> None:
     )
 
 
-# AC-146 — rapid mutations wait for the prior accepted revision.
+# AC-200 — rapid edits to a chat wait for its prior accepted revision.
 def test_browser_serializes_rapid_mutations_in_revision_order(
     page: Page, app_url: str
 ) -> None:
@@ -66,21 +82,21 @@ def test_browser_serializes_rapid_mutations_in_revision_order(
 
     _rename(page, "First mutation")
     _rename(page, "Second mutation")
-    puts = page.evaluate("() => window.__m33Stub.waitForPuts(1)")
+    puts = _wait(page, "window.__m33Stub.waitForPuts(1)")
     assert len(puts) == 1
-    assert puts[0]["revision"] == 7
-    assert puts[0]["threads"][0]["title"] == "First mutation"
+    assert puts[0]["path"] == "/api/v1/threads/1"
+    assert puts[0]["body"]["revision"] == 7
+    assert puts[0]["body"]["thread"]["title"] == "First mutation"
 
-    puts = page.evaluate(
-        """() => {
-          const barrier = window.__m33Stub.waitForPuts(2);
-          window.__m33Stub.respond(0, 200, {status: 'ok', revision: 8});
-          return barrier;
-        }"""
+    puts = _wait(
+        page,
+        "(() => { const barrier = window.__m33Stub.waitForPuts(2); "
+        "window.__m33Stub.respond(0, 200, {status: 'ok', revision: 8}); "
+        "return barrier; })()",
     )
     assert len(puts) == 2
-    assert puts[1]["revision"] == 8
-    assert puts[1]["threads"][0]["title"] == "Second mutation"
+    assert puts[1]["body"]["revision"] == 8
+    assert puts[1]["body"]["thread"]["title"] == "Second mutation"
     page.evaluate(
         "() => window.__m33Stub.respond(1, 200, {status: 'ok', revision: 9})"
     )
@@ -117,16 +133,15 @@ def _install_conflict_stub(page: Page) -> None:
         window.fetch = function(input, init) {
           const url = typeof input === 'string' ? input : input.url;
           const method = String((init && init.method) || input.method || 'GET').toUpperCase();
-          if (!url.endsWith('/api/v1/threads')) return nativeFetch(input, init);
-          if (method === 'GET') {
+          if (url.endsWith('/api/v1/threads') && method === 'GET') {
             return Promise.resolve(new Response(JSON.stringify({
-              threads: [{id: 1, title: 'Initial', messages: [], model: 'alpha-model', locked: false}],
+              threads: [{id: 1, title: 'Initial', messages: [], model: 'alpha-model', locked: false, revision: 3}],
               revision: 3,
               quarantined: false
             }), {status: 200, headers: {'Content-Type': 'application/json'}}));
           }
-          if (method === 'PUT') {
-            stub.puts.push(JSON.parse(init.body));
+          if (/\\/api\\/v1\\/threads(\\/\\d+)?$/.test(url) && method !== 'GET') {
+            stub.puts.push({method, body: JSON.parse(init.body)});
             stub.notifyPuts();
             return Promise.resolve(new Response(JSON.stringify({
               error: 'revision_conflict', current_revision: 4
@@ -138,21 +153,21 @@ def _install_conflict_stub(page: Page) -> None:
     )
 
 
-# AC-147 — 409 shows the exact warning and latches all later writes.
+# AC-201 — a 409 on a chat save shows the exact warning and latches all writes.
 def test_browser_conflict_warns_and_stops_further_writes(
     page: Page, app_url: str
 ) -> None:
     _install_conflict_stub(page)
     page.goto(app_url)
     _rename(page, "stale first")
-    puts = page.evaluate("() => window.__m33Stub.waitForPuts(1)")
+    puts = _wait(page, "window.__m33Stub.waitForPuts(1)")
     assert len(puts) == 1
     expect(page.get_by_test_id("save-status")).to_have_text(
         "history changed elsewhere — reload required"
     )
 
     _rename(page, "stale second")
-    page.evaluate("() => window.__m33Stub.waitForTitle('stale second')")
+    _wait(page, "window.__m33Stub.waitForTitle('stale second')")
     assert page.evaluate("window.__m33Stub.puts.length") == 1
 
 
@@ -182,16 +197,15 @@ def _install_reload_stub(page: Page) -> None:
         window.fetch = function(input, init) {
           const url = typeof input === 'string' ? input : input.url;
           const method = String((init && init.method) || input.method || 'GET').toUpperCase();
-          if (!url.endsWith('/api/v1/threads')) return nativeFetch(input, init);
-          if (method === 'GET') {
+          if (url.endsWith('/api/v1/threads') && method === 'GET') {
             const state = readState();
             return Promise.resolve(new Response(JSON.stringify({
-              threads: [{id: 1, title: state.title, messages: [], model: 'alpha-model', locked: false}],
-              revision: state.revision,
+              threads: [{id: 1, title: state.title, messages: [], model: 'alpha-model', locked: false, revision: state.revision}],
+              revision: 20,
               quarantined: false
             }), {status: 200, headers: {'Content-Type': 'application/json'}}));
           }
-          if (method === 'PUT') {
+          if (/\\/api\\/v1\\/threads\\/\\d+$/.test(url) && method === 'PUT') {
             const body = JSON.parse(init.body);
             const puts = readPuts();
             puts.push(body);
@@ -206,7 +220,7 @@ def _install_reload_stub(page: Page) -> None:
               }), {status: 409, headers: {'Content-Type': 'application/json'}}));
             }
             sessionStorage.setItem(stateKey, JSON.stringify({
-              revision: 5, title: body.threads[0].title
+              revision: 5, title: body.thread.title
             }));
             stub.notifyPuts();
             return Promise.resolve(new Response(JSON.stringify({
@@ -226,7 +240,7 @@ def test_reload_after_conflict_hydrates_and_allows_a_new_save(
     _install_reload_stub(page)
     page.goto(app_url)
     _rename(page, "stale edit")
-    page.evaluate("() => window.__m33Stub.waitForPuts(1)")
+    _wait(page, "window.__m33Stub.waitForPuts(1)")
     expect(page.get_by_test_id("save-status")).to_have_text(
         "history changed elsewhere — reload required"
     )
@@ -237,6 +251,6 @@ def test_reload_after_conflict_hydrates_and_allows_a_new_save(
     )
     expect(page.get_by_test_id("save-status")).to_have_text("")
     _rename(page, "fresh edit")
-    puts = page.evaluate("() => window.__m33Stub.waitForPuts(2)")
+    puts = _wait(page, "window.__m33Stub.waitForPuts(2)")
     assert puts[1]["revision"] == 4
-    assert puts[1]["threads"][0]["title"] == "fresh edit"
+    assert puts[1]["thread"]["title"] == "fresh edit"

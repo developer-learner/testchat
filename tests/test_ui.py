@@ -348,10 +348,14 @@ def test_search_hit_count_and_navigation(page: Page, app_url: str) -> None:
 
 
 # AC-75/AC-76 [M23 — persist failures are visible, recovery clears]
+# AC-203 [v127 — the same for per-thread saves]
+_THREAD_SAVES = re.compile(r".*/api/v1/threads(/\d+)?$")
+
+
 def test_save_failure_indicator_shows_then_clears(page: Page, app_url: str) -> None:
     page.goto(app_url)
     page.route(
-        "**/api/v1/threads",
+        _THREAD_SAVES,
         lambda route: route.fulfill(status=500, body="{}")
         if route.request.method == "PUT"
         else route.fallback(),
@@ -360,7 +364,7 @@ def test_save_failure_indicator_shows_then_clears(page: Page, app_url: str) -> N
     _await_reply(page)
     indicator = page.get_by_test_id("save-status")
     expect(indicator).to_contain_text("not saved")     # AC-75
-    page.unroute("**/api/v1/threads")
+    page.unroute(_THREAD_SAVES)
     _send(page, "message after saves recover")
     _await_reply(page, count=2)  # same thread: two replies now
     expect(indicator).to_have_text("")                 # AC-76
@@ -386,7 +390,7 @@ def test_history_status_empty_when_healthy(page: Page, app_url: str) -> None:
 def test_bubble_meta_includes_date_for_past_messages(page: Page, app_url: str) -> None:
     from datetime import datetime, timedelta
 
-    past = datetime.now() - timedelta(days=3)
+    past = datetime.now() - timedelta(days=3)  # noqa: DTZ005 — the UI renders local wall-clock time
     expected_time = past.strftime("%H:%M")
     revision = page.request.get(app_url + "/api/v1/threads").json()["revision"]
     payload = {"revision": revision, "threads": [{

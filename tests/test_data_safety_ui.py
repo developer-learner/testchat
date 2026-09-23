@@ -1,9 +1,25 @@
-"""Frozen browser oracles for the v88 conversation data-safety milestone."""
+"""Frozen browser oracles for the v88 conversation data-safety milestone.
+
+v127: a single-chat delete is its own per-thread DELETE (AC-202 supersedes
+AC-156/AC-157); hydration recovery (AC-158) now observes a per-thread save.
+"""
 
 import json
 import urllib.request
 
 from playwright.sync_api import Page, expect
+
+
+def _wait(page: Page, promise_js: str, ms: int = 10000):
+    """Await an in-page promise, failing fast instead of hanging the suite."""
+    label = json.dumps(promise_js)
+    return page.evaluate(
+        f"""() => Promise.race([
+            Promise.resolve({promise_js}),
+            new Promise((_, reject) => setTimeout(
+                () => reject(new Error('timed out after {ms} ms: ' + {label})), {ms}))
+        ])"""
+    )
 
 
 def _request_json(url: str, method: str = "GET", payload: dict | None = None) -> dict:
@@ -37,6 +53,7 @@ def _seed_threads(app_url: str, threads: list[dict]) -> None:
     )
 
 
+# AC-202 — deleting one chat sends only its per-thread DELETE.
 def test_delete_one_thread_survives_reload(page: Page, app_url: str) -> None:
     survivors = [_thread(1101, "alpha survivor"), _thread(1103, "gamma survivor")]
     _seed_threads(app_url, [survivors[0], _thread(1102, "delete only me"), survivors[1]])
@@ -45,14 +62,17 @@ def test_delete_one_thread_survives_reload(page: Page, app_url: str) -> None:
         (function () {
           var nativeFetch = window.fetch.bind(window);
           var finish;
+          window.__tcMutations = [];
           window.__tcMutationFinished = new Promise(function (resolve) { finish = resolve; });
           window.fetch = function (input, init) {
             var url = typeof input === 'string' ? input : input.url;
             var method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
             var result = nativeFetch(input, init);
-            if (url.endsWith('/api/v1/threads') && (method === 'PUT' || method === 'DELETE')) {
+            if (/\\/api\\/v1\\/threads(\\/\\d+)?$/.test(url) && (method === 'PUT' || method === 'DELETE')) {
+              var path = new URL(url, location.href).pathname;
+              window.__tcMutations.push({method: method, path: path});
               return result.then(function (response) {
-                finish({method: method, status: response.status});
+                if (method === 'DELETE') finish({method: method, path: path, status: response.status});
                 return response;
               });
             }
@@ -68,7 +88,10 @@ def test_delete_one_thread_survives_reload(page: Page, app_url: str) -> None:
     owning_row.hover()
     owning_row.get_by_test_id("thread-delete-btn").click()
     page.get_by_test_id("delete-confirm").click()
-    mutation = page.evaluate("window.__tcMutationFinished")
+    mutation = _wait(page, "window.__tcMutationFinished")
+    whole_history_writes = page.evaluate(
+        "window.__tcMutations.filter(m => m.path === '/api/v1/threads').length"
+    )
     page.reload()
 
     items = page.get_by_test_id("thread-item")
@@ -78,9 +101,15 @@ def test_delete_one_thread_survives_reload(page: Page, app_url: str) -> None:
 
     assert (
         mutation,
+        whole_history_writes,
         [thread["id"] for thread in stored["threads"]],
         all(title in " ".join(visible_titles) for title in ("alpha survivor", "gamma survivor")),
-    ) == ({"method": "PUT", "status": 200}, [1101, 1103], True)
+    ) == (
+        {"method": "DELETE", "path": "/api/v1/threads/1102", "status": 200},
+        0,
+        [1101, 1103],
+        True,
+    )
 
 
 def test_hydration_failure_warns_retries_and_recovers_saving(
@@ -111,7 +140,7 @@ def test_hydration_failure_warns_retries_and_recovers_saving(
               }
             }
             var result = nativeFetch(input, init);
-            if (url.endsWith('/api/v1/threads') && method === 'PUT') {
+            if (/\\/api\\/v1\\/threads(\\/\\d+)?$/.test(url) && method === 'PUT') {
               state.puts += 1;
               return result.then(function (response) {
                 state.resolvePut({method: method, status: response.status});
@@ -133,7 +162,7 @@ def test_hydration_failure_warns_retries_and_recovers_saving(
     expect(page.get_by_test_id("history-status")).to_have_text("")
 
     page.get_by_test_id("new-thread-btn").click()
-    persisted = page.evaluate("window.__tcHydration.putSeen")
+    persisted = _wait(page, "window.__tcHydration.putSeen")
     expect(page.get_by_test_id("thread-item")).to_have_count(2)
     stored = _request_json(f"{app_url}/api/v1/threads")
 

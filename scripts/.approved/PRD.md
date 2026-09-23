@@ -496,6 +496,111 @@ blocks above stand as written).
   supersedes AC-31, AC-132, and AC-167; the internal script-model management
   routes remain for the local fallback and rollback.
 
+### Per-thread saving (v127)
+
+Scope brief: the outcome is that two open tabs
+editing different chats never conflict, and a save sends one chat instead of
+the whole history. Essential scope: per-thread save and delete routes with a
+per-thread revision, the browser saving only changed chats, and regression
+oracles for the three 2026-09-23 direct fixes. Deferred: storing each chat in
+its own file (saves still rewrite one snapshot file), live cross-tab sync, and
+collision-free new-chat ids. Every task is on the critical path: storage owns
+the revision rule, the API exposes it, app.js hands the hydrated chats to the
+saver, threads.js saves per chat; the three regression files are
+acceptance-only. Expected time band: 40–80 minutes of pipeline time.
+
+* **AC-189:** WHEN PUT `/api/v1/threads/{thread_id}` supplies that thread's
+  current revision (0 for a thread not yet stored, or stored without a
+  revision), THE SYSTEM SHALL store the submitted thread with revision n+1 and
+  return HTTP 200 exactly `{"status":"ok","revision":n+1}`, such that a
+  subsequent GET returns that thread with `revision` n+1 and every other
+  thread unchanged.
+
+* **AC-190:** WHEN PUT `/api/v1/threads/{thread_id}` supplies a revision other
+  than that thread's current revision, including a positive revision for a
+  thread no longer stored, THE SYSTEM SHALL return HTTP 409 exactly
+  `{"error":"revision_conflict","current_revision":<that thread's current>}`
+  such that the primary and one-generation backup are byte-for-byte
+  unchanged.
+
+* **AC-191:** WHEN two saves target two different threads, each supplying
+  its own thread's current revision, THE SYSTEM SHALL accept both such that a
+  subsequent GET returns both edits.
+
+* **AC-192:** WHEN PUT `/api/v1/threads/{thread_id}` omits its required
+  non-negative integer `revision`, THE SYSTEM SHALL return HTTP 422 such that
+  no persistence artifact is created or changed.
+
+* **AC-193:** WHEN the body thread id of PUT `/api/v1/threads/{thread_id}`
+  differs from the path id, THE SYSTEM SHALL return HTTP 422 such that no
+  persistence artifact is created or changed.
+
+* **AC-194:** WHEN DELETE `/api/v1/threads/{thread_id}` supplies that
+  thread's current revision, THE SYSTEM SHALL delete exactly that thread and
+  return HTTP 200 exactly `{"status":"ok"}`, such that a subsequent GET lists
+  every other thread unchanged and not the deleted one.
+
+* **AC-195:** WHEN DELETE `/api/v1/threads/{thread_id}` supplies a stale
+  revision, THE SYSTEM SHALL return HTTP 409 exactly
+  `{"error":"revision_conflict","current_revision":<current>}` such that the
+  primary and one-generation backup are byte-for-byte unchanged.
+
+* **AC-196:** WHEN DELETE `/api/v1/threads/{thread_id}` names a thread that
+  is not stored, THE SYSTEM SHALL return HTTP 200 such that the primary and
+  one-generation backup are byte-for-byte unchanged.
+
+* **AC-197:** WHEN a per-thread save finds a primary snapshot that exists but
+  is not a readable threads document, THE SYSTEM SHALL return HTTP 503 exactly
+  `{"detail":"snapshot unavailable"}` such that the primary bytes are
+  unchanged.
+
+* **AC-198:** WHEN two process-local saves of the same thread concurrently
+  supply the same current revision, THE SYSTEM SHALL accept exactly one and
+  reject the other with HTTP 409, such that the stored thread and its
+  revision identify the accepted winner.
+
+* **AC-199:** WHEN the user changes one chat's title or messages, THE SYSTEM
+  SHALL send PUT `/api/v1/threads/{id}` for that chat alone, carrying that
+  chat's last accepted revision, such that the request body holds a single
+  `thread` and no `threads` array. A change to a chat's model alone is saved
+  with that chat's next title or message change.
+
+* **AC-200:** WHEN one page produces several chat changes before an earlier
+  save completes, THE SYSTEM SHALL send the saves one at a time in change
+  order, each carrying its chat's latest accepted revision, such that a
+  second save of the same chat carries the revision the first save returned.
+
+* **AC-201:** WHEN a per-thread save or delete receives HTTP 409, THE SYSTEM
+  SHALL show exactly `history changed elsewhere — reload required` in
+  `save-status` such that the page sends no further save or delete request.
+
+* **AC-202:** WHEN the user confirms deletion of one chat, THE SYSTEM SHALL
+  send DELETE `/api/v1/threads/{id}` with that chat's revision and no
+  whole-history save, such that after a reload all and only the surviving
+  chats appear.
+
+* **AC-203:** WHEN a per-thread save fails with any status other than 409,
+  or cannot reach the server, THE SYSTEM SHALL show `not saved` in
+  `save-status` such that the next accepted save clears it and resends that
+  chat.
+
+* **AC-204:** WHEN two tabs that loaded the same history each edit a
+  different chat, THE SYSTEM SHALL save both edits without showing the
+  conflict warning in either tab, such that after a reload both edits appear.
+
+* **AC-205:** WHILE a chat request waits on its pre-stream model checks, THE
+  SYSTEM SHALL keep serving other API requests, such that a concurrent GET
+  `/api/v1/settings` completes before those checks finish.
+
+* **AC-206:** WHEN the model stream sends a chunk whose `choices` list is
+  empty or missing, THE SYSTEM SHALL skip that chunk, such that the tokens
+  before and after it reach the client and no error event is emitted.
+
+* **AC-207:** WHEN a script model's server was started outside the app, THE
+  SYSTEM SHALL find its process for the RAM readout by the port in its ready
+  URL and never by process-name match, such that the reported RSS belongs to
+  the process listening on that port.
+
 ## Out of scope
 
 * **Clear-all redesign or removal.** DELETE `/api/v1/threads` retains its
@@ -540,6 +645,9 @@ blocks above stand as written).
   breadcrumb — the dropdown is the signal.
 * **Database storage, accounts, authentication, multi-user tenancy, cloud or
   cross-machine sync.**
+* **One file per chat.** v127 saves one chat per request, but the server
+  still rewrites the single snapshot file; splitting storage per chat is a
+  later milestone.
 * **Live cross-tab synchronization, automatic reload, automatic merge,
   conflict-resolution UI, or background retry after a 409.**
 * **Draft preservation or partial in-flight reply persistence.**
@@ -561,6 +669,10 @@ blocks above stand as written).
   accepted — a stale tab is rejected with a conflict (AC-143..AC-147) rather
   than overwriting newer history. Another tab's accepted state becomes visible
   after that tab reloads (AC-148).
+* **New chats in two tabs (v127).** Chat ids are still assigned per tab from
+  the highest id that tab loaded, so two tabs that each create a new chat
+  before either reloads can pick the same id; the second save is refused with
+  the reload warning (AC-201) rather than overwriting the first.
 * **Rename during message stream.** If the user renames the thread from the
   header while an assistant reply is streaming, the rename commits and the
   streaming reply continues in the same thread record — a pure consequence of
@@ -602,3 +714,6 @@ blocks above stand as written).
 11. Place a syntactically valid snapshot with an invalid message role at the
     data path, then load the page: no malformed thread is rendered, the API
     reports quarantine, and the original bytes remain in a `.corrupt-*` file.
+12. Open the app in two tabs. In tab A rename one chat; in tab B rename a
+    different chat. Neither tab shows a warning. Reload either tab: both new
+    names are there.
