@@ -1,0 +1,74 @@
+<<<<<<< SEARCH
+  function _doThreadMutation(entry) {
+    var id = entry.payload.id;
+    var body = { revision: _hydratedRevision };
+    if (entry.type === 'THREAD_PUT') {
+      body.threads = _captureSnapshot();
+    }
+    fetch('/api/v1/threads', {
+      method: entry.type === 'THREAD_PUT' ? 'PUT' : 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (res) {
+      if (res.status === 409) {
+        return res.json().then(function () { _handleConflict(); });
+      }
+      if (!res.ok) {
+        el('status-save').textContent = 'not saved';
+        delete _savedThreads[id];
+        _persistQueue.shift();
+        _persistRunning = false;
+        _drainPersistQueue();
+        return;
+      }
+      return res.json().then(function (data) {
+        _hydratedRevision = data.revision;
+        if (entry.type === 'THREAD_DELETE') {
+          delete _threadRevisions[id];
+        }
+        el('status-save').textContent = '';
+        _persistQueue.shift();
+        _persistRunning = false;
+        _drainPersistQueue();
+      });
+    }).catch(function () {
+      el('status-save').textContent = 'not saved';
+      delete _savedThreads[id];
+      _persistQueue.shift();
+      _persistRunning = false;
+      _drainPersistQueue();
+    });
+  }
+=======
+  function _doThreadMutation(entry) {
+    var id = entry.payload.id;
+    var isPut = entry.type === 'THREAD_PUT';
+    var body = { revision: _threadRevisions[id] || 0 };
+    if (isPut) body.thread = entry.payload.thread;
+    fetch('/api/v1/threads/' + id, {
+      method: isPut ? 'PUT' : 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (res) {
+      if (res.status === 409) {
+        return res.json().then(function () { _handleConflict(); });
+      }
+      if (!res.ok) { _threadSaveFailed(id); return; }
+      return res.json().then(function (data) {
+        if (isPut) { _threadRevisions[id] = data.revision; } else { delete _threadRevisions[id]; }
+        el('status-save').textContent = '';
+        _persistQueue.shift();
+        _persistRunning = false;
+        _drainPersistQueue();
+      });
+    }).catch(function () { _threadSaveFailed(id); });
+  }
+
+  function _threadSaveFailed(id) {
+    el('status-save').textContent = 'not saved';
+    delete _savedThreads[id];
+    _persistQueue.shift();
+    _persistRunning = false;
+    _drainPersistQueue();
+  }
+>>>>>>> REPLACE

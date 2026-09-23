@@ -1,3 +1,63 @@
+The per-chat pieces are already in the file: `_savedThreads`, `_threadRevisions`, `_fingerprint`, `_threadPayload`, `markHydrated`, the `THREAD_PUT`/`THREAD_DELETE` dispatch in `_drainPersistQueue`, `persistThreads`, the `deleteThread` call and the `markHydrated` export. Only `_doThreadMutation` is wrong: it posts the whole history. Replace the entire `function _doThreadMutation(entry) { ... }` with exactly this code, which also adds `_threadSaveFailed` right after it:
+
+```
+  function _doThreadMutation(entry) {
+    var id = entry.payload.id;
+    var isPut = entry.type === 'THREAD_PUT';
+    var body = { revision: _threadRevisions[id] || 0 };
+    if (isPut) body.thread = entry.payload.thread;
+    fetch('/api/v1/threads/' + id, {
+      method: isPut ? 'PUT' : 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (res) {
+      if (res.status === 409) {
+        return res.json().then(function () { _handleConflict(); });
+      }
+      if (!res.ok) { _threadSaveFailed(id); return; }
+      return res.json().then(function (data) {
+        if (isPut) { _threadRevisions[id] = data.revision; } else { delete _threadRevisions[id]; }
+        el('status-save').textContent = '';
+        _persistQueue.shift();
+        _persistRunning = false;
+        _drainPersistQueue();
+      });
+    }).catch(function () { _threadSaveFailed(id); });
+  }
+
+  function _threadSaveFailed(id) {
+    el('status-save').textContent = 'not saved';
+    delete _savedThreads[id];
+    _persistQueue.shift();
+    _persistRunning = false;
+    _drainPersistQueue();
+  }
+```
+
+Self-verify: `_doThreadMutation` fetches `'/api/v1/threads/' + id`, sends `revision: _threadRevisions[id] || 0`, and reads neither `_hydratedRevision` nor `_captureSnapshot`.
+
+Write EXACTLY one file: src/static/threads.js — the gate rejects any other change, including new files. Before finishing, re-open src/static/threads.js and confirm it satisfies every acceptance condition in this brief.
+
+The previous attempt failed with: mapped tests failing: tests/test_data_safety_ui.py::test_delete_one_thread_survives_reload[chromium]|tests/test_ui_persistence_conflicts.py::test_browser_serializes_rapid_mutations_in_revision_order[chromium]|tests/test_ui_persistence_conflicts.py::test_reload_after_conflict_hydrates_and_allows_a_new_save[chromium]|tests/test_ui_thread_saves.py::test_editing_one_chat_saves_only_that_chat[chromium]|tests/test_ui_thread_saves.py::test_two_tabs_editing_different_chats_both_persist[chromium] — tests/test_data_safety_ui.py::test_delete_one_thread_survives_reload[chromium]: AssertionError: Locator expected to have count '2' Actual value: 1 Call log: - Expect "to_have_count" with timeout 5000ms - waiting for get_by_test_id("thread-item") 14 × locator resolved to 1 element - unexpected value "1" || tests/test_ui_persistence_conflicts.py::test_browser_serializes_rapid_mutations_in_revision_order[chromium]: playwright._impl._errors.Error: Page.evaluate: Error: timed out after 10000 ms: window.__m33Stub.waitForPuts(1) at eval (eval at evaluate (:303:30), <anonymous>:4:30) || tests/test_ui_persistence_conflicts.py::test_reload_after_conflict_hydrates_and_allows_a_new_save[chromium]: playwright._impl._errors.Error: Page.evaluate: Error: timed out after 10000 ms: window.__m33Stub.waitForPuts(1) at eval (eval at evaluate (:303:30), <anonymous>:4:30). Fix the cause, do not just retry the same content. NOTE: the file may already contain a previous attempt's partial work — read its CURRENT state, find the SMALLEST remaining delta that satisfies the brief, and emit only that; if the file already satisfies the brief, reply === NO CHANGES ===. Do not re-describe or re-apply work that is already present.
+
+Reply with ONLY edit blocks in this exact format, nothing else:
+<<<<<<< SEARCH
+(an EXACT, character-for-character copy of a short existing section — 3 to 10 lines)
+=======
+(that same section with the change applied)
+>>>>>>> REPLACE
+Rules:
+- Each SEARCH must appear EXACTLY ONCE in the file. Copy it verbatim — same spaces, same quotes.
+- Several small blocks, not one big one. Do not touch code outside your blocks. Do not reformat or reorder anything.
+- Never include any line containing a think tag in a SEARCH section — anchor on nearby tag-free lines instead.
+- In new code, never write the think tag as one literal string — construct it by concatenation, e.g. '<' + 'think>'.
+- If the file already satisfies the brief, reply with exactly this line and nothing else: === NO CHANGES ===
+- Verify each SEARCH against the file one more time before answering.
+- Your reply's VERY FIRST line must be '<<<<<<< SEARCH' (or the NO CHANGES line). Do not analyze, plan, or explain anything — every design decision is already made in the brief. Prose before the blocks burns your output budget and truncates the edit mid-block.
+- Every block must be COMPLETE working code — never a stub, placeholder, or '...' body. If the brief needs a new function, write its full body in the block.
+
+### existing (src/static/threads.js)
+```
 window.TC = {
   threads: [],
   activeThreadId: null,
@@ -162,34 +222,43 @@ window.Threads = (function () {
 
   function _doThreadMutation(entry) {
     var id = entry.payload.id;
-    var isPut = entry.type === 'THREAD_PUT';
-    var body = { revision: _threadRevisions[id] || 0 };
-    if (isPut) body.thread = entry.payload.thread;
-    fetch('/api/v1/threads/' + id, {
-      method: isPut ? 'PUT' : 'DELETE',
+    var body = { revision: _hydratedRevision };
+    if (entry.type === 'THREAD_PUT') {
+      body.threads = _captureSnapshot();
+    }
+    fetch('/api/v1/threads', {
+      method: entry.type === 'THREAD_PUT' ? 'PUT' : 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     }).then(function (res) {
       if (res.status === 409) {
         return res.json().then(function () { _handleConflict(); });
       }
-      if (!res.ok) { _threadSaveFailed(id); return; }
+      if (!res.ok) {
+        el('status-save').textContent = 'not saved';
+        delete _savedThreads[id];
+        _persistQueue.shift();
+        _persistRunning = false;
+        _drainPersistQueue();
+        return;
+      }
       return res.json().then(function (data) {
-        if (isPut) { _threadRevisions[id] = data.revision; } else { delete _threadRevisions[id]; }
+        _hydratedRevision = data.revision;
+        if (entry.type === 'THREAD_DELETE') {
+          delete _threadRevisions[id];
+        }
         el('status-save').textContent = '';
         _persistQueue.shift();
         _persistRunning = false;
         _drainPersistQueue();
       });
-    }).catch(function () { _threadSaveFailed(id); });
-  }
-
-  function _threadSaveFailed(id) {
-    el('status-save').textContent = 'not saved';
-    delete _savedThreads[id];
-    _persistQueue.shift();
-    _persistRunning = false;
-    _drainPersistQueue();
+    }).catch(function () {
+      el('status-save').textContent = 'not saved';
+      delete _savedThreads[id];
+      _persistQueue.shift();
+      _persistRunning = false;
+      _drainPersistQueue();
+    });
   }
 
   // --- ERD-DELTA v73: conflict handler — clear pending, latch page, write exact string ---
@@ -698,3 +767,5 @@ function addSources(bubble, sources, notice) {
 })();
 
 
+
+```
