@@ -1,3 +1,35 @@
+Edit only src/static/threads.js.
+
+1. Below `var _conflictLatched = false;` add `var _savedThreads = {};` (chat id -> fingerprint of its last queued content) and `var _threadRevisions = {};` (chat id -> last accepted revision).
+2. Inside the `window.Threads` function, after `setHydratedRevision`, add `function _fingerprint(t)` returning `JSON.stringify({ id: t.id, title: t.title, messages: t.messages, locked: !!t.locked })` (no `model`, on purpose); `function _threadPayload(t)` returning `{ id: t.id, title: t.title, messages: t.messages, model: t.model || '', locked: !!t.locked }`; and `function markHydrated(threads)` that sets `_savedThreads[t.id] = _fingerprint(t)` and `_threadRevisions[t.id] = t.revision || 0` for each thread.
+3. In `_drainPersistQueue`, make the hydration guard also return when the head type is `'THREAD_PUT'`, and send types `'THREAD_PUT'` and `'THREAD_DELETE'` to `_doThreadMutation(entry)`.
+4. Add `function _doThreadMutation(entry)`: `id = entry.payload.id`; body `{ revision: _threadRevisions[id] || 0 }`, plus `thread: entry.payload.thread` for THREAD_PUT; `fetch('/api/v1/threads/' + id, ...)` with method PUT or DELETE and a JSON header. On 409 call `_handleConflict()`. On any other non-ok status or a rejected fetch: set `el('status-save').textContent = 'not saved'`, `delete _savedThreads[id]`, shift the queue, set `_persistRunning = false`, drain. On 200: PUT sets `_threadRevisions[id] = data.revision`, DELETE deletes it; clear `status-save`; shift, set `_persistRunning = false`, drain.
+5. Make `persistThreads()` loop over `TC.threads`: when `_fingerprint(t) !== _savedThreads[t.id]`, store the new fingerprint and `_enqueueMutation('THREAD_PUT', { id: t.id, thread: _threadPayload(t) })`. Then, for every key in `_savedThreads` with no chat left in `TC.threads`, delete the key and `_enqueueMutation('THREAD_DELETE', { id: Number(key) })`.
+6. In `deleteThread`, replace `_enqueueMutation('PUT', { threads: _captureSnapshot() });` with `persistThreads();`.
+7. Add `markHydrated: markHydrated` to the returned object.
+
+Acceptance: renaming one chat queues exactly one `THREAD_PUT` for it.
+
+Write EXACTLY one file: src/static/threads.js — the gate rejects any other change, including new files. Before finishing, re-open src/static/threads.js and confirm it satisfies every acceptance condition in this brief.
+
+Reply with ONLY edit blocks in this exact format, nothing else:
+<<<<<<< SEARCH
+(an EXACT, character-for-character copy of a short existing section — 3 to 10 lines)
+=======
+(that same section with the change applied)
+>>>>>>> REPLACE
+Rules:
+- Each SEARCH must appear EXACTLY ONCE in the file. Copy it verbatim — same spaces, same quotes.
+- Several small blocks, not one big one. Do not touch code outside your blocks. Do not reformat or reorder anything.
+- Never include any line containing a think tag in a SEARCH section — anchor on nearby tag-free lines instead.
+- In new code, never write the think tag as one literal string — construct it by concatenation, e.g. '<' + 'think>'.
+- If the file already satisfies the brief, reply with exactly this line and nothing else: === NO CHANGES ===
+- Verify each SEARCH against the file one more time before answering.
+- Your reply's VERY FIRST line must be '<<<<<<< SEARCH' (or the NO CHANGES line). Do not analyze, plan, or explain anything — every design decision is already made in the brief. Prose before the blocks burns your output budget and truncates the edit mid-block.
+- Every block must be COMPLETE working code — never a stub, placeholder, or '...' body. If the brief needs a new function, write its full body in the block.
+
+### existing (src/static/threads.js)
+```
 window.TC = {
   threads: [],
   activeThreadId: null,
@@ -31,8 +63,6 @@ var _hydratedRevision = null;       // set by app.js during startup hydration vi
 var _persistQueue = [];             // ordered queue of { type: 'PUT'|'DELETE', snapshot: ... }
 var _persistRunning = false;        // true while a fetch is in-flight (serializes the queue)
 var _conflictLatched = false;       // true after a 409 — blocks every later PUT/DELETE until reload
-var _savedThreads = {};             // chat id -> fingerprint of its last queued content
-var _threadRevisions = {};          // chat id -> last accepted revision
 
 window.Threads = (function () {
   var TC = window.TC;
@@ -42,22 +72,6 @@ window.Threads = (function () {
   // --- ERD-DELTA v73: revision hook (called by app.js during startup hydration) ---
   function setHydratedRevision(rev) {
     _hydratedRevision = rev;
-  }
-
-  function _fingerprint(t) {
-    return JSON.stringify({ id: t.id, title: t.title, messages: t.messages, locked: !!t.locked });
-  }
-
-  function _threadPayload(t) {
-    return { id: t.id, title: t.title, messages: t.messages, model: t.model || '', locked: !!t.locked };
-  }
-
-  function markHydrated(threads) {
-    for (var i = 0; i < threads.length; i++) {
-      var t = threads[i];
-      _savedThreads[t.id] = _fingerprint(t);
-      _threadRevisions[t.id] = t.revision || 0;
-    }
   }
 
   // --- ERD-DELTA v73: snapshot capture helpers (called at enqueue time) ---
@@ -78,15 +92,12 @@ window.Threads = (function () {
   function _drainPersistQueue() {
     if (_persistRunning || _conflictLatched || _persistQueue.length === 0) return;
     if (_hydratedRevision == null && _persistQueue[0].type === 'PUT') return; // cannot PUT without a hydrated revision
-    if (_persistQueue[0].type === 'THREAD_PUT') return; // cannot persist per-thread without a hydrated revision
     _persistRunning = true;
     var entry = _persistQueue[0];          // do NOT shift yet — only on 200 or after clearing on 409
     if (entry.type === 'PUT') {
       _doPersistPut(entry);
     } else if (entry.type === 'DELETE') {
       _doPersistDelete(entry);
-    } else if (entry.type === 'THREAD_PUT' || entry.type === 'THREAD_DELETE') {
-      _doThreadMutation(entry);
     } else {
       // safety: skip unknown entries and continue draining
       _persistQueue.shift();
@@ -161,48 +172,6 @@ window.Threads = (function () {
     });
   }
 
-  function _doThreadMutation(entry) {
-    var id = entry.payload.id;
-    var body = { revision: _threadRevisions[id] || 0 };
-    if (entry.type === 'THREAD_PUT') {
-      body.thread = entry.payload.thread;
-    }
-    fetch('/api/v1/threads/' + id, {
-      method: entry.type === 'THREAD_PUT' ? 'PUT' : 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    }).then(function (res) {
-      if (res.status === 409) {
-        return res.json().then(function () { _handleConflict(); });
-      }
-      if (!res.ok) {
-        el('status-save').textContent = 'not saved';
-        delete _savedThreads[id];
-        _persistQueue.shift();
-        _persistRunning = false;
-        _drainPersistQueue();
-        return;
-      }
-      return res.json().then(function (data) {
-        if (entry.type === 'THREAD_PUT') {
-          _threadRevisions[id] = data.revision;
-        } else {
-          delete _threadRevisions[id];
-        }
-        el('status-save').textContent = '';
-        _persistQueue.shift();
-        _persistRunning = false;
-        _drainPersistQueue();
-      });
-    }).catch(function () {
-      el('status-save').textContent = 'not saved';
-      delete _savedThreads[id];
-      _persistQueue.shift();
-      _persistRunning = false;
-      _drainPersistQueue();
-    });
-  }
-
   // --- ERD-DELTA v73: conflict handler — clear pending, latch page, write exact string ---
   function _handleConflict() {
     _conflictLatched = true;
@@ -212,19 +181,8 @@ window.Threads = (function () {
   }
 
   function persistThreads() {
-    for (var i = 0; i < TC.threads.length; i++) {
-      var t = TC.threads[i];
-      if (_fingerprint(t) !== _savedThreads[t.id]) {
-        _savedThreads[t.id] = _fingerprint(t);
-        _enqueueMutation('THREAD_PUT', { id: t.id, thread: _threadPayload(t) });
-      }
-    }
-    for (var key in _savedThreads) {
-      if (!TC.threads.some(function (t) { return t.id === Number(key); })) {
-        delete _savedThreads[key];
-        _enqueueMutation('THREAD_DELETE', { id: Number(key) });
-      }
-    }
+    // ERD-DELTA v73: enqueue a PUT with its own snapshot captured at call time
+    _enqueueMutation('PUT', { threads: _captureSnapshot() });
   }
 
   function saveThreadModelState() {
@@ -565,7 +523,7 @@ function addSources(bubble, sources, notice) {
       // Re-render the sidebar immediately so the UI reflects the survivors.
       renderSidebar();
       // Enqueue a revisioned PUT with the survivor snapshot to persist the change.
-      persistThreads();
+      _enqueueMutation('PUT', { threads: _captureSnapshot() });
       if (TC.activeThreadId === id) {
         if (TC.threads.length) {
           // AC-122/123: fall back to the NEWEST remaining thread — the row the
@@ -703,9 +661,10 @@ function addSources(bubble, sources, notice) {
       thread.locked = true;
     },
     // ERD-DELTA v73: hook for app.js to install the GET revision before any mutation can enqueue
-    setHydratedRevision: setHydratedRevision,
-    markHydrated: markHydrated
+    setHydratedRevision: setHydratedRevision
   };
 })();
 
 
+
+```
