@@ -1,0 +1,12 @@
+<<<<<<< SEARCH
+              for (var i = 0; i < TC.threads.length; i++) {
+                if (TC.threads[i].id > TC.threadCounter) TC.threadCounter = TC.threads[i].id;
+              }
+              // AC-123: open the NEWEST thread — the one the sidebar renders at
+=======
+              for (var i = 0; i < TC.threads.length; i++) {
+                if (TC.threads[i].id > TC.threadCounter) TC.threadCounter = TC.threads[i].id;
+              }
+              if (Threads.markHydrated) Threads.markHydrated(TC.threads);
+              // AC-123: open the NEWEST thread — the one the sidebar renders at
+>>>>>>> REPLACE

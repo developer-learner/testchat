@@ -1,3 +1,29 @@
+Edit only src/static/app.js. In the startup hydration success handler, inside `if (data.threads && data.threads.length > 0) {`, directly after the `for` loop that sets `TC.threadCounter`, add exactly this line:
+
+`if (Threads.markHydrated) Threads.markHydrated(TC.threads);`
+
+Do not change any other line. Acceptance: exactly one line added at that position; the rest of the file is byte-identical.
+
+Write EXACTLY one file: src/static/app.js — the gate rejects any other change, including new files. Before finishing, re-open src/static/app.js and confirm it satisfies every acceptance condition in this brief.
+
+Reply with ONLY edit blocks in this exact format, nothing else:
+<<<<<<< SEARCH
+(an EXACT, character-for-character copy of a short existing section — 3 to 10 lines)
+=======
+(that same section with the change applied)
+>>>>>>> REPLACE
+Rules:
+- Each SEARCH must appear EXACTLY ONCE in the file. Copy it verbatim — same spaces, same quotes.
+- Several small blocks, not one big one. Do not touch code outside your blocks. Do not reformat or reorder anything.
+- Never include any line containing a think tag in a SEARCH section — anchor on nearby tag-free lines instead.
+- In new code, never write the think tag as one literal string — construct it by concatenation, e.g. '<' + 'think>'.
+- If the file already satisfies the brief, reply with exactly this line and nothing else: === NO CHANGES ===
+- Verify each SEARCH against the file one more time before answering.
+- Your reply's VERY FIRST line must be '<<<<<<< SEARCH' (or the NO CHANGES line). Do not analyze, plan, or explain anything — every design decision is already made in the brief. Prose before the blocks burns your output budget and truncates the edit mid-block.
+- Every block must be COMPLETE working code — never a stub, placeholder, or '...' body. If the brief needs a new function, write its full body in the block.
+
+### existing (src/static/app.js)
+```
     (function () {
       var TC = window.TC;
       var MD = window.MD;
@@ -549,7 +575,6 @@
               for (var i = 0; i < TC.threads.length; i++) {
                 if (TC.threads[i].id > TC.threadCounter) TC.threadCounter = TC.threads[i].id;
               }
-              if (Threads.markHydrated) Threads.markHydrated(TC.threads);
               // AC-123: open the NEWEST thread — the one the sidebar renders at
               // the top. threads[] is oldest-first, so that is the last element,
               // not the first. No last-opened pin is restored.
@@ -574,3 +599,5 @@
       window.Catalog.fetchModels().then(pollStatus);
       input.focus();
     })();
+
+```
