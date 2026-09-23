@@ -278,18 +278,6 @@ def _terminate_process(process: subprocess.Popen) -> None:
         process.kill()
 
 
-def _unload_other_script_models(model_id: str) -> None:
-    """Mutual exclusion: script models are RAM-heavy, only one runs at a time."""
-    for other_id in SCRIPT_MODELS:
-        if other_id == model_id:
-            continue
-        if _get_process(other_id) is not None or is_script_model_loaded(other_id):
-            logger.info("Unloading %s before loading %s", other_id, model_id)
-            unload_script_model(other_id)
-            if is_script_model_loaded(other_id):
-                raise RuntimeError(f"failed to evict {other_id}")
-
-
 @_synchronized
 def load_script_model(model_id: str) -> dict:
     entry = SCRIPT_MODELS[model_id]
@@ -297,6 +285,7 @@ def load_script_model(model_id: str) -> dict:
     if is_script_model_loaded(model_id):
         return {"status": "loaded"}
 
+    # Mutual exclusion: script models are RAM-heavy, only one runs at a time.
     # Evict any other script model before spawning.
     for other_id in SCRIPT_MODELS:
         if other_id == model_id:

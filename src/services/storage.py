@@ -52,18 +52,26 @@ def _extract_threads(data: dict) -> list[dict]:
     return threads
 
 
-def _quarantine_file(path: str) -> None:
-    """Move a corrupt file to a quarantine location by appending .quarantine."""
-    quarantine_path = f"{path}.quarantine"
+def _quarantine_corrupt(path: str, *, must_succeed: bool) -> None:
+    """Move a corrupt snapshot aside to a timestamped .corrupt-* file.
+
+    When the move fails and `must_succeed` is set, raise
+    SnapshotUnavailableError rather than let the caller load an empty list
+    over a primary that is still on disk.
+    """
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    corrupt_path = f"{path}.corrupt-{stamp}"
     try:
-        os.rename(path, quarantine_path)
+        os.rename(path, corrupt_path)
     except OSError as rename_exc:
         logger.warning(
-            "Could not quarantine corrupt snapshot: primary=%s quarantine=%s error=%s",
+            "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
             path,
-            quarantine_path,
+            corrupt_path,
             rename_exc,
         )
+        if must_succeed:
+            raise SnapshotUnavailableError from rename_exc
 
 
 def load_versioned_snapshot(validator=None) -> tuple[list[dict], int]:
@@ -76,50 +84,16 @@ def load_versioned_snapshot(validator=None) -> tuple[list[dict], int]:
             return [], 0
         except (json.JSONDecodeError, ValueError, OSError):
             # Corrupt primary — quarantine and load empty.
-            stamp = time.strftime("%Y%m%d-%H%M%S")
-            corrupt_path = f"{path}.corrupt-{stamp}"
-            try:
-                os.rename(path, corrupt_path)
-            except OSError as rename_exc:
-                logger.warning(
-                    "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
-                    path,
-                    corrupt_path,
-                    rename_exc,
-                )
-                raise SnapshotUnavailableError from rename_exc
+            _quarantine_corrupt(path, must_succeed=True)
             return [], 0
         if validator is not None:
             try:
                 result = validator(data)
-            except (ValueError, Exception):
+            except Exception:
                 logger.warning("Snapshot validation failed")
-                stamp = time.strftime("%Y%m%d-%H%M%S")
-                corrupt_path = f"{path}.corrupt-{stamp}"
-                try:
-                    os.rename(path, corrupt_path)
-                except OSError as rename_exc:
-                    logger.warning(
-                        "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
-                        path,
-                        corrupt_path,
-                        rename_exc,
-                    )
-                    raise SnapshotUnavailableError from rename_exc
-                return [], 0
+                result = False
             if result is False:
-                stamp = time.strftime("%Y%m%d-%H%M%S")
-                corrupt_path = f"{path}.corrupt-{stamp}"
-                try:
-                    os.rename(path, corrupt_path)
-                except OSError as rename_exc:
-                    logger.warning(
-                        "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
-                        path,
-                        corrupt_path,
-                        rename_exc,
-                    )
-                    raise SnapshotUnavailableError from rename_exc
+                _quarantine_corrupt(path, must_succeed=True)
                 return [], 0
         if isinstance(data, list):
             # Legacy raw list — treat as revision 0.
@@ -134,18 +108,7 @@ def load_versioned_snapshot(validator=None) -> tuple[list[dict], int]:
             # Legacy raw list (no revision key) — treat as revision 0.
             return _extract_threads(data), 0
         # Unreadable shape — quarantine and load empty.
-        stamp = time.strftime("%Y%m%d-%H%M%S")
-        corrupt_path = f"{path}.corrupt-{stamp}"
-        try:
-            os.rename(path, corrupt_path)
-        except OSError as rename_exc:
-            logger.warning(
-                "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
-                path,
-                corrupt_path,
-                rename_exc,
-            )
-            raise SnapshotUnavailableError from rename_exc
+        _quarantine_corrupt(path, must_succeed=True)
         return [], 0
 
 
@@ -158,61 +121,20 @@ def load_snapshot(validator=None) -> list[dict]:
         except FileNotFoundError:
             return []
         except (OSError, ValueError):
-            stamp = time.strftime("%Y%m%d-%H%M%S")
-            corrupt_path = f"{path}.corrupt-{stamp}"
-            try:
-                os.rename(path, corrupt_path)
-            except OSError as rename_exc:
-                logger.warning(
-                    "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
-                    path,
-                    corrupt_path,
-                    rename_exc,
-                )
+            _quarantine_corrupt(path, must_succeed=False)
             return []
         try:
             data = json.loads(raw)
         except (json.JSONDecodeError, ValueError):
-            stamp = time.strftime("%Y%m%d-%H%M%S")
-            corrupt_path = f"{path}.corrupt-{stamp}"
-            try:
-                os.rename(path, corrupt_path)
-            except OSError as rename_exc:
-                logger.warning(
-                    "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
-                    path,
-                    corrupt_path,
-                    rename_exc,
-                )
+            _quarantine_corrupt(path, must_succeed=False)
             return []
         if validator is not None:
             try:
                 result = validator(data)
             except ValueError:
-                stamp = time.strftime("%Y%m%d-%H%M%S")
-                corrupt_path = f"{path}.corrupt-{stamp}"
-                try:
-                    os.rename(path, corrupt_path)
-                except OSError as rename_exc:
-                    logger.warning(
-                        "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
-                        path,
-                        corrupt_path,
-                        rename_exc,
-                    )
-                return []
+                result = False
             if result is False:
-                stamp = time.strftime("%Y%m%d-%H%M%S")
-                corrupt_path = f"{path}.corrupt-{stamp}"
-                try:
-                    os.rename(path, corrupt_path)
-                except OSError as rename_exc:
-                    logger.warning(
-                        "Could not quarantine corrupt snapshot: primary=%s corrupt=%s error=%s",
-                        path,
-                        corrupt_path,
-                        rename_exc,
-                    )
+                _quarantine_corrupt(path, must_succeed=False)
                 return []
     threads, _revision = load_versioned_snapshot()
     return threads

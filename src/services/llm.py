@@ -83,7 +83,12 @@ def stream_reply(
 
                     try:
                         parsed = json.loads(data)
-                        delta = parsed.get("choices", [{}])[0].get("delta", {})
+                        # A chunk with no choices (e.g. a trailing usage
+                        # chunk) carries no text — skip it, don't fail.
+                        choices = parsed.get("choices") or []
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta") or {}
                         reasoning = delta.get("reasoning_content")
                         content = delta.get("content")
                         if reasoning:

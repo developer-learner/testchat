@@ -1,8 +1,8 @@
 """Lightweight system status for the UI footer strip."""
 
 import logging
-import os
 import subprocess
+from urllib.parse import urlparse
 
 from fastapi import APIRouter
 
@@ -54,21 +54,11 @@ def _script_model_rss_gb(model_id: str) -> float:
         entry = models_service.get_script_model(model_id)
         if entry is None:
             return 0.0
-        # Fallback for servers started outside this app: match on the launch
-        # command's script name, the most distinctive stable token.
-        pattern = os.path.basename(entry["command"][-1])
-        try:
-            out = subprocess.run(
-                ["pgrep", "-f", pattern],
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-            first = out.stdout.strip().splitlines()
-            if first:
-                pid = int(first[0])
-        except Exception:
-            return 0.0
+        # Fallback for servers started outside this app: find the server by
+        # its listening port — a name match can hit unrelated processes.
+        port = urlparse(entry["ready_url"]).port
+        if port is not None:
+            pid = models_service._find_listening_pid(port)
     if pid is None:
         return 0.0
     try:

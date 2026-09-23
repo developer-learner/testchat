@@ -26,8 +26,10 @@ class ChatRequest(BaseModel):
 router = APIRouter()
 
 
+# Sync handler on purpose: the loaded-state and router probes below are
+# blocking httpx calls, and must not run on the event loop.
 @router.post("/api/v1/chat")
-async def chat(request: ChatRequest) -> StreamingResponse:
+def chat(request: ChatRequest) -> StreamingResponse:
     endpoint_override = None
     # Guard on request.model itself, not on the derived script_model: both
     # reads below need it narrowed to str, and mypy cannot infer that a
